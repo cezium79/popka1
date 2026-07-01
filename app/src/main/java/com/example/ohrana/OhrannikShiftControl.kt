@@ -1,10 +1,11 @@
 package com.example.ohrana
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +17,8 @@ import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.ohrana.ShiftDatabaseManager
+import com.example.ohrana.ShiftLogEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,7 +28,8 @@ fun OhrannikShiftControlScreen(
     onContinueShift: () -> Unit,          // Вызывается при нажатии ПРОДОЛЖИТЬ
     onShiftClosedSuccess: () -> Unit,     // Вызывается при СТОПЕ смены
     onBack: () -> Unit,
-    selectedEmployeeName: String
+    selectedEmployeeName: String,
+    onNavigateToCompletedShifts: () -> Unit // Вызывается при нажатии кнопки журналов завершенных смен
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -40,10 +44,37 @@ fun OhrannikShiftControlScreen(
     var showLogsDialog by remember { mutableStateOf(false) }
     // Переменная для отображения окна успешного закрытия смены
     var showGoodbyeDialog by remember { mutableStateOf(false) }
+    // Переменная для навигации к журналам завершенных смен
+    var showCompletedShifts by remember { mutableStateOf(false) }
 
 
     // 🔔 ВСПЛЫВАЮЩЕЕ ОКНО С ИСТОРИЕЙ ОБХОДОВ ТЕКУЩЕЙ СМЕНЫ
     if (showLogsDialog) {
+        // Загружаем данные из новой базы данных
+        val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+        val logs = activeShiftId?.let { shiftId ->
+            prefsManager.shiftDatabase.loadLogsByShift(shiftId)
+        } ?: emptyList()
+        
+        // Получаем информацию о смене
+        val shiftRecord = activeShiftId?.let { shiftId ->
+            prefsManager.shiftDatabase.loadAllShifts().find { it.id == shiftId }
+        }
+        
+        // Получаем информацию об обходах
+        val rounds = activeShiftId?.let { shiftId ->
+            prefsManager.shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
+        } ?: emptyList()
+        
+        // Сортируем логи по времени от ранних к поздним
+        val sortedLogs = logs.sortedBy { it.timestamp }
+        
+        // Сортируем обходы по времени начала
+        val sortedRounds = rounds.sortedBy { it.startTime }
+        
+        // Формируем отображение времени смены
+        val shiftEndTime = shiftRecord?.endTime ?: "(смена активна)"
+        
         AlertDialog(
             onDismissRequest = { showLogsDialog = false },
             title = { Text("Журнал текущих обходов", fontWeight = FontWeight.Bold) },
@@ -60,12 +91,103 @@ fun OhrannikShiftControlScreen(
                             .padding(12.dp)
                     ) {
                         item {
+                            // Отображаем информацию о смене
                             Text(
-                                text = QrHandler.generateFullReport(), // Вызываем функцию отчета
+                                text = "--- СМЕНА ---",
                                 fontSize = 14.sp,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 4.dp)
                             )
+                            Text(
+                                text = "Время начала: ${shiftRecord?.startTime ?: "-"}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Text(
+                                text = "Время окончания: $shiftEndTime",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            
+                            if (sortedLogs.isEmpty()) {
+                                Text(
+                                    text = "Журнал пуст. За смену не было зафиксировано ни одного обхода.",
+                                    fontSize = 14.sp,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                Column {
+                                    // Группируем логи по обходам
+                                    sortedRounds.forEach { round ->
+                                        val roundLogs = sortedLogs.filter { it.roundId == round.id }
+                                        
+                                        // Строки начала и завершения обхода
+                                        Text(
+                                            text = "--- ОБХОД #${round.id} ---",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(bottom = 4.dp)
+                                        )
+                                        Text(
+                                            text = "Маршрут: ${round.routeName ?: "не указан"}",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(bottom = 2.dp)
+                                        )
+                                        Text(
+                                            text = "Время начала: ${round.startTime}",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        
+                                        // Логи этого обхода
+                                        roundLogs.forEach { entry ->
+                                            // Пропускаем записи с типом SCAN (они для аудита, не отображаются в отчете)
+                                            if (entry.actionType == "SCAN") return@forEach
+                                            
+                                            // Извлекаем только время (без даты)
+                                            val timeOnly = entry.timestamp.split(" ").getOrNull(1) ?: entry.timestamp
+                                            // Формируем результат на основе типа действия
+                                            val resultText = when (entry.actionType) {
+                                                "QUESTION" -> "Ответ: ${entry.answer ?: "-"}"
+                                                "INPUT" -> "Введено: ${entry.inputValue ?: "-"}"
+                                                "PHOTO" -> "Фото снято"
+                                                else -> if (entry.isSequenceCorrect) "Пройдено" else "Нарушение"
+                                            }
+                                            // Добавляем тип сканирования в конце
+                                            val scanType = if (entry.scanType == "NFC") "[NFC]" else "[QR]"
+                                            Text(
+                                                text = "$timeOnly - ${entry.checkpointName} - $resultText $scanType",
+                                                fontSize = 14.sp,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        
+                                        // Время окончания обхода - в конце блока перед разделителем
+                                        Text(
+                                            text = "Время окончания: ${round.endTime ?: "(не завершен)"}",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        
+                                        // Разделитель между обходами - пустая строка и черта
+                                        Spacer(modifier = Modifier.padding(vertical = 8.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(1.dp)
+                                                .background(MaterialTheme.colorScheme.outlineVariant)
+                                        )
+                                        Spacer(modifier = Modifier.padding(vertical = 8.dp))
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -104,7 +226,7 @@ fun OhrannikShiftControlScreen(
                 title = { Text("Управление сменой") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 }
             )
@@ -154,11 +276,23 @@ fun OhrannikShiftControlScreen(
                     onClick = { showLogsDialog = true },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 24.dp)
+                        .padding(bottom = 12.dp)
                         .height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Text("ПОСМОТРЕТЬ МОИ ОБХОДЫ", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
+                
+                // 3. КНОПКА «ЖУРНАЛЫ ЗАВЕРШЕННЫХ СМЕН»
+                Button(
+                    onClick = { showCompletedShifts = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp)
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                ) {
+                    Text("ЖУРНАЛЫ ЗАВЕРШЕННЫХ СМЕН", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
 
             } else {
@@ -185,8 +319,53 @@ fun OhrannikShiftControlScreen(
                 ) {
                     Text("НАЧАТЬ СМЕНУ (СТАРТ)", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
+                
+                // Дубликат кнопки "ЖУРНАЛЫ ЗАВЕРШЕННЫХ СМЕН" для закрытой смены
+                Button(
+                    onClick = { showCompletedShifts = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                ) {
+                    Text("ЖУРНАЛЫ ЗАВЕРШЕННЫХ СМЕН", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
 
         }
+    }
+    
+    // Диалог с выбором действий
+    if (showCompletedShifts) {
+        AlertDialog(
+            onDismissRequest = { showCompletedShifts = false },
+            title = { Text("Журналы смен", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        text = "Просмотреть журналы завершенных смен.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Доступны только журналы завершенных смен.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCompletedShifts = false
+                        onNavigateToCompletedShifts()
+                    }
+                ) {
+                    Text("ОК")
+                }
+            }
+        )
     }
 }

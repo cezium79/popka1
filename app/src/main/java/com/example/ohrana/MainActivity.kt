@@ -19,6 +19,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.example.ohrana.ShiftDatabaseManager
+import com.example.ohrana.ShiftLogDetailScreen
+import com.example.ohrana.ShiftLogEntry
 
 
 class MainActivity : ComponentActivity() {
@@ -88,6 +91,7 @@ fun AppNavigation() {
     var currentScreen by remember { mutableStateOf("privet") }
     var selectedEmployeeName by remember { mutableStateOf("") }
     var selectedCheckpointId by remember { mutableStateOf<String?>(null) }
+    var currentShiftId by remember { mutableStateOf("") }
 
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -193,6 +197,9 @@ fun AppNavigation() {
             },
             onBack = {
                 currentScreen = "privet"
+            },
+            onNavigateToCompletedShifts = {
+                currentScreen = "shift_logs"
             }
         )
 
@@ -227,14 +234,15 @@ fun AppNavigation() {
                 val logText = "Фото прибора: $selectedCheckpointId -> Файл: $fileName"
                 prefsManager.saveScanResult(employeeName = selectedEmployeeName, qrContent = logText)
                 
-                // Добавляем в shiftLogs для отображения в журнале текущих обходов
-                val currentTime = java.text.SimpleDateFormat("HH:mm:ss dd.MM.yyyy", java.util.Locale.getDefault()).format(java.util.Date())
-                QrHandler.addCheckpointToLog(
-                    type = "NFC-чекпоинт",
-                    titleOrLocation = "$selectedCheckpointId",
-                    userResult = "Отметка пройдена",
-                    timestamp = currentTime
-                )
+                // Обновляем последнюю запись SCAN на тип PHOTO
+                val activeRoundIndex = prefsManager.getActiveRoundIndex()
+                if (activeRoundIndex != -1) {
+                    prefsManager.shiftDatabase.updateLastScanEntry(
+                        roundId = activeRoundIndex,
+                        actionType = "PHOTO",
+                        photoPath = fileName
+                    )
+                }
                 
                 // Индекс увеличивается в OhrannikCabinetScreen при закрытии диалога
             },
@@ -321,9 +329,9 @@ fun AppNavigation() {
         // Дополнительный экран: Список охранников
         "employee_list" -> EmployeeListScreen(
             employees = employeeList,
-            onAddEmployee = { name, position ->
+            onAddEmployee = { name, position, nfcId ->
                 // Создаем и добавляем нового сотрудника прямо в список
-                val newEmployee = Employee(name = name, role = position)
+                val newEmployee = Employee(name = name, role = position, nfcId = nfcId)
                 employeeList.add(newEmployee)
                 // Сохраняем обновленный список в SharedPreferences
                 prefsManager.saveEmployees(employeeList.toList())
@@ -333,11 +341,11 @@ fun AppNavigation() {
                 employeeList.remove(employee)
                 prefsManager.saveEmployees(employeeList.toList())
             },
-            onEditEmployee = { employee, newName, newPosition ->
+            onEditEmployee = { employee, newName, newPosition, newNfcId ->
                 // Находим редактируемого сотрудника и обновляем его поля
                 val index = employeeList.indexOf(employee)
                 if (index != -1) {
-                    employeeList[index] = employee.copy(name = newName, role = newPosition)
+                    employeeList[index] = employee.copy(name = newName, role = newPosition, nfcId = newNfcId)
                     prefsManager.saveEmployees(employeeList.toList())
                 }
             },
@@ -353,6 +361,27 @@ fun AppNavigation() {
                 currentScreen = "admin"
             },
             previousScreenWasAdmin = previousScreenWasAdmin
+        )
+        
+        // Экран журналов завершенных смен
+        "shift_logs" -> ShiftLogsListScreen(
+            onBack = {
+                currentScreen = "privet"
+            },
+            selectedEmployeeName = selectedEmployeeName,
+            onNavigateToDetails = { shiftId ->
+                currentScreen = "shift_detail"
+                currentShiftId = shiftId
+            }
+        )
+        
+        // Экран детального просмотра журнала
+        "shift_detail" -> ShiftLogDetailScreen(
+            onBack = {
+                currentScreen = "shift_logs"
+            },
+            shiftId = currentShiftId,
+            employeeName = selectedEmployeeName
         )
 
 

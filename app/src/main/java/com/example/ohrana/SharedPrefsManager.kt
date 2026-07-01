@@ -6,6 +6,15 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.ohrana.ShiftDatabaseManager
+import com.example.ohrana.ShiftLogEntry
+import com.example.ohrana.ShiftRecord
+import com.example.ohrana.RoundRecord
+import com.example.ohrana.SequenceViolation
+import com.example.ohrana.AdminReport
+import com.example.ohrana.GuardReport
+import com.example.ohrana.OwnerReport
+import com.example.ohrana.SimpleLogEntry
 
 // Модель для сохранения сканирований
 data class QrScanRecord(val employeeName: String, val time: String, val qrContent: String)
@@ -19,7 +28,10 @@ data class Route(
 )
 
 class SharedPrefsManager(private val context: Context) {
-    private val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
+    val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
+    
+    // Инициализируем базу данных обходов
+    val shiftDatabase = ShiftDatabaseManager(context)
 
     // ОБНОВЛЕНО: Новый, понятный формат даты для логов и смен
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
@@ -83,6 +95,11 @@ class SharedPrefsManager(private val context: Context) {
         // Сбрасываем статус всех обходов при старте новой смены
         resetAllRounds()
         
+        // Создаем новую запись смены в базе данных
+        val shiftId = shiftDatabase.startNewShift(employeeName, strictSequenceEnabled)
+        // Сохраняем ID активной смены в SharedPreferences
+        prefs.edit().putString("active_shift_id", shiftId).apply()
+        
         prefs.edit().apply {
             putString("active_shift_employee", employeeName)
             putString("active_shift_start_time", currentTime)
@@ -132,6 +149,12 @@ class SharedPrefsManager(private val context: Context) {
         QrHandler.clearShiftLogs()
         // Сбрасываем прогресс маршрута при закрытии смены
         resetRouteProgress()
+        
+        // Получаем ID активной смены
+        val activeShiftId = prefs.getString("active_shift_id", null)
+        activeShiftId?.let { shiftDatabase.closeShift(it) }
+        // Удаляем ID активной смены
+        prefs.edit().remove("active_shift_id").apply()
 
         prefs.edit().apply {
             putBoolean("active_shift_is_running", false)
@@ -159,6 +182,13 @@ class SharedPrefsManager(private val context: Context) {
             putInt("active_route_current_index", 0)
             apply()
         }
+        
+        // Запускаем обход в новой базе данных
+        val route = routeId?.let { getRouteById(it) }
+        val routeName = route?.name ?: "Маршрут не найден"
+        val checkpointIds = route?.checkpointIds ?: emptyList()
+        val activeShiftId = prefs.getString("active_shift_id", "unknown_shift") ?: "unknown_shift"
+        shiftDatabase.startRound(roundIndex, activeShiftId, routeId, routeName, checkpointIds.size)
     }
 
     // Завершить конкретный обход по его номеру (индексу)
@@ -171,6 +201,9 @@ class SharedPrefsManager(private val context: Context) {
             putInt("active_route_current_index", 0)
             apply()
         }
+        
+        // Завершаем обход в новой базе данных
+        shiftDatabase.completeRound(roundIndex, endTime)
     }
 
     // Получить индекс обхода, который выполняется прямо сейчас (-1 означает, что никакой обход не запущен)
@@ -238,15 +271,8 @@ class SharedPrefsManager(private val context: Context) {
         }
     }
 
-
-    // (Ваши старые методы loadEmployees и saveEmployees остаются здесь без изменений)
-    fun loadEmployees(): List<Employee> {
-        // Здесь ваша оригинальная логика загрузки сотрудников
-        return emptyList()
-    }
     // --- СОХРАНЕНИЕ НАСТРОЕК МАРШРУТА И РАСПИСАНИЯ ---
     fun saveRouteSettings(roundsCount: Int, times: List<String>, tolerance: String, checkpoints: List<String>) {
-        Log.d("SharedPrefsManager", "Saving route settings: rounds=$roundsCount, times=$times, tolerance=$tolerance, checkpoints=$checkpoints")
         prefs.edit().apply {
             putInt("route_rounds_count", roundsCount)
             putString("route_times", times.joinToString(","))
@@ -309,7 +335,42 @@ class SharedPrefsManager(private val context: Context) {
 
 
     fun saveEmployees(list: List<Employee>) {
-        // Здесь ваша оригинальная логика сохранения сотрудников
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonArray = org.json.JSONArray()
+        list.forEach { employee ->
+            val jsonObject = org.json.JSONObject()
+            jsonObject.put("id", employee.id)
+            jsonObject.put("name", employee.name)
+            jsonObject.put("role", employee.role)
+            employee.nfcId?.let { jsonObject.put("nfcId", it) }
+            jsonArray.put(jsonObject)
+        }
+        localPrefs.edit().putString("employees_list", jsonArray.toString()).apply()
+    }
+
+    /**
+     * Загружает список сотрудников из SharedPreferences
+     */
+    fun loadEmployees(): List<Employee> {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonString = localPrefs.getString("employees_list", null)
+        if (jsonString.isNullOrBlank()) return emptyList()
+        
+        return try {
+            val jsonArray = org.json.JSONArray(jsonString)
+            List(jsonArray.length()) { index ->
+                val jsonObject = jsonArray.getJSONObject(index)
+                Employee(
+                    id = jsonObject.optString("id", ""),
+                    name = jsonObject.optString("name", ""),
+                    role = jsonObject.optString("role", ""),
+                    nfcId = jsonObject.optString("nfcId", null)
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
     }
 
     // Сохранение логов сканирования в SharedPrefs (в виде простой строки для упрощения)
@@ -1165,6 +1226,34 @@ class SharedPrefsManager(private val context: Context) {
             android.util.Log.e("SharedPrefsManager", "Error importing from file: ${e.message}", e)
             false
         }
+    }
+    
+    // ==================================================
+    // 📊 ГЕНЕРАЦИЯ ОТЧЕТОВ ИЗ БАЗЫ ДАННЫХ ОБХОДОВ
+    // ==================================================
+    
+    /**
+     * Генерирует полный отчет для администратора
+     */
+    fun generateAdminReport(): AdminReport? {
+        val activeShiftId = prefs.getString("active_shift_id", null)
+        return activeShiftId?.let { shiftDatabase.generateAdminReport(it) }
+    }
+    
+    /**
+     * Генерирует упрощенный отчет для охранника
+     */
+    fun generateGuardReport(): GuardReport? {
+        val activeShiftId = prefs.getString("active_shift_id", null)
+        return activeShiftId?.let { shiftDatabase.generateGuardReport(it) }
+    }
+    
+    /**
+     * Генерирует краткий отчет для владельца объекта
+     */
+    fun generateOwnerReport(): OwnerReport? {
+        val activeShiftId = prefs.getString("active_shift_id", null)
+        return activeShiftId?.let { shiftDatabase.generateOwnerReport(it) }
     }
 }
 

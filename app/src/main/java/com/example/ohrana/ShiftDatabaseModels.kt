@@ -21,6 +21,7 @@ data class ShiftLogEntry(
     val checkpointId: String,            // ID чекпоинта
     val employeeName: String,            // Имя охранника
     val roundId: Int,                    // ID обхода (номер будильника)
+    val shiftId: String,                 // ID смены
     val routeName: String,               // Название маршрута
     val sequenceIndex: Int,              // Индекс в маршруте (какой по счету)
     val isSequenceCorrect: Boolean,      // Правильная ли последовательность

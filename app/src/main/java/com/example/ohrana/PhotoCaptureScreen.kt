@@ -481,7 +481,7 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
             sourceFile.delete()
             android.widget.Toast.makeText(context, "Фото сохранено в галерее!", android.widget.Toast.LENGTH_SHORT).show()
             
-            return destFileName
+            return destFile.absolutePath
         } else {
             android.widget.Toast.makeText(context, "Ошибка: файл не создан!", android.widget.Toast.LENGTH_SHORT).show()
             return null

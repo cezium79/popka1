@@ -23,10 +23,41 @@ class ShiftDatabaseManager(private val context: Context) {
     // ============================================
 
     /**
+     * Считать количество смен для определенной даты
+     */
+    private fun getShiftCountForDate(date: String): Int {
+        val allShifts = loadAllShifts()
+        val datePrefix = date.substring(0, 10) // "01.06.2026"
+        return allShifts.filter { it.startTime.startsWith(datePrefix) }.size
+    }
+
+    /**
+     * Сформировать ID смены в формате NSDDMMYY_NNN
+     */
+    private fun generateShiftId(): String {
+        val today = Date()
+        val todayStr = dateFormat.format(today)
+        val datePrefix = todayStr.substring(0, 10) // "01.06.2026"
+        
+        // Извлекаем день, месяц, год
+        val parts = datePrefix.split(".")
+        val day = parts[0] // 01
+        val month = parts[1] // 06
+        val year = parts[2].substring(2) // 26
+        
+        // Получаем количество смен за сегодня
+        val count = getShiftCountForDate(datePrefix)
+        val sequence = String.format("%03d", count + 1)
+        
+        // Формируем ID: NS010626_001
+        return "NS${day}${month}${year}_$sequence"
+    }
+
+    /**
      * Начать новую смену
      */
     fun startNewShift(employeeName: String, strictSequenceEnabled: Boolean): String {
-        val shiftId = "shift_${System.currentTimeMillis()}"
+        val shiftId = generateShiftId()
         val currentTime = dateFormat.format(Date())
         
         val shift = ShiftRecord(
@@ -47,10 +78,14 @@ class ShiftDatabaseManager(private val context: Context) {
     fun closeShift(shiftId: String) {
         val currentTime = dateFormat.format(Date())
         
-        prefs.edit().apply {
-            putString("$shiftId endTime", currentTime)
-            putBoolean("$shiftId isShiftActive", false)
-            apply()
+        // Загружаем текущую смену
+        val shift = loadAllShifts().find { it.id == shiftId }
+        shift?.let {
+            val updatedShift = shift.copy(
+                endTime = currentTime,
+                isShiftActive = false
+            )
+            saveShift(updatedShift)
         }
         
         // Обновляем все обходы этой смены
@@ -100,7 +135,7 @@ class ShiftDatabaseManager(private val context: Context) {
                         employeeName = json.getString("employeeName"),
                         startTime = json.getString("startTime"),
                         endTime = json.optString("endTime", null),
-                        isShiftActive = json.getBoolean("isShiftActive"),
+                        isShiftActive = json.optBoolean("isShiftActive", false),
                         strictSequenceEnabled = json.optBoolean("strictSequenceEnabled", false)
                     )
                 } catch (e: Exception) {
@@ -136,10 +171,14 @@ class ShiftDatabaseManager(private val context: Context) {
      * Завершить обход
      */
     fun completeRound(roundId: Int, endTime: String) {
-        prefs.edit().apply {
-            putString("round_$roundId endTime", endTime)
-            putBoolean("round_$roundId isCompleted", true)
-            apply()
+        // Загружаем текущий обход
+        val round = loadRound(roundId)
+        round?.let {
+            val updatedRound = round.copy(
+                endTime = endTime,
+                isCompleted = true
+            )
+            saveRound(updatedRound)
         }
     }
 
@@ -147,10 +186,14 @@ class ShiftDatabaseManager(private val context: Context) {
      * Обновить количество пройденных чекпоинтов
      */
     fun updateRoundProgress(roundId: Int, checkpointsPassed: Int, sequenceViolations: Int) {
-        prefs.edit().apply {
-            putInt("round_$roundId checkpointsPassed", checkpointsPassed)
-            putInt("round_$roundId sequenceViolations", sequenceViolations)
-            apply()
+        // Загружаем текущий обход
+        val round = loadRound(roundId)
+        round?.let {
+            val updatedRound = round.copy(
+                checkpointsPassed = checkpointsPassed,
+                sequenceViolations = sequenceViolations
+            )
+            saveRound(updatedRound)
         }
     }
 
@@ -238,6 +281,10 @@ class ShiftDatabaseManager(private val context: Context) {
         val logId = "log_${System.currentTimeMillis()}"
         val timestamp = dateFormat.format(Date())
         
+        // Получаем ID активной смены из SharedPreferences
+        val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
+        val shiftId = prefs.getString("active_shift_id", "unknown_shift") ?: "unknown_shift"
+        
         val entry = ShiftLogEntry(
             id = logId,
             timestamp = timestamp,
@@ -245,6 +292,7 @@ class ShiftDatabaseManager(private val context: Context) {
             checkpointId = checkpointId,
             employeeName = employeeName,
             roundId = roundId,
+            shiftId = shiftId,
             routeName = routeName,
             sequenceIndex = sequenceIndex,
             isSequenceCorrect = isSequenceCorrect,
@@ -304,6 +352,7 @@ class ShiftDatabaseManager(private val context: Context) {
             put("checkpointId", entry.checkpointId)
             put("employeeName", entry.employeeName)
             put("roundId", entry.roundId)
+            put("shiftId", entry.shiftId)
             put("routeName", entry.routeName)
             put("sequenceIndex", entry.sequenceIndex)
             put("isSequenceCorrect", entry.isSequenceCorrect)
@@ -355,6 +404,7 @@ class ShiftDatabaseManager(private val context: Context) {
                         checkpointId = json.getString("checkpointId"),
                         employeeName = json.getString("employeeName"),
                         roundId = json.getInt("roundId"),
+                        shiftId = json.getString("shiftId"),
                         routeName = json.getString("routeName"),
                         sequenceIndex = json.getInt("sequenceIndex"),
                         isSequenceCorrect = json.getBoolean("isSequenceCorrect"),
@@ -384,7 +434,7 @@ class ShiftDatabaseManager(private val context: Context) {
      * Загрузить логи по ID смены
      */
     fun loadLogsByShift(shiftId: String): List<ShiftLogEntry> {
-        return loadAllLogs().filter { it.shiftId == shiftId }
+        return loadAllLogs().filter { logEntry -> logEntry.shiftId == shiftId }
     }
 
     /**
@@ -419,6 +469,38 @@ class ShiftDatabaseManager(private val context: Context) {
     fun loadViolationsByRound(roundId: Int): List<SequenceViolation> {
         return loadAllViolations().filter { it.roundId == roundId }
     }
+    
+    /**
+     * Обновить последнюю запись SCAN на правильный тип действия
+     * Возвращает true если запись найдена и обновлена
+     */
+    fun updateLastScanEntry(
+        roundId: Int,
+        actionType: String,
+        answer: String? = null,
+        inputValue: String? = null,
+        photoPath: String? = null
+    ): Boolean {
+        val logs = loadAllLogs().filter { it.roundId == roundId }
+        // Ищем последнюю запись, которая имеет тип SCAN (еще не обновлена)
+        val lastScanEntry = logs.asReversed().find { it.actionType == "SCAN" }
+        
+        lastScanEntry?.let { entry ->
+            val updatedEntry = entry.copy(
+                actionType = actionType,
+                answer = answer,
+                inputValue = inputValue,
+                photoPath = photoPath
+            )
+            
+            // Удаляем старую запись и сохраняем новую
+            prefs.edit().remove("log_${entry.id}").apply()
+            saveLogEntry(updatedEntry)
+            return true
+        }
+        
+        return false
+    }
 
     // ============================================
     // ГЕНЕРАЦИЯ ОТЧЕТОВ
@@ -445,7 +527,15 @@ class ShiftDatabaseManager(private val context: Context) {
         val logs = loadLogsByShift(shiftId)
         val violations = loadAllViolations().filter { it.roundId in rounds.map { it.id } }
         
-        val simpleLogs = logs.map { SimpleLogEntry(it.timestamp, it.checkpointName, it.result) }
+        val simpleLogs = logs.map { 
+            val result = when (it.actionType) {
+                "QUESTION" -> "Ответ: ${it.answer ?: "-"}"
+                "INPUT" -> "Введено: ${it.inputValue ?: "-"}"
+                "PHOTO" -> "Фото снято"
+                else -> "Пройдено"
+            }
+            SimpleLogEntry(it.timestamp, it.checkpointName, result)
+        }
         
         return GuardReport(
             shiftStartTime = shift.startTime,
@@ -503,7 +593,7 @@ class ShiftDatabaseManager(private val context: Context) {
                     val shiftJson = prefs.getString(key, null) ?: return@filterKeys false
                     try {
                         val shift = JSONObject(shiftJson)
-                        val timestamp = isoFormat.parse(shift.getString("startTime")).time
+                        val timestamp = isoFormat.parse(shift.getString("startTime"))?.time ?: return@filterKeys false
                         timestamp < cutoffDate
                     } catch (e: Exception) {
                         false
@@ -511,8 +601,10 @@ class ShiftDatabaseManager(private val context: Context) {
                 }
                 else -> false
             }
-        }.keys
+        }.keys.toList()
         
-        prefs.edit().removeAll(keysToRemove).apply()
+        val editor = prefs.edit()
+        keysToRemove.forEach { key -> editor.remove(key) }
+        editor.apply()
     }
 }

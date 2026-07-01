@@ -39,6 +39,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.ohrana.Checkpoint
 import com.example.ohrana.CheckpointAction
+import com.example.ohrana.ShiftDatabaseManager
 import com.example.ohrana.QrHandler
 import com.example.ohrana.QrResult
 import com.example.ohrana.SharedPrefsManager
@@ -186,26 +187,49 @@ fun OhrannikCabinetScreen(
                 // NFC-ID найден в базе - обрабатываем в зависимости от типа
                 when (checkpoint.action) {
                     CheckpointAction.CHECKPOINT -> {
+                        // Сохраняем факт сканирования (для аудита)
+                        val activeRoundIndex = manager.getActiveRoundIndex()
+                        if (activeRoundIndex != -1) {
+                            manager.shiftDatabase.addLogEntry(
+                                checkpointName = checkpoint.name,
+                                checkpointId = checkpoint.id,
+                                employeeName = employeeName,
+                                roundId = activeRoundIndex,
+                                routeName = "Маршрут обхода",
+                                sequenceIndex = manager.getCurrentCheckpointIndex(),
+                                isSequenceCorrect = true,
+                                scanType = "NFC",
+                                actionType = "SCAN"  // Тип SCAN для аудита
+                            )
+                        }
+                        
                         // Сохраняем в логи SharedPreferences
                         val logText = "NFC-чекпоинт: ${checkpoint.name} -> ID: ${checkpoint.id}"
                         manager.saveScanResult(employeeName = employeeName, qrContent = logText)
                         
-                        // Добавляем в shiftLogs для отображения в журнале текущих обходов
-                        val currentTime = java.text.SimpleDateFormat("HH:mm:ss dd.MM.yyyy", java.util.Locale.getDefault()).format(java.util.Date())
-                        QrHandler.addCheckpointToLog(
-                            type = "NFC-чекпоинт",
-                            titleOrLocation = "${checkpoint.name} (ID: ${checkpoint.id})",
-                            userResult = "Отметка пройдена",
-                            timestamp = currentTime
-                        )
-                        
                         showCheckpointPassedDialog = QrResult.CheckpointPassed(
                             checkpointId = checkpoint.id,
                             name = checkpoint.name,
-                            timestamp = currentTime
+                            timestamp = java.text.SimpleDateFormat("HH:mm:ss dd.MM.yyyy", java.util.Locale.getDefault()).format(java.util.Date())
                         )
                     }
                     CheckpointAction.QUESTION -> {
+                        // Сохраняем факт сканирования (для аудита)
+                        val activeRoundIndex = manager.getActiveRoundIndex()
+                        if (activeRoundIndex != -1) {
+                            manager.shiftDatabase.addLogEntry(
+                                checkpointName = checkpoint.name,
+                                checkpointId = checkpoint.id,
+                                employeeName = employeeName,
+                                roundId = activeRoundIndex,
+                                routeName = "Маршрут обхода",
+                                sequenceIndex = manager.getCurrentCheckpointIndex(),
+                                isSequenceCorrect = true,
+                                scanType = "NFC",
+                                actionType = "SCAN"  // Тип SCAN для аудита
+                            )
+                        }
+                        
                         // Диалог с вопросом сохранит результат при выборе ответа
                         showQuestionDialog = QrResult.QuestionFormat(
                             checkpointId = checkpoint.id,
@@ -215,6 +239,22 @@ fun OhrannikCabinetScreen(
                         )
                     }
                     CheckpointAction.INPUT -> {
+                        // Сохраняем факт сканирования (для аудита)
+                        val activeRoundIndex = manager.getActiveRoundIndex()
+                        if (activeRoundIndex != -1) {
+                            manager.shiftDatabase.addLogEntry(
+                                checkpointName = checkpoint.name,
+                                checkpointId = checkpoint.id,
+                                employeeName = employeeName,
+                                roundId = activeRoundIndex,
+                                routeName = "Маршрут обхода",
+                                sequenceIndex = manager.getCurrentCheckpointIndex(),
+                                isSequenceCorrect = true,
+                                scanType = "NFC",
+                                actionType = "SCAN"  // Тип SCAN для аудита
+                            )
+                        }
+                        
                         // Диалог с вводом сохранит результат при нажатии "Сохранить"
                         showInputDialog = QrResult.InputFormat(
                             checkpointId = checkpoint.id,
@@ -223,6 +263,22 @@ fun OhrannikCabinetScreen(
                         )
                     }
                     CheckpointAction.PHOTO -> {
+                        // Сохраняем факт сканирования (для аудита)
+                        val activeRoundIndex = manager.getActiveRoundIndex()
+                        if (activeRoundIndex != -1) {
+                            manager.shiftDatabase.addLogEntry(
+                                checkpointName = checkpoint.name,
+                                checkpointId = checkpoint.id,
+                                employeeName = employeeName,
+                                roundId = activeRoundIndex,
+                                routeName = "Маршрут обхода",
+                                sequenceIndex = manager.getCurrentCheckpointIndex(),
+                                isSequenceCorrect = true,
+                                scanType = "NFC",
+                                actionType = "SCAN"  // Тип SCAN для аудита
+                            )
+                        }
+                        
                         // PhotoFormat не сохраняется в логи автоматически - только при отправке фото
                         photoCheckpointId = checkpoint.id
                     }
@@ -498,13 +554,23 @@ fun OhrannikCabinetScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { 
+                TextButton(onClick = {
                     showCheckpointPassedDialog = null
+                    // Обновляем последнюю запись SCAN на тип CHECKPOINT
+                    val activeRoundIndex = manager.getActiveRoundIndex()
+                    if (activeRoundIndex != -1) {
+                        manager.shiftDatabase.updateLastScanEntry(
+                            roundId = activeRoundIndex,
+                            actionType = "CHECKPOINT"
+                        )
+                    }
                     // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
                     manager.updateCurrentCheckpointIndex(manager.getCurrentCheckpointIndex() + 1)
                     // Обновляем имя следующего чекпоинта
                     checkpointScanTrigger = System.currentTimeMillis()
-                }) { Text("ОК") }
+                }) {
+                    Text("ОК")
+                }
             }
         )
     }
@@ -527,14 +593,15 @@ fun OhrannikCabinetScreen(
                                 val logText = "Чек-лист: ${result.questionText} -> Ответ: $answer"
                                 manager.saveScanResult(employeeName = employeeName, qrContent = logText)
                                 
-                                // Добавляем в shiftLogs для отображения в журнале текущих обходов
-                                val currentTime = java.text.SimpleDateFormat("HH:mm:ss dd.MM.yyyy", java.util.Locale.getDefault()).format(java.util.Date())
-                                QrHandler.addCheckpointToLog(
-                                    type = "NFC-чекпоинт",
-                                    titleOrLocation = "${result.checkpointName} (ID: ${result.checkpointId})",
-                                    userResult = "Отметка пройдена",
-                                    timestamp = currentTime
-                                )
+                                // Обновляем последнюю запись SCAN на тип QUESTION
+                                val activeRoundIndex = manager.getActiveRoundIndex()
+                                if (activeRoundIndex != -1) {
+                                    manager.shiftDatabase.updateLastScanEntry(
+                                        roundId = activeRoundIndex,
+                                        actionType = "QUESTION",
+                                        answer = answer
+                                    )
+                                }
                                 
                                 showQuestionDialog = null
                                 // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
@@ -580,14 +647,15 @@ fun OhrannikCabinetScreen(
                             val logText = "Показания: ${result.titleText} -> Введено: $dialogInputText"
                             manager.saveScanResult(employeeName = employeeName, qrContent = logText)
                             
-                            // Добавляем в shiftLogs для отображения в журнале текущих обходов
-                            val currentTime = java.text.SimpleDateFormat("HH:mm:ss dd.MM.yyyy", java.util.Locale.getDefault()).format(java.util.Date())
-                            QrHandler.addCheckpointToLog(
-                                type = "NFC-чекпоинт",
-                                titleOrLocation = "${result.checkpointName} (ID: ${result.checkpointId})",
-                                userResult = "Отметка пройдена",
-                                timestamp = currentTime
-                            )
+                            // Обновляем последнюю запись SCAN на тип INPUT
+                            val activeRoundIndex = manager.getActiveRoundIndex()
+                            if (activeRoundIndex != -1) {
+                                manager.shiftDatabase.updateLastScanEntry(
+                                    roundId = activeRoundIndex,
+                                    actionType = "INPUT",
+                                    inputValue = dialogInputText
+                                )
+                            }
 
                             showInputDialog = null
                             // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)

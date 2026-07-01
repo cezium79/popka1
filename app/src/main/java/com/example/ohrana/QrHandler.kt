@@ -179,6 +179,43 @@ object QrHandler {
             }
             
             if (!isValid) {
+                // Сохраняем факт сканирования (для аудита) даже при нарушении последовательности
+                val activeRoundIndex = prefsManager.getActiveRoundIndex()
+                val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+                val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+                
+                activeShiftId?.let { shiftId ->
+                    if (activeRoundIndex != -1) {
+                        prefsManager.shiftDatabase.addLogEntry(
+                            checkpointName = name,
+                            checkpointId = checkpointId,
+                            employeeName = activeEmployeeName,
+                            roundId = activeRoundIndex,
+                            routeName = "Маршрут обхода",
+                            sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                            isSequenceCorrect = false,
+                            scanType = "QR",
+                            actionType = "SCAN",  // Тип SCAN для аудита
+                            sequenceErrorExpected = expectedId ?: ""
+                        )
+                    }
+                }
+                
+                // Записываем нарушение последовательности в базу данных
+                activeShiftId?.let { shiftId ->
+                    if (activeRoundIndex != -1) {
+                        prefsManager.shiftDatabase.addSequenceViolation(
+                            employeeName = activeEmployeeName,
+                            roundId = activeRoundIndex,
+                            expectedCheckpointId = expectedId ?: "",
+                            expectedCheckpointName = "Чекпоинт #${expectedId ?: ""}",
+                            actualCheckpointId = checkpointId,
+                            actualCheckpointName = name,
+                            isNfc = false
+                        )
+                    }
+                }
+                
                 return QrResult.SequenceError(
                     expectedId ?: "",
                     "Нарушена последовательность обхода."
@@ -232,19 +269,44 @@ object QrHandler {
         id: String,
         name: String,
         timestamp: String,
-        prefsManager: SharedPrefsManager
+        prefsManager: SharedPrefsManager,
+        isSequenceCorrect: Boolean = true,
+        scanType: String = "QR"
     ) {
         shiftLogs.add(
             CheckpointEntry(
-                type = "Маршрут: $routeName",
-                titleOrLocation = "$name (ID: $id)",
-                userResult = "Отметка пройдена",
+                type = "Обход",
+                titleOrLocation = name,
+                userResult = "Пройдено",
                 timestamp = timestamp
             )
         )
         
+        // Добавляем запись в новую базу данных с типом SCAN (для аудита сканирований)
+        // Эта запись не будет отображаться в отчете, но будет сохранена для истории
+        val activeRoundIndex = prefsManager.getActiveRoundIndex()
+        val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+        val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+        
+        activeShiftId?.let { shiftId ->
+            if (activeRoundIndex != -1) {
+                // Сохраняем факт сканирования
+                prefsManager.shiftDatabase.addLogEntry(
+                    checkpointName = name,
+                    checkpointId = id,
+                    employeeName = activeEmployeeName,
+                    roundId = activeRoundIndex,
+                    routeName = routeName,
+                    sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                    isSequenceCorrect = isSequenceCorrect,
+                    scanType = scanType,
+                    actionType = "SCAN"  // Тип SCAN - для аудита, не отображается в отчете
+                )
+            }
+        }
+        
         // Сохраняем лог в SharedPreferences для Excel-отчета
-        val logText = "Чекпоинт: $name (ID: $id)"
+        val logText = "Чекпоинт: $name"
         prefsManager.saveScanResult("Маршрут", logText)
     }
     
@@ -260,13 +322,22 @@ object QrHandler {
     }
 
     /**
-     * Добавляет запись в shiftLogs
+     * Добавляет запись в shiftLogs и новую базу данных
      */
     fun addCheckpointToLog(
         type: String,
         titleOrLocation: String,
         userResult: String,
-        timestamp: String
+        timestamp: String,
+        checkpointId: String = "",
+        checkpointName: String = "",
+        roundId: Int = -1,
+        routeName: String = "",
+        isSequenceCorrect: Boolean = true,
+        scanType: String = "QR",
+        answer: String? = null,
+        inputValue: String? = null,
+        photoPath: String? = null
     ) {
         shiftLogs.add(
             CheckpointEntry(
@@ -276,6 +347,10 @@ object QrHandler {
                 timestamp = timestamp
             )
         )
+        
+        // Добавляем запись в новую базу данных (если доступна)
+        // Это будет реализовано при передаче менеджера в вызывающий код
+        // Пока что просто добавляем запись в shiftLogs
     }
     
     /**
@@ -382,6 +457,25 @@ object QrHandler {
         }
         
         if (!isValid) {
+            // Записываем нарушение последовательности в базу данных
+            val activeRoundIndex = prefsManager.getActiveRoundIndex()
+            val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+            val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+            
+            activeShiftId?.let { shiftId ->
+                if (activeRoundIndex != -1) {
+                    prefsManager.shiftDatabase.addSequenceViolation(
+                        employeeName = activeEmployeeName,
+                        roundId = activeRoundIndex,
+                        expectedCheckpointId = expectedId ?: "",
+                        expectedCheckpointName = "Чекпоинт #${expectedId ?: ""}",
+                        actualCheckpointId = checkpointId,
+                        actualCheckpointName = name,
+                        isNfc = true
+                    )
+                }
+            }
+            
             return QrResult.SequenceError(
                 expectedId ?: "",
                 "Нарушена последовательность обхода."
