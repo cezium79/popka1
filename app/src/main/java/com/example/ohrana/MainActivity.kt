@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -103,6 +105,10 @@ fun AppNavigation() {
     var selectedCheckpointId by remember { mutableStateOf<String?>(null) }
     var currentShiftId by remember { mutableStateOf("") }
 
+    // Состояние для 5-кликового механизма админ-кнопки
+    var clickCount by remember { mutableStateOf(0) }
+    var lastClickTime by remember { mutableStateOf(0L) }
+
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
 
@@ -165,6 +171,42 @@ fun AppNavigation() {
                     contentScale = ContentScale.Crop
                 )
                 
+                // Скрываемая кнопка для входа в админ-меню
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 24.dp)
+                        .size(60.dp)
+                        .clickable(
+                            onClick = {
+                                val currentTime = System.currentTimeMillis()
+                                // Если клик произошел в течение 1 секунды от предыдущего
+                                if (currentTime - lastClickTime <= 1000) {
+                                    clickCount++
+                                    // Если достигнуто 10 кликов - переходим в админ-меню
+                                    if (clickCount >= 10) {
+                                        currentScreen = "admin"
+                                        clickCount = 0 // Сброс счетчика
+                                    }
+                                } else {
+                                    // Таймер вышел, сбрасываем счетчик и начинаем заново
+                                    clickCount = 1
+                                }
+                                lastClickTime = currentTime
+                            },
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "ADMIN",
+                        fontSize = 12.sp,
+                        color = androidx.compose.ui.graphics.Color.Transparent,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                
                 // Текст поверх фона
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -200,11 +242,8 @@ fun AppNavigation() {
                                         currentScreen = "admin"
                                     } else {
                                         selectedEmployeeName = employee.name
-                                        if (prefsManager.isShiftActiveFor(employee.name)) {
-                                            currentScreen = "ohrannik_cabinet"
-                                        } else {
-                                            currentScreen = "shift_control"
-                                        }
+                                        // Всегда переходим в shift_control для обычных сотрудников
+                                        currentScreen = "shift_control"
                                     }
                                 } else {
                                     android.widget.Toast.makeText(
@@ -236,7 +275,20 @@ fun AppNavigation() {
         
         "ohrannik_cabinet" -> OhrannikCabinetScreen(
             employeeName = selectedEmployeeName,
+            onBack = {
+                // Если смена открыта кем-то другим, возвращаемся в shift_control
+                // Если у этого сотрудника активна смена, возвращаемся в rounds
+                // Если смены нет у никого, возвращаемся в shift_control
+                if (prefsManager.isShiftActiveByOther(selectedEmployeeName)) {
+                    currentScreen = "shift_control"
+                } else if (prefsManager.isShiftActiveFor(selectedEmployeeName)) {
+                    currentScreen = "rounds"
+                } else {
+                    currentScreen = "shift_control"
+                }
+            },
             onLogout = {
+                selectedEmployeeName = ""
                 currentScreen = "privet"
             },
             onNavigateToReports = {
@@ -258,6 +310,7 @@ fun AppNavigation() {
         
         "shift_control" -> OhrannikShiftControlScreen(
             employeeName = selectedEmployeeName,
+            isAnyShiftActive = prefsManager.isAnyShiftActive(),
             selectedEmployeeName = selectedEmployeeName,
             onStartShiftSuccess = {
                 prefsManager.startNewShift(selectedEmployeeName, prefsManager.isStrictSequenceEnabled())

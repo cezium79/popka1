@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.collectLatest
 @Composable
 fun OhrannikCabinetScreen(
     employeeName: String,
+    onBack: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToReports: () -> Unit,
     onNavigateToPhoto: (SharedPrefsManager, String) -> Unit,
@@ -65,6 +66,13 @@ fun OhrannikCabinetScreen(
     val manager = remember(context) { SharedPrefsManager(context) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Отслеживаем, есть ли активная смена (для определения, куда возвращаться)
+    val isAnyShiftActive by remember { derivedStateOf { manager.isAnyShiftActive() } }
+    // Отслеживаем, открыта ли смена кем-то другим
+    val isShiftActiveByOther by remember { derivedStateOf { manager.isShiftActiveByOther(employeeName) } }
+    // Проверяем, активна ли смена У ЭТОГО сотрудника
+    val isShiftActiveForThisEmployee by remember { derivedStateOf { manager.isShiftActiveFor(employeeName) } }
 
     // Используем mutableStateOf для отслеживания изменений
     // Получаем имя следующего чекпоинта из SharedPrefsManager
@@ -308,8 +316,8 @@ fun OhrannikCabinetScreen(
             TopAppBar(
                 title = { Text(employeeName) },
                 navigationIcon = {
-                    IconButton(onClick = onLogout) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Выход")
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {

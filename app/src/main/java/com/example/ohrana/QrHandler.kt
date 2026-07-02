@@ -170,8 +170,10 @@ object QrHandler {
             
             // Если маршрута нет - создаем и сразу проверяем первую точку
             val (isValid, expectedId) = if (activeRoute == null) {
-                // Загружаем список чекпоинтов из настроек маршрута
-                val routeCheckpoints = prefsManager.loadRouteCheckpoints()
+                // Загружаем ID чекпоинтов из настроек активного маршрута
+                val routeId = prefsManager.getActiveRoundRouteId()
+                val route = routeId?.let { prefsManager.getRouteById(it) }
+                val routeCheckpoints = route?.checkpointIds ?: prefsManager.getAllCheckpointIds()
                 startNewRound(DEFAULT_ROUND_KEY, routeCheckpoints)
                 activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId)
             } else {
@@ -448,8 +450,10 @@ object QrHandler {
         
         // Если маршрута нет - создаем и сразу проверяем первую точку
         val (isValid, expectedId) = if (activeRoute == null) {
-            // Загружаем список чекпоинтов из настроек маршрута
-            val routeCheckpoints = prefsManager.loadRouteCheckpoints()
+            // Загружаем ID чекпоинтов из настроек активного маршрута
+            val routeId = prefsManager.getActiveRoundRouteId()
+            val route = routeId?.let { prefsManager.getRouteById(it) }
+            val routeCheckpoints = route?.checkpointIds ?: prefsManager.getAllCheckpointIds()
             startNewRound(DEFAULT_ROUND_KEY, routeCheckpoints)
             activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId)
         } else {

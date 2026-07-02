@@ -24,6 +24,7 @@ import com.example.ohrana.ShiftLogEntry
 @Composable
 fun OhrannikShiftControlScreen(
     employeeName: String,
+    isAnyShiftActive: Boolean,            // Есть ли активная смена у КОГО-ЛИБО
     onStartShiftSuccess: () -> Unit,      // Вызывается при первом СТАРТЕ смены
     onContinueShift: () -> Unit,          // Вызывается при нажатии ПРОДОЛЖИТЬ
     onShiftClosedSuccess: () -> Unit,     // Вызывается при СТОПЕ смены
@@ -36,7 +37,14 @@ fun OhrannikShiftControlScreen(
     val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
     // Инициализируем состояние экрана напрямую из вашей функции проверки флага
-    var isShiftActive by remember { mutableStateOf(prefsManager.isShiftActive()) }
+    // Проверяем, активна ли смена У ЭТОГО сотрудника, а не просто есть ли активная смена
+    var isShiftActive by remember { mutableStateOf(prefsManager.isShiftActiveFor(employeeName)) }
+    // Есть ли активная смена у кого-либо (для блокировки кнопки "Начать смену")
+    val anyShiftActive = isAnyShiftActive
+    // Есть ли активная смена у КОГО-ТО ДРУГОГО (не у этого сотрудника)
+    val isShiftActiveByOther = prefsManager.isShiftActiveByOther(employeeName)
+    // Имя сотрудника, у которого открыта смена
+    val activeEmployeeName = prefsManager.getActiveShiftEmployeeNameByOther(employeeName)
 
     val shiftStartTime = remember { prefsManager.getShiftStartTime() }
 
@@ -305,7 +313,7 @@ fun OhrannikShiftControlScreen(
                     modifier = Modifier.padding(bottom = 48.dp)
                 )
 
-                // 4. КНОПКА СТАРТ (Перенесена сюда, в блок else)
+                // 4. КНОПКА СТАРТ (Перенесена сюда, в блок else) - ЗАБЛОКИРОВАНА, если смена открыта кем-то другим
                 Button(
                     onClick = {
                         // Меняем состояние экрана
@@ -314,10 +322,18 @@ fun OhrannikShiftControlScreen(
                         // Вызываем коллбэк из MainActivity, который запишет старт смены на диск
                         onStartShiftSuccess()
                     },
+                    enabled = !isShiftActiveByOther,  // Кнопка заблокирована, если смена открыта кем-то другим
                     modifier = Modifier.fillMaxWidth().height(64.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isShiftActiveByOther) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                    )
                 ) {
-                    Text("НАЧАТЬ СМЕНУ (СТАРТ)", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isShiftActiveByOther) "СМЕНА УЖЕ ОТКРЫТА: $activeEmployeeName" else "НАЧАТЬ СМЕНУ (СТАРТ)",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isShiftActiveByOther) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onPrimary
+                    )
                 }
                 
                 // Дубликат кнопки "ЖУРНАЛЫ ЗАВЕРШЕННЫХ СМЕН" для закрытой смены

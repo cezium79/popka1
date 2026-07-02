@@ -122,6 +122,37 @@ class SharedPrefsManager(private val context: Context) {
         return isRunning && savedName == employeeName
     }
 
+    // Получить имя сотрудника, у которого сейчас открыта смена
+    fun getActiveShiftEmployeeName(): String {
+        val isRunning = prefs.getBoolean("active_shift_is_running", false)
+        return if (isRunning) {
+            prefs.getString("active_shift_employee", "") ?: ""
+        } else {
+            ""
+        }
+    }
+
+    // Проверить, есть ли активная смена у КОГО-ЛИБО (для блокировки кнопки "Начать смену")
+    fun isAnyShiftActive(): Boolean {
+        return prefs.getBoolean("active_shift_is_running", false)
+    }
+
+    // Проверить, открыта ли смена у КОГО-ТО ДРУГОГО (не у этого сотрудника)
+    fun isShiftActiveByOther(employeeName: String): Boolean {
+        val activeEmployee = getActiveShiftEmployeeName()
+        return activeEmployee.isNotEmpty() && activeEmployee != employeeName
+    }
+
+    // Получить имя сотрудника, у которого открыта смена (если открыта другим)
+    fun getActiveShiftEmployeeNameByOther(employeeName: String): String {
+        val activeEmployee = getActiveShiftEmployeeName()
+        return if (activeEmployee.isNotEmpty() && activeEmployee != employeeName) {
+            activeEmployee
+        } else {
+            ""
+        }
+    }
+
     // Получить время начала текущей смены
     fun getShiftStartTime(): String = prefs.getString("active_shift_start_time", "-") ?: "-"
 
@@ -132,15 +163,6 @@ class SharedPrefsManager(private val context: Context) {
     // Дополнительный метод (пригодится для вывода на экран отчетов)
     fun getShiftEndTime(): String = prefs.getString("active_shift_end_time", "-") ?: "-"
 
-    // Получить имя сотрудника, у которого сейчас открыта смена (чтобы сделать автопереход)
-    fun getActiveShiftEmployeeName(): String {
-        val isRunning = prefs.getBoolean("active_shift_is_running", false)
-        return if (isRunning) {
-            prefs.getString("active_shift_employee", "") ?: ""
-        } else {
-            ""
-        }
-    }
     // Закрыть смену (с фиксацией времени закрытия)
     fun closeCurrentShift() {
         val endTime = dateFormat.format(Date()) // Генерирует время закрытия, например "27.06.2026 10:15:00"
@@ -699,7 +721,7 @@ class SharedPrefsManager(private val context: Context) {
     
     /**
      * Экспортирует все настройки в JSON-строку
-     * Включает: сотрудники, чекпоинты, маршрут, расписание, будильники, настройки контроля
+     * Включает: сотрудники, чекпоинты, маршруты, расписание, будильники, настройки контроля
      */
     fun exportSettings(): String {
         val allData = org.json.JSONObject()
@@ -711,6 +733,7 @@ class SharedPrefsManager(private val context: Context) {
                 val empObj = org.json.JSONObject()
                 empObj.put("name", employee.name)
                 empObj.put("role", employee.role)
+                employee.nfcId?.let { empObj.put("nfcId", it) }
                 employeesArray.put(empObj)
             }
             allData.put("employees", employeesArray)
@@ -734,6 +757,23 @@ class SharedPrefsManager(private val context: Context) {
                 checkpointsArray.put(checkpointObj)
             }
             allData.put("checkpoints", checkpointsArray)
+            
+            // 2.1. Маршруты (список всех маршрутов с их ID и чекпоинтами)
+            val routesArray = org.json.JSONArray()
+            loadRoutes().forEach { route ->
+                val routeObj = org.json.JSONObject()
+                routeObj.put("id", route.id)
+                routeObj.put("name", route.name)
+                
+                val checkpointIdsArray = org.json.JSONArray()
+                route.checkpointIds.forEach { checkpointIdsArray.put(it) }
+                routeObj.put("checkpointIds", checkpointIdsArray)
+                
+                routeObj.put("isActive", route.isActive)
+                
+                routesArray.put(routeObj)
+            }
+            allData.put("routes", routesArray)
             
             // 3. Маршрут (точки маршрута)
             val routeCheckpointsArray = org.json.JSONArray()
@@ -788,9 +828,9 @@ class SharedPrefsManager(private val context: Context) {
             sb.append("# =====================================\n\n")
             
             // 1. Сотрудники
-            sb.append("# Сотрудники (формат: имя;роль)\n")
+            sb.append("# Сотрудники (формат: имя;роль;nfcId)\n")
             loadEmployees().forEach { employee ->
-                sb.append("employee=${employee.name};${employee.role}\n")
+                sb.append("employee=${employee.name};${employee.role};${employee.nfcId ?: ""}\n")
             }
             sb.append("\n")
             
@@ -799,6 +839,14 @@ class SharedPrefsManager(private val context: Context) {
             loadCheckpoints().forEach { checkpoint ->
                 val answers = checkpoint.answers.joinToString("|")
                 sb.append("checkpoint=${checkpoint.id};${checkpoint.name};${checkpoint.action.name.lowercase()};${checkpoint.questionText ?: ""};${answers};${checkpoint.inputTitle ?: ""};${checkpoint.imageUri ?: ""};${checkpoint.nfcId ?: ""}\n")
+            }
+            sb.append("\n")
+            
+            // 2.1. Маршруты (формат: id;имя;чекпоинты;активен)
+            sb.append("# Маршруты (формат: id;имя;чекпоинты;активен)\n")
+            loadRoutes().forEach { route ->
+                val checkpoints = route.checkpointIds.joinToString(",")
+                sb.append("route=${route.id};${route.name};${checkpoints};${route.isActive}\n")
             }
             sb.append("\n")
             
@@ -850,7 +898,8 @@ class SharedPrefsManager(private val context: Context) {
                     val empObj = employeesArray.getJSONObject(i)
                     employees.add(Employee(
                         name = empObj.optString("name", ""),
-                        role = empObj.optString("role", "")
+                        role = empObj.optString("role", ""),
+                        nfcId = empObj.optString("nfcId", null)
                     ))
                 }
                 saveEmployees(employees.toList())
@@ -886,6 +935,32 @@ class SharedPrefsManager(private val context: Context) {
                     ))
                 }
                 saveCheckpoints(checkpoints.toList())
+            }
+            
+            // 2.1. Импорт маршрутов
+            if (data.has("routes")) {
+                val routesArray = data.getJSONArray("routes")
+                val routes = mutableListOf<Route>()
+                for (i in 0 until routesArray.length()) {
+                    val routeObj = routesArray.getJSONObject(i)
+                    val checkpointIdsArray = routeObj.optJSONArray("checkpointIds")
+                    val checkpointIds = if (checkpointIdsArray != null) {
+                        mutableListOf<String>().apply {
+                            for (j in 0 until checkpointIdsArray.length()) {
+                                add(checkpointIdsArray.optString(j, ""))
+                            }
+                        }.toList()
+                    } else {
+                        emptyList()
+                    }
+                    routes.add(Route(
+                        id = routeObj.optString("id", ""),
+                        name = routeObj.optString("name", "Маршрут ${i + 1}"),
+                        checkpointIds = checkpointIds,
+                        isActive = routeObj.optBoolean("isActive", false)
+                    ))
+                }
+                saveRoutes(routes.toList())
             }
             
             // 3. Импорт маршрута
@@ -939,6 +1014,8 @@ class SharedPrefsManager(private val context: Context) {
      */
     fun importSettingsFromText(text: String): Boolean {
         return try {
+            val employees = mutableListOf<Employee>()
+            
             text.lines().forEach { line ->
                 val trimmed = line.trim()
                 // Пропускаем пустые строки и комментарии
@@ -955,8 +1032,11 @@ class SharedPrefsManager(private val context: Context) {
                     "employee" -> {
                         val empParts = value.split(";")
                         if (empParts.size >= 2) {
-                            val employee = Employee(name = empParts[0], role = empParts[1])
-                            // Временно пропускаем, так как saveEmployees не реализован
+                            employees.add(Employee(
+                                name = empParts[0],
+                                role = empParts[1],
+                                nfcId = if (empParts.size > 2 && empParts[2].isNotEmpty()) empParts[2] else null
+                            ))
                         }
                     }
                     "checkpoint" -> {
@@ -976,11 +1056,30 @@ class SharedPrefsManager(private val context: Context) {
                             addCheckpoint(checkpoint)
                         }
                     }
+                    "route" -> {
+                        val parts2 = value.split(";")
+                        if (parts2.size >= 3) {
+                            val checkpointIds = if (parts2.size > 2 && parts2[2].isNotEmpty()) {
+                                parts2[2].split(",")
+                            } else {
+                                emptyList()
+                            }
+                            val route = Route(
+                                id = parts2[0],
+                                name = if (parts2.size > 1 && parts2[1].isNotEmpty()) parts2[1] else "Маршрут",
+                                checkpointIds = checkpointIds,
+                                isActive = if (parts2.size > 3 && parts2[3].isNotEmpty()) parts2[3].toBoolean() else false
+                            )
+                            val routes = loadRoutes().toMutableList()
+                            routes.add(route)
+                            saveRoutes(routes)
+                        }
+                    }
                     "route_checkpoints" -> {
                         saveRouteCheckpoints(value.split(","))
                     }
                     "route_times" -> {
-                        // Сохраняем вSharedPreferences напрямую
+                        // Сохраняем в SharedPreferences напрямую
                         prefs.edit().putString("route_times", value).apply()
                     }
                     "route_rounds_count" -> {
@@ -1008,6 +1107,12 @@ class SharedPrefsManager(private val context: Context) {
                     }
                 }
             }
+            
+            // Сохраняем сотрудников после парсинга всех строк
+            if (employees.isNotEmpty()) {
+                saveEmployees(employees.toList())
+            }
+            
             true
         } catch (e: Exception) {
             e.printStackTrace()
