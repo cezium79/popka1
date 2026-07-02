@@ -296,8 +296,8 @@ fun AppNavigation() {
                 currentScreen = "spisok_otchetov"
             },
             onNavigateToPhoto = { manager, checkpointId ->
-                selectedCheckpointId = checkpointId
-                currentScreen = "photo_capture"
+                // PHOTO обрабатывается через диалог в OhrannikCabinetScreen
+                // Этот экран больше не используется, но оставляем для совместимости
             },
             onEndRound = {
                 currentScreen = "rounds"
@@ -352,32 +352,8 @@ fun AppNavigation() {
             }
         )
         
-        "photo_capture" -> PhotoCaptureScreen(
-            checkpointId = selectedCheckpointId ?: "",
-            onPhotoTaken = { fileName ->
-                val logText = "Фото прибора: $selectedCheckpointId -> Файл: $fileName"
-                prefsManager.saveScanResult(employeeName = selectedEmployeeName, qrContent = logText)
-                
-                val activeRoundIndex = prefsManager.getActiveRoundIndex()
-                if (activeRoundIndex != -1) {
-                    prefsManager.shiftDatabase.updateLastScanEntry(
-                        roundId = activeRoundIndex,
-                        actionType = "PHOTO",
-                        photoPath = fileName
-                    )
-                }
-            },
-            onCheckpointComplete = {
-                // Увеличиваем индекс при завершении фото (чекпоинт пройден)
-                prefsManager.updateCurrentCheckpointIndex(prefsManager.getCurrentCheckpointIndex() + 1)
-            },
-            onBack = {
-                selectedCheckpointId = null
-                currentScreen = "ohrannik_cabinet"
-            },
-            prefsManager = prefsManager,
-            employeeName = selectedEmployeeName
-        )
+        // photoCapture обрабатывается внутри OhrannikCabinetScreen через диалог showPhotoDialog
+        // Этот экран не нужен, так как фото теперь обрабатывается через диалог в cabinet
         
         "spisok_otchetov" -> SpisokOtchetovScreen(
             onBack = {
