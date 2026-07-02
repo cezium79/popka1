@@ -3,6 +3,16 @@ package com.example.ohrana
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.res.painterResource
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -134,77 +144,97 @@ fun AppNavigation() {
     }
 
     when (currentScreen) {
-        "privet" -> PrivetScreen(
-            onNavigateToOhrannik = {
-                // Читаем имя и состояние флага напрямую из хранилища
-                val activeGuardName = prefsManager.getActiveShiftEmployeeName()
-                val isShiftRunning = prefsManager.isShiftActive() // Используем чистый флаг!
-
-                // Если флаг равен true И имя действительно записано
-                if (isShiftRunning && activeGuardName.isNotEmpty() && activeGuardName != "-") {
-                    selectedEmployeeName = activeGuardName
-                    currentScreen = "shift_control"
-                } else {
-                    // Если смена закрыта — гарантированно очищаем оперативку и открываем список
-                    selectedEmployeeName = ""
-                    currentScreen = "ohrannik"
+        "privet" -> {
+            // Автоматическое NFC-сканирование при загрузке экрана
+            val context = LocalContext.current
+            val activity = context as? ComponentActivity
+            
+            val nfcManager = context.getSystemService(android.content.Context.NFC_SERVICE) as android.nfc.NfcManager
+            val nfcAdapter = nfcManager.defaultAdapter
+            
+            // Рендеринг экрана приветствия
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                // Фон с картинкой
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = androidx.compose.ui.platform.LocalContext.current.resources.getIdentifier("brick_wall", "drawable", androidx.compose.ui.platform.LocalContext.current.packageName)),
+                    contentDescription = "Фон",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                
+                // Текст поверх фона
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(text = "Добро пожаловать!", fontSize = 24.sp, color = androidx.compose.ui.graphics.Color.White, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(text = "Поднесите личную карту к телефону", fontSize = 18.sp, color = androidx.compose.ui.graphics.Color.White)
                 }
-            },
-            onNavigateToAdministrator = { showPasswordDialog = true }
-        )
-
-
-
-
-        "ohrannik" -> OhrannikScreen(
-            employees = employeeList,
-            onSelectEmployee = { employee ->
-                selectedEmployeeName = employee.name
-
-                // УМНЫЙ ПЕРЕХВАТ: Если смена у этого сотрудника уже активна — сразу шлем в камеру
-                if (prefsManager.isShiftActiveFor(employee.name)) {
-                    currentScreen = "ohrannik_cabinet"
-                } else {
-                    // Если смены нет — отправляем на экран открытия смены (Старт/Стоп)
-                    currentScreen = "shift_control"
-                }
-            },
-            onBack = {
-                currentScreen = "privet"
-                //  стираем имя из оперативной памяти приложения если сразу выходим не выбирая фамилии
-                selectedEmployeeName = "" }
-        )
-
-
-
-        "shift_control" -> OhrannikShiftControlScreen(
-            employeeName = selectedEmployeeName,
-            selectedEmployeeName = selectedEmployeeName,
-            onStartShiftSuccess = {
-                prefsManager.startNewShift(selectedEmployeeName, prefsManager.isStrictSequenceEnabled())
-                currentScreen = "rounds"
-            },
-            onContinueShift = {
-                currentScreen = "rounds"
-            },
-            onShiftClosedSuccess = {
-                // ИСПРАВЛЕНО: Убрали дублирующий вызов closeCurrentShift(),
-                // так как кнопка СТОП уже сделала это перед созданием отчета!
-
-                selectedEmployeeName = "" // Просто стираем имя из оперативной памяти
-                previousScreenWasAdmin = false
-                currentScreen = "privet" // Возвращаемся в начало
-            },
-            onBack = {
-                currentScreen = "privet"
-            },
-            onNavigateToCompletedShifts = {
-                currentScreen = "shift_logs"
             }
+            
+            // Активируем reader mode при загрузке экрана
+            LaunchedEffect(nfcAdapter, activity) {
+                if (nfcAdapter != null && activity != null) {
+                    try {
+                        nfcAdapter.enableReaderMode(
+                            activity,
+                            { tag ->
+                                val nfcId = tag.id.joinToString(":") { byte -> String.format("%02X", byte) }
+                                
+                                // Останавливаем сканирование
+                                activity.runOnUiThread {
+                                    nfcAdapter.disableReaderMode(activity)
+                                }
+                                
+                                // Обрабатываем результат
+                                val employee = employeeList.find { it.nfcId == nfcId }
+                                
+                                if (employee != null) {
+                                    val isAdmin = employee.role.contains("администратор", ignoreCase = true) || 
+                                                 employee.role.contains("administrator", ignoreCase = true)
+                                    
+                                    if (isAdmin) {
+                                        currentScreen = "admin"
+                                    } else {
+                                        selectedEmployeeName = employee.name
+                                        if (prefsManager.isShiftActiveFor(employee.name)) {
+                                            currentScreen = "ohrannik_cabinet"
+                                        } else {
+                                            currentScreen = "shift_control"
+                                        }
+                                    }
+                                } else {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "NFC-тег не найден в списке сотрудников",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            android.nfc.NfcAdapter.FLAG_READER_NFC_A or android.nfc.NfcAdapter.FLAG_READER_NFC_B,
+                            null
+                        )
+                    } catch (e: Exception) {
+                        // Error handling
+                    }
+                }
+            }
+        }
+        
+        "admin" -> AdministratorScreen(
+            onNavigateToEmployeeList = { currentScreen = "employee_list" },
+            onNavigateToArchive = {
+                previousScreenWasAdmin = true
+                currentScreen = "spisok_otchetov"
+            },
+            onNavigateToRoutes = { currentScreen = "routes" },
+            onBack = { currentScreen = "privet" }
         )
-
+        
         "ohrannik_cabinet" -> OhrannikCabinetScreen(
-            // ИСПРАВЛЕНО: параметр внутри функции называется employeeName!
             employeeName = selectedEmployeeName,
             onLogout = {
                 currentScreen = "privet"
@@ -225,16 +255,56 @@ fun AppNavigation() {
                 currentScreen = "privet"
             }
         )
-
-        // Экран захвата фото
+        
+        "shift_control" -> OhrannikShiftControlScreen(
+            employeeName = selectedEmployeeName,
+            selectedEmployeeName = selectedEmployeeName,
+            onStartShiftSuccess = {
+                prefsManager.startNewShift(selectedEmployeeName, prefsManager.isStrictSequenceEnabled())
+                currentScreen = "rounds"
+            },
+            onContinueShift = {
+                currentScreen = "rounds"
+            },
+            onShiftClosedSuccess = {
+                selectedEmployeeName = ""
+                currentScreen = "privet"
+            },
+            onBack = {
+                currentScreen = "privet"
+            },
+            onNavigateToCompletedShifts = {
+                currentScreen = "shift_logs"
+            }
+        )
+        
+        "rounds" -> RoundsScreen(
+            onBack = { currentScreen = "shift_control" },
+            onCloseShift = {
+                selectedEmployeeName = ""
+                currentScreen = "privet"
+            },
+            onStartRound = { roundIndex, routeId ->
+                val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                prefsManager.startRound(roundIndex, currentTime, routeId)
+                
+                if (routeId != null) {
+                    val route = prefsManager.getRouteById(routeId)
+                    if (route != null) {
+                        QrHandler.startNewRound("Round_$roundIndex", route.checkpointIds)
+                    }
+                }
+                
+                currentScreen = "ohrannik_cabinet"
+            }
+        )
+        
         "photo_capture" -> PhotoCaptureScreen(
             checkpointId = selectedCheckpointId ?: "",
             onPhotoTaken = { fileName ->
-                // Сохраняем путь к фото в SharedPreferences
                 val logText = "Фото прибора: $selectedCheckpointId -> Файл: $fileName"
                 prefsManager.saveScanResult(employeeName = selectedEmployeeName, qrContent = logText)
                 
-                // Обновляем последнюю запись SCAN на тип PHOTO
                 val activeRoundIndex = prefsManager.getActiveRoundIndex()
                 if (activeRoundIndex != -1) {
                     prefsManager.shiftDatabase.updateLastScanEntry(
@@ -243,116 +313,15 @@ fun AppNavigation() {
                         photoPath = fileName
                     )
                 }
-                
-                // Индекс увеличивается в OhrannikCabinetScreen при закрытии диалога
             },
             onBack = {
-                // При возврате очищаем ID чекпоинта и возвращаемся в cabinet
                 selectedCheckpointId = null
                 currentScreen = "ohrannik_cabinet"
             },
             prefsManager = prefsManager,
             employeeName = selectedEmployeeName
         )
-
-
-
-        // ТО ЧЕГО НЕ ХВАТАЛО: Экран Администратора
-        "admin" -> AdministratorScreen(
-            onNavigateToEmployeeList = { currentScreen = "employee_list" },
-            onNavigateToArchive = {
-                previousScreenWasAdmin = true
-                currentScreen = "spisok_otchetov"
-            },
-            onNavigateToRoutes = { currentScreen = "routes" }, // <-- ДОБАВЛЕНО
-            onBack = { currentScreen = "privet" }
-        )
-
-        // Экран управления маршрутами (Новый блок)
-        "routes" -> MarshrutiScreen(
-            onNavigateToCheckpointEditor = { checkpointId -> 
-                selectedCheckpointId = checkpointId
-                currentScreen = "checkpoint_editor" 
-            },
-            onNavigateToRouteEditor = { currentScreen = "route_editor" },
-            onNavigateToSchedule = { currentScreen = "schedule" },
-            onBack = { currentScreen = "admin" }
-        )
-
-        // Экран расписания обходов
-        "schedule" -> ScheduleScreen(
-            onBack = { currentScreen = "routes" }
-        )
-
-        // Экран обходов за смену
-        "rounds" -> RoundsScreen(
-            onBack = { currentScreen = "shift_control" },
-            onCloseShift = {
-                selectedEmployeeName = ""
-                currentScreen = "privet"
-            },
-            onStartRound = { roundIndex, routeId ->
-                // Сохраняем информацию о текущем обходе
-                val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-                prefsManager.startRound(roundIndex, currentTime, routeId)
-                
-                // Если есть маршрут, загружаем его точки
-                if (routeId != null) {
-                    val route = prefsManager.getRouteById(routeId)
-                    if (route != null) {
-                        // Запускаем новый маршрут с конкретными точками
-                        QrHandler.startNewRound("Round_$roundIndex", route.checkpointIds)
-                    }
-                }
-                
-                currentScreen = "ohrannik_cabinet"
-            }
-        )
-
-        // Экран редактирования маршрутов
-        "route_editor" -> RouteEditorScreen(
-            allCheckpoints = allCheckpoints,
-            onBack = { currentScreen = "routes" },
-            onSave = { /* Обновление списка маршрутов происходит внутри редактора */ }
-        )
-
-        // Экран редактирования чекпоинта
-        "checkpoint_editor" -> CheckpointEditorScreen(
-            checkpointId = selectedCheckpointId ?: "",
-            onBack = { 
-                selectedCheckpointId = null
-                currentScreen = "routes" 
-            },
-            onSave = { /* Обновление списка происходит внутри редактора */ }
-        )
-
-        // Дополнительный экран: Список охранников
-        "employee_list" -> EmployeeListScreen(
-            employees = employeeList,
-            onAddEmployee = { name, position, nfcId ->
-                // Создаем и добавляем нового сотрудника прямо в список
-                val newEmployee = Employee(name = name, role = position, nfcId = nfcId)
-                employeeList.add(newEmployee)
-                // Сохраняем обновленный список в SharedPreferences
-                prefsManager.saveEmployees(employeeList.toList())
-            },
-            onDeleteEmployee = { employee ->
-                // Удаляем сотрудника из списка и обновляем хранилище
-                employeeList.remove(employee)
-                prefsManager.saveEmployees(employeeList.toList())
-            },
-            onEditEmployee = { employee, newName, newPosition, newNfcId ->
-                // Находим редактируемого сотрудника и обновляем его поля
-                val index = employeeList.indexOf(employee)
-                if (index != -1) {
-                    employeeList[index] = employee.copy(name = newName, role = newPosition, nfcId = newNfcId)
-                    prefsManager.saveEmployees(employeeList.toList())
-                }
-            },
-            onBack = { currentScreen = "admin" }
-        )
-
-        // Дополнительный экран: Список отчетов
+        
         "spisok_otchetov" -> SpisokOtchetovScreen(
             onBack = {
                 currentScreen = "privet"
@@ -363,7 +332,56 @@ fun AppNavigation() {
             previousScreenWasAdmin = previousScreenWasAdmin
         )
         
-        // Экран журналов завершенных смен
+        "employee_list" -> EmployeeListScreen(
+            employees = employeeList,
+            onAddEmployee = { name, position, nfcId ->
+                val newEmployee = Employee(name = name, role = position, nfcId = nfcId)
+                employeeList.add(newEmployee)
+                prefsManager.saveEmployees(employeeList.toList())
+            },
+            onDeleteEmployee = { employee ->
+                employeeList.remove(employee)
+                prefsManager.saveEmployees(employeeList.toList())
+            },
+            onEditEmployee = { employee, newName, newPosition, newNfcId ->
+                val index = employeeList.indexOf(employee)
+                if (index != -1) {
+                    employeeList[index] = employee.copy(name = newName, role = newPosition, nfcId = newNfcId)
+                    prefsManager.saveEmployees(employeeList.toList())
+                }
+            },
+            onBack = { currentScreen = "admin" }
+        )
+        
+        "routes" -> MarshrutiScreen(
+            onNavigateToCheckpointEditor = { checkpointId -> 
+                selectedCheckpointId = checkpointId
+                currentScreen = "checkpoint_editor" 
+            },
+            onNavigateToRouteEditor = { currentScreen = "route_editor" },
+            onNavigateToSchedule = { currentScreen = "schedule" },
+            onBack = { currentScreen = "admin" }
+        )
+        
+        "schedule" -> ScheduleScreen(
+            onBack = { currentScreen = "routes" }
+        )
+        
+        "checkpoint_editor" -> CheckpointEditorScreen(
+            checkpointId = selectedCheckpointId ?: "",
+            onBack = { 
+                selectedCheckpointId = null
+                currentScreen = "routes" 
+            },
+            onSave = { /* Обновление списка происходит внутри редактора */ }
+        )
+        
+        "route_editor" -> RouteEditorScreen(
+            allCheckpoints = allCheckpoints,
+            onBack = { currentScreen = "routes" },
+            onSave = { /* Обновление списка маршрутов происходит внутри редактора */ }
+        )
+        
         "shift_logs" -> ShiftLogsListScreen(
             onBack = {
                 currentScreen = "privet"
@@ -375,7 +393,6 @@ fun AppNavigation() {
             }
         )
         
-        // Экран детального просмотра журнала
         "shift_detail" -> ShiftLogDetailScreen(
             onBack = {
                 currentScreen = "shift_logs"
@@ -383,10 +400,7 @@ fun AppNavigation() {
             shiftId = currentShiftId,
             employeeName = selectedEmployeeName
         )
-
-
-
+        
     }
-
 
 }
