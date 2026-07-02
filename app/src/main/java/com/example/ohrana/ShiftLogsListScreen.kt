@@ -133,10 +133,9 @@ fun ShiftLogsListScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 
-                                // Количество нарушений
+                                // Количество нарушений (исправлено - считаем только нарушения текущего обхода)
                                 val violationsCount = rounds.sumOf { round ->
-                                    rounds.filter { it.id == round.id }
-                                        .sumOf { it.sequenceViolations }
+                                    round.sequenceViolations
                                 }
                                 Text(
                                     text = "Нарушений последовательности: $violationsCount",

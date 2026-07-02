@@ -59,6 +59,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 fun PhotoCaptureScreen(
     checkpointId: String,
     onPhotoTaken: (String) -> Unit,
+    onCheckpointComplete: () -> Unit,
     onBack: () -> Unit,
     prefsManager: SharedPrefsManager,
     employeeName: String
@@ -416,9 +417,9 @@ fun PhotoCaptureScreen(
                                 val savedFileName = savePhotoToGallery(imageFile, checkpointId, context)
                                 savedFileName?.let { 
                                     onPhotoTaken(it)
-                                    // Увеличиваем индекс при сохранении фото (чекпоинт пройден)
-                                    prefsManager.updateCurrentCheckpointIndex(prefsManager.getCurrentCheckpointIndex() + 1)
                                 }
+                                // Увеличиваем индекс при сохранении фото (чекпоинт пройден)
+                                onCheckpointComplete()
                                 onBack()
                             },
                             modifier = Modifier.width(140.dp).height(56.dp),

@@ -129,6 +129,7 @@ fun OhrannikCabinetScreen(
     
     // Для съемки фото
     var photoCheckpointId by remember { mutableStateOf("") }
+    var lastScannedCheckpointId by remember { mutableStateOf("") }
     
     // Для подтверждения завершения обхода
     var showEndRoundDialog by remember { mutableStateOf(false) }
@@ -288,6 +289,7 @@ fun OhrannikCabinetScreen(
                         }
                         
                         // PhotoFormat не сохраняется в логи автоматически - только при отправке фото
+                        // Диалог с фото будет обновлен при закрытии экрана
                         photoCheckpointId = checkpoint.id
                     }
                 }

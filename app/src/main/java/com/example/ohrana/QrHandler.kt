@@ -417,12 +417,9 @@ object QrHandler {
         if (!prefsManager.isStrictSequenceEnabled()) {
             saveCheckpointToLog(DEFAULT_ROUND_KEY, checkpointId, name, currentTime, prefsManager)
             
-            // Обновляем индекс следующего чекпоинта (для отображения имени следующего чекпоинта)
-            val routeCheckpoints = prefsManager.loadRouteCheckpoints()
-            val currentCheckpointIndex = prefsManager.getCurrentCheckpointIndex()
-            if (currentCheckpointIndex < routeCheckpoints.size) {
-                prefsManager.updateCurrentCheckpointIndex(currentCheckpointIndex + 1)
-            }
+            // НЕ обновляем индекс при сканировании - обновление будет при подтверждении прохождения
+            // Индекс будет увеличен в OhrannikCabinetScreen при закрытии диалога
+            // или в PhotoCaptureScreen при сохранении фото
             
             // Действия на основе типа чекпоинта
             return when (action) {

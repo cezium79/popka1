@@ -2,7 +2,9 @@ package com.example.ohrana
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -173,90 +175,163 @@ fun ShiftLogDetailScreen(
                                     )
                                 }
                             }
-                        }
-                        
-                        // Логи этого обхода
-                        val roundLogs = sortedLogs.filter { it.roundId == round.id }
-                        if (roundLogs.isNotEmpty()) {
-                            item {
-                                Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // Заголовок таблицы логов
+                            Text(
+                                text = "Логи обхода:",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            // Заголовок таблицы
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
                                 Text(
-                                    text = "Логи обхода:",
+                                    text = "Чекпоинт",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Время",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.width(60.dp)
+                                )
+                                Text(
+                                    text = "Статус",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             
-                            roundLogs.forEach { log ->
-                                item {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(bottom = 8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = log.checkpointName,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
+                            HorizontalDivider(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                thickness = 1.dp
+                            )
+                            
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
+                            // Логи этого обхода
+                            val roundLogs = sortedLogs.filter { it.roundId == round.id }
+                            
+                            if (roundLogs.isNotEmpty()) {
+                                Column {
+                                    roundLogs.forEach { log ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = log.checkpointName,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (log.isSequenceCorrect) FontWeight.Medium else FontWeight.Bold,
+                                                    color = if (!log.isSequenceCorrect) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                            
                                             Text(
                                                 text = log.timestamp.split(" ").getOrNull(1) ?: "-",
                                                 fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            val resultText = when (log.actionType) {
-                                                "CHECKPOINT" -> "✓ Пройден"
-                                                "QUESTION" -> "❓ Ответ: ${log.answer ?: "-"}"
-                                                "INPUT" -> "✏️ Введено: ${log.inputValue ?: "-"}"
-                                                "PHOTO" -> "📷 Фото"
-                                                else -> "❓ Статус: ${if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}"
-                                            }
-                                            Text(
-                                                text = resultText,
-                                                fontSize = 14.sp,
-                                                color = if (!log.isSequenceCorrect) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.width(60.dp)
                                             )
                                             
-                                            // Кнопка просмотра фото, если фото было снято
-                                            if (log.actionType == "PHOTO" && log.photoPath != null) {
-                                                Button(
-                                                    onClick = {
-                                                        selectedPhotoPath = log.photoPath
-                                                        showPhotoDialog = true
-                                                    },
-                                                    modifier = Modifier.padding(start = 8.dp),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                                ) {
-                                                    Text("👁️", fontSize = 12.sp)
+                                            Column(
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                val resultText = when (log.actionType) {
+                                                    "CHECKPOINT" -> "✓ Пройден"
+                                                    "QUESTION" -> "❓ Ответ: ${log.answer ?: "-"}"
+                                                    "INPUT" -> "✏️ Введено: ${log.inputValue ?: "-"}"
+                                                    "PHOTO" -> "📷 Фото"
+                                                    "SCAN" -> "🔍 Сканирование"
+                                                    else -> "❓ Статус: ${if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}"
+                                                }
+                                                Text(
+                                                    text = resultText,
+                                                    fontSize = 12.sp,
+                                                    color = if (!log.isSequenceCorrect) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                
+                                                // Кнопка просмотра фото, если фото было снято
+                                                if (log.actionType == "PHOTO" && log.photoPath != null) {
+                                                    Button(
+                                                        onClick = {
+                                                            selectedPhotoPath = log.photoPath
+                                                            showPhotoDialog = true
+                                                        },
+                                                        modifier = Modifier.padding(top = 4.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                                        )
+                                                    ) {
+                                                        Text("👁️ Фото", fontSize = 11.sp)
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                    
-                                    if (!log.isSequenceCorrect) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = "Нарушение последовательности!",
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.error,
-                                            fontWeight = FontWeight.Bold
+                                        
+                                        // Строки с информацией о нарушении
+                                        if (!log.isSequenceCorrect) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                                horizontalArrangement = Arrangement.Start
+                                            ) {
+                                                Text(
+                                                    text = "⚠️",
+                                                    fontSize = 16.sp,
+                                                    color = MaterialTheme.colorScheme.error,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            
+                                            if (log.sequenceErrorExpected != null) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(start = 24.dp, end = 8.dp, bottom = 4.dp),
+                                                    horizontalArrangement = Arrangement.Start
+                                                ) {
+                                                    Text(
+                                                        text = "Ожидался: ${log.sequenceErrorExpected}",
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Разделитель между записями
+                                        HorizontalDivider(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                            thickness = 0.5.dp
                                         )
                                     }
-                                    
-                                    Spacer(modifier = Modifier.height(8.dp))
                                 }
                             }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
                     
