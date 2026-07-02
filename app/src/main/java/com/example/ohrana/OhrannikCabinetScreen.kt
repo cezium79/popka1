@@ -719,17 +719,7 @@ fun OhrannikCabinetScreen(
                         checkpointScanTrigger = System.currentTimeMillis()
                     }
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        androidx.compose.foundation.Image(
-                            painter = androidx.compose.ui.res.painterResource(id = androidx.compose.ui.platform.LocalContext.current.resources.getIdentifier("ic_photo_camera", "drawable", androidx.compose.ui.platform.LocalContext.current.packageName)),
-                            contentDescription = "Фото",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text("Сохранить фото")
-                    }
+                    Text("📷 Сохранить фото")
                 }
             },
             dismissButton = {
