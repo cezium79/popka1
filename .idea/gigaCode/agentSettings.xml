@@ -21,6 +21,21 @@
         <Execute>
           <option name="pattern" value="wc -l C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/ShiftLogDetailScreen.kt" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$f='C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\SharedPrefsManager.kt'; [IO.File]::ReadAllText($f).Split(&quot;`n&quot;)[1342..1362]&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$f='C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\SharedPrefsManager.kt'; $lines = Get-Content $f; $lines[1342..1362]&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Get-Content 'C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\SharedPrefsManager.kt' | Select-Object -Index 1342..1362&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Get-Content 'C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\SharedPrefsManager.kt' | Select-Object -Skip 1342 -First 20&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="./gradlew assembleDebug" />
+        </Execute>
       </list>
     </option>
   </component>

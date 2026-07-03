@@ -115,7 +115,13 @@ fun AppNavigation() {
     val prefsManager = remember { SharedPrefsManager(context) }
 
     // Загружаем список чекпоинтов
-    val allCheckpoints by remember { mutableStateOf(prefsManager.loadCheckpoints()) }
+    val allCheckpoints = remember { mutableStateListOf<Checkpoint>() }
+    
+    // Обновляем список чекпоинтов при изменении
+    LaunchedEffect(prefsManager.loadCheckpoints()) {
+        allCheckpoints.clear()
+        allCheckpoints.addAll(prefsManager.loadCheckpoints())
+    }
 
     val employeeList = remember {
         val savedList = prefsManager.loadEmployees()

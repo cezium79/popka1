@@ -25,6 +25,7 @@ import java.net.MalformedURLException
 class CloudStorageManager(private val context: Context) {
     
     private val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
+    private val tokenManager = CloudTokenManager(context)
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
     private val jsonFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
     
@@ -33,7 +34,8 @@ class CloudStorageManager(private val context: Context) {
         
         // Yandex Cloud API endpoints
         private const val YANDEX_CLOUD_STORAGE_HOST = "storage.yandexcloud.net"
-        private const val YANDEX_DISK_API_HOST = "https://disk.yandex.ru"
+        private const val YANDEX_DISK_API_HOST = "https://cloud-api.yandex.ru"
+        private const val YANDEX_DISK_API_V1_PATH = "/v1/disk/resources"
         
         // Preference keys
         private const val YANDEX_CLOUD_TOKEN_KEY = "yandex_cloud_oauth_token"
@@ -103,6 +105,20 @@ class CloudStorageManager(private val context: Context) {
      */
     fun getDiskToken(): String? {
         return prefs.getString(YANDEX_DISK_TOKEN_KEY, null)
+    }
+    
+    /**
+     * Получает токен из CloudTokenManager (по умолчанию)
+     */
+    fun getDefaultDiskToken(): String? {
+        return tokenManager.getDefaultToken()?.token
+    }
+    
+    /**
+     * Получает путь из CloudTokenManager (по умолчанию)
+     */
+    fun getDefaultDiskPath(): String? {
+        return tokenManager.getDefaultToken()?.path
     }
     
     /**
@@ -195,7 +211,11 @@ class CloudStorageManager(private val context: Context) {
     fun getUploadLinkForDisk(filePath: String): Result<String> {
         var responseCode = -1
         return try {
-            val token = getDiskToken()
+            var token = getDiskToken()
+            // Если токен не найден в SharedPreferences, используем токен из CloudTokenManager
+            if (token == null) {
+                token = getDefaultDiskToken()
+            }
             if (token == null) {
                 Log.e(TAG, "getUploadLinkForDisk: OAuth token is null")
                 return Result.failure(Exception("OAuth token not found"))
@@ -203,7 +223,7 @@ class CloudStorageManager(private val context: Context) {
             
             Log.i(TAG, "getUploadLinkForDisk: token length=${token.length}, path=$filePath")
             
-            val urlString = "https://disk.yandex.ru/v1/disk/resources/upload?path=$filePath"
+            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$filePath&overwrite=true"
             
             Log.i(TAG, "Getting upload link: $urlString")
             
@@ -227,6 +247,11 @@ class CloudStorageManager(private val context: Context) {
                 val href = json.getString("href")
                 Log.i(TAG, "Upload link obtained: $href")
                 Result.success(href)
+            } else if (responseCode == 409) {
+                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                Log.w(TAG, "getUploadLinkForDisk: File already exists (409), trying with overwrite=true")
+                Log.e(TAG, "Failed to get upload link: $responseCode - $errorMessage")
+                Result.failure(Exception("Файл уже существует: $responseCode"))
             } else {
                 val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
                 Log.e(TAG, "Failed to get upload link: $responseCode - $errorMessage")
@@ -241,14 +266,19 @@ class CloudStorageManager(private val context: Context) {
     }
     
     /**
-     * Загружает файл в Яндекс.Диск
+     * Загружает файл в Яндекс.Диск через получение ссылки для загрузки
+     * Использует GET /upload endpoint для получения ссылки, затем PUT для загрузки
      * @param filePath Путь к локальному файлу
-     * @param remotePath Путь в Яндекс.Диске (например, "shifts/shift_001.json")
+     * @param remotePath Путь в Яндекс.Диске (например, "Ohrana/Reports/shift.json")
      * @return Результат загрузки: успешный URL или сообщение об ошибке
      */
     fun uploadFileToDisk(filePath: String, remotePath: String): Result<String> {
         return try {
-            val token = getDiskToken()
+            var token = getDiskToken()
+            // Если токен не найден в SharedPreferences, используем токен из CloudTokenManager
+            if (token == null) {
+                token = getDefaultDiskToken()
+            }
             if (token == null) {
                 Log.e(TAG, "uploadFileToDisk: OAuth token is null")
                 return Result.failure(Exception("OAuth token not found"))
@@ -264,50 +294,92 @@ class CloudStorageManager(private val context: Context) {
             
             Log.i(TAG, "uploadFileToDisk: File size=${file.length()} bytes")
             
-            // Получаем ссылку для загрузки
-            val linkResult = getUploadLinkForDisk(remotePath)
-            if (!linkResult.isSuccess) {
-                Log.e(TAG, "uploadFileToDisk: Failed to get upload link: ${linkResult.exceptionOrNull()?.message}")
-                return Result.failure(linkResult.exceptionOrNull()!!)
+            // Создаем родительские директории, если они не существуют
+            val parentPath = remotePath.substringBeforeLast("/")
+            if (parentPath != remotePath) {
+                Log.i(TAG, "uploadFileToDisk: Creating parent directories for path: $parentPath")
+                
+                // Получаем список всех директорий в пути
+                val pathParts = parentPath.split("/").filter { it.isNotEmpty() }
+                var currentPath = ""
+                
+                for (part in pathParts) {
+                    currentPath = if (currentPath.isEmpty()) part else "$currentPath/$part"
+                    
+                    // Проверяем, существует ли уже эта директория
+                    if (!checkDirectoryExists(currentPath, token)) {
+                        // Директория не существует, создаем ее через PUT запрос
+                        Log.i(TAG, "uploadFileToDisk: Creating directory: $currentPath")
+                        createSingleDirectory(currentPath, token)
+                    } else {
+                        Log.i(TAG, "uploadFileToDisk: Directory already exists: $currentPath")
+                    }
+                }
             }
             
-            val uploadUrl = linkResult.getOrNull() ?: return Result.failure(Exception("Failed to get upload URL"))
+            // Получаем ссылку для загрузки
+            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$remotePath&overwrite=true"
             
-            Log.i(TAG, "Uploading to Yandex Disk: $uploadUrl")
+            Log.i(TAG, "Getting upload link: $urlString")
             
-            val url = URL(uploadUrl)
+            val url = URL(urlString)
             val connection = url.openConnection() as HttpsURLConnection
             
-            connection.requestMethod = "PUT"
+            connection.requestMethod = "GET"
             connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Content-Type", "application/octet-stream")
-            connection.setRequestProperty("Content-Length", file.length().toString())
-            connection.doOutput = true
+            connection.setRequestProperty("Accept", "application/json")
             connection.connectTimeout = 30000
             connection.readTimeout = 30000
             
-            // Загружаем файл
-            file.inputStream().use { inputStream ->
-                connection.outputStream.use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            }
-            
             val responseCode = connection.responseCode
             
-            if (responseCode == 201 || responseCode == 200) {
-                // Получаем public URL файла
-                val publicUrl = getPublicUrlForDisk(remotePath)
-                if (publicUrl.isSuccess) {
-                    Log.i(TAG, "Upload successful to Yandex Disk")
-                    Result.success(publicUrl.getOrNull() ?: uploadUrl)
+            if (responseCode == 200) {
+                val responseJson = connection.inputStream.bufferedReader().use { it.readText() }
+                Log.i(TAG, "Upload link obtained: $responseJson")
+                val json = JSONObject(responseJson)
+                val href = json.getString("href")
+                Log.i(TAG, "Upload link href: $href")
+                
+                // Загружаем файл по полученной ссылке
+                val uploadUrl = URL(href)
+                val uploadConnection = uploadUrl.openConnection() as HttpsURLConnection
+                
+                uploadConnection.requestMethod = "PUT"
+                uploadConnection.setRequestProperty("Content-Type", "application/pdf")
+                uploadConnection.setRequestProperty("Content-Length", file.length().toString())
+                uploadConnection.doOutput = true
+                uploadConnection.connectTimeout = 30000
+                uploadConnection.readTimeout = 30000
+                
+                // Загружаем файл
+                file.inputStream().use { inputStream ->
+                    uploadConnection.outputStream.use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                
+                val uploadResponseCode = uploadConnection.responseCode
+                
+                Log.i(TAG, "File upload responseCode=$uploadResponseCode")
+                
+                if (uploadResponseCode == 201 || uploadResponseCode == 200) {
+                    // Получаем public URL файла
+                    val publicUrl = getPublicUrlForDisk(remotePath)
+                    if (publicUrl.isSuccess) {
+                        Log.i(TAG, "Upload successful to Yandex Disk")
+                        Result.success(publicUrl.getOrNull() ?: href)
+                    } else {
+                        Result.success(href)
+                    }
                 } else {
-                    Result.success(uploadUrl)
+                    val errorMessage = uploadConnection.errorStream?.bufferedReader()?.use { it.readText() }
+                    Log.e(TAG, "File upload failed with code $uploadResponseCode: $errorMessage")
+                    Result.failure(Exception("Ошибка загрузки файла: $uploadResponseCode $errorMessage"))
                 }
             } else {
                 val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.e(TAG, "Upload failed with code $responseCode: $errorMessage")
-                Result.failure(Exception("Upload failed: $responseCode"))
+                Log.e(TAG, "Failed to get upload link: $responseCode - $errorMessage")
+                Result.failure(Exception("Ошибка получения ссылки для загрузки: $responseCode"))
             }
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Неизвестная ошибка"
@@ -318,15 +390,87 @@ class CloudStorageManager(private val context: Context) {
     }
     
     /**
+     * Проверяет существование директории в Яндекс.Диске
+     * @param path Путь к директории
+     * @param token OAuth token
+     * @return true если существует, false если нет
+     */
+    private fun checkDirectoryExists(path: String, token: String): Boolean {
+        return try {
+            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}?path=$path"
+            
+            val url = URL(urlString)
+            val connection = url.openConnection() as HttpsURLConnection
+            
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Authorization", "OAuth $token")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+            
+            val responseCode = connection.responseCode
+            
+            responseCode == 200
+        } catch (e: Exception) {
+            Log.w(TAG, "checkDirectoryExists: Error checking $path - ${e.message}")
+            false
+        }
+    }
+    
+    /**
+     * Создает одну директорию в Яндекс.Диске
+     * @param path Путь к директории
+     * @param token OAuth token
+     */
+    private fun createSingleDirectory(path: String, token: String) {
+        try {
+            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}?path=$path&type=dir"
+            
+            val url = URL(urlString)
+            val connection = url.openConnection() as HttpsURLConnection
+            
+            connection.requestMethod = "PUT"
+            connection.setRequestProperty("Authorization", "OAuth $token")
+            connection.setRequestProperty("Content-Type", "application/octet-stream")
+            connection.setRequestProperty("Content-Length", "0")
+            connection.doOutput = true
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+            
+            // Отправляем пустой запрос для создания директории
+            connection.outputStream.use {}
+            
+            val responseCode = connection.responseCode
+            
+            // 201 - создано, 200 - уже существует, 409 - конфликт (уже существует)
+            if (responseCode != 201 && responseCode != 200 && responseCode != 409) {
+                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                Log.w(TAG, "createSingleDirectory: Failed to create $path - $responseCode: $errorMessage")
+            } else {
+                Log.i(TAG, "createSingleDirectory: Created or exists: $path (code: $responseCode)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "createSingleDirectory: Error creating $path - ${e.message}")
+        }
+    }
+    
+    /**
      * Получает публичный URL файла в Яндекс.Диске
      * @param filePath Путь к файлу в диске
      * @return Публичный URL или null в случае ошибки
      */
     fun getPublicUrlForDisk(filePath: String): Result<String> {
         return try {
-            val token = getDiskToken() ?: return Result.failure(Exception("OAuth token not found"))
+            var token = getDiskToken()
+            // Если токен не найден в SharedPreferences, используем токен из CloudTokenManager
+            if (token == null) {
+                token = getDefaultDiskToken()
+            }
+            if (token == null) {
+                return Result.failure(Exception("OAuth token not found"))
+            }
             
-            val urlString = "https://disk.yandex.ru/v1/disk/resources?path=$filePath&fields=public_url"
+            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}?path=$filePath&fields=public_url"
             
             val url = URL(urlString)
             val connection = url.openConnection() as HttpsURLConnection
@@ -730,16 +874,106 @@ class CloudStorageManager(private val context: Context) {
         }
         
         if (uploadToDisk && jsonPath != null) {
-            val diskPath = "${getDiskPath()?.removeSuffix("/") ?: "Ohrana"}/shift_${shiftId}_report.json"
+            val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+            val diskPath = "$defaultDiskPath/shift_${shiftId}_report.json"
             jsonDiskResult = uploadFileToDisk(jsonPath, diskPath)
         }
         
         if (uploadToDisk && htmlPath != null) {
-            val diskPath = "${getDiskPath()?.removeSuffix("/") ?: "Ohrana"}/shift_${shiftId}_report.html"
+            val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+            val diskPath = "$defaultDiskPath/shift_${shiftId}_report.html"
             htmlDiskResult = uploadFileToDisk(htmlPath, diskPath)
         }
         
         return ExportResult(jsonPath, htmlPath, jsonUploadResult, htmlUploadResult, jsonDiskResult, htmlDiskResult)
+    }
+    
+    /**
+     * Экспортирует отчет в PDF и загружает в Яндекс.Диск
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @param uploadToDisk Флаг, нужно ли загружать в Яндекс.Диск
+     * @param context Контекст Android
+     * @return Путь к PDF файлу, результат загрузки в Диск
+     */
+    fun exportShiftReportToPdfAndDisk(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager,
+        uploadToDisk: Boolean = false,
+        context: Context
+    ): PdfExportResult {
+        // Сначала экспортируем в PDF (генерирует файл и возвращает путь)
+        val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
+        if (shift == null) {
+            Log.e(TAG, "exportShiftReportToPdfAndDisk: Shift not found: $shiftId")
+            return PdfExportResult(null, Result.failure(Exception("Смена не найдена")))
+        }
+        
+        val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
+        val logs = shiftDatabase.loadLogsByShift(shiftId)
+        
+        // Создаем временный файл для PDF
+        val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        val ohranaDir = java.io.File(downloadDir, "Ohrana")
+        val pdfDir = java.io.File(ohranaDir, "PDF")
+        
+        if (!pdfDir.exists()) {
+            pdfDir.mkdirs()
+        }
+        
+        val fileName = "shift_report_${shift.id}_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())}.pdf"
+        val pdfPath = java.io.File(pdfDir, fileName).absolutePath
+        
+        // Сохраняем PDF в файл
+        var pdfGenerated = false
+        var pdfErrorMessage: String? = null
+        try {
+            // Экспортируем в PDF с указанным путем сохранения (без предпросмотра)
+            val generatedPath = exportToPdf(shift, rounds, logs, context, pdfPath, showPreview = false)
+            if (generatedPath != null) {
+                pdfGenerated = true
+            } else {
+                Log.e(TAG, "exportShiftReportToPdfAndDisk: Failed to generate PDF")
+                pdfErrorMessage = "Ошибка генерации PDF"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "exportShiftReportToPdfAndDisk: Error generating PDF: ${e.message}", e)
+            pdfErrorMessage = "Ошибка генерации PDF: ${e.message}"
+        }
+        
+        var diskResult: Result<String?> = Result.success(null)
+        
+        if (uploadToDisk && pdfGenerated) {
+            val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+            val diskPath = "$defaultDiskPath/PDF/$fileName"
+            diskResult = uploadFileToDisk(pdfPath, diskPath)
+        }
+        
+        // Возвращаем результат и сообщение об ошибке (если есть)
+        if (!pdfGenerated && pdfErrorMessage != null) {
+            return PdfExportResult(null, Result.failure(Exception(pdfErrorMessage)))
+        }
+        
+        return PdfExportResult(pdfPath, diskResult)
+    }
+    
+    /**
+     * Результат экспорта отчета в PDF и загрузки в Диск
+     */
+    data class PdfExportResult(
+        val pdfPath: String?,
+        val diskResult: Result<String?>
+    ) {
+        fun isSuccess(): Boolean {
+            return pdfPath != null && diskResult.isSuccess
+        }
+        
+        fun getDiskErrorMessage(): String {
+            if (!diskResult.isSuccess) {
+                return "Ошибка загрузки PDF в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
+            }
+            return ""
+        }
     }
     
     /**

@@ -189,7 +189,7 @@ fun ShiftLogsListScreen(
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
-                                // Кнопка загрузки в Яндекс.Диск
+                                // Кнопка загрузки в Яндекс.Диск (PDF)
                                 val scope = rememberCoroutineScope()
                                 OutlinedButton(
                                     onClick = {
@@ -208,26 +208,26 @@ fun ShiftLogsListScreen(
                                                     Log.w(TAG, "Disk token not found for shift ${shift.id}, redirecting to cloud settings")
                                                 }
                                             } else {
-                                                // Прямая загрузка в Яндекс.Диск
+                                                // Прямая загрузка PDF отчета в Яндекс.Диск
                                                 val reportResult = withContext(Dispatchers.IO) {
-                                                    cloudManager.exportShiftReportWithCloud(shift.id, shiftDatabase, uploadToDisk = true)
+                                                    cloudManager.exportShiftReportToPdfAndDisk(shift.id, shiftDatabase, uploadToDisk = true, context)
                                                 }
                                                 
                                                 withContext(Dispatchers.Main) {
-                                                    if (reportResult.isDiskSuccess()) {
+                                                    if (reportResult.isSuccess()) {
                                                         Toast.makeText(
                                                             context,
-                                                            "Отчет загружен в Яндекс.Диск!",
+                                                            "PDF отчет загружен в Яндекс.Диск!",
                                                             Toast.LENGTH_LONG
                                                         ).show()
-                                                        Log.i(TAG, "Report uploaded to disk for shift ${shift.id}")
+                                                        Log.i(TAG, "PDF report uploaded to disk for shift ${shift.id}")
                                                     } else {
                                                         Toast.makeText(
                                                             context,
-                                                            "Ошибка при загрузке в Диск: ${reportResult.getDiskErrorMessage()}",
+                                                            "Ошибка при загрузке PDF в Диск: ${reportResult.getDiskErrorMessage()}",
                                                             Toast.LENGTH_LONG
                                                         ).show()
-                                                        Log.e(TAG, "Failed to upload report to disk for shift ${shift.id}: ${reportResult.getDiskErrorMessage()}")
+                                                        Log.e(TAG, "Failed to upload PDF report to disk for shift ${shift.id}: ${reportResult.getDiskErrorMessage()}")
                                                     }
                                                 }
                                             }
@@ -238,7 +238,7 @@ fun ShiftLogsListScreen(
                                         contentColor = MaterialTheme.colorScheme.secondary
                                     )
                                 ) {
-                                    Text("📤 Загрузить в Яндекс.Диск", fontSize = 12.sp)
+                                    Text("📤 Загрузить PDF в Яндекс.Диск", fontSize = 12.sp)
                                 }
                                 
                                 Spacer(modifier = Modifier.height(8.dp))

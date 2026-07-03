@@ -745,6 +745,8 @@ class SharedPrefsManager(private val context: Context) {
                 alarmObj.put("time", alarm.time)
                 alarmObj.put("enabled", alarm.isEnabled)
                 alarmObj.put("routeId", alarm.routeId ?: "")
+                // Добавляем имя маршрута для удобства
+                alarmObj.put("routeName", if (alarm.routeId != null) getRouteById(alarm.routeId)?.name ?: "" else "")
                 alarmsArray.put(alarmObj)
             }
             allData.put("alarms", alarmsArray)
@@ -763,6 +765,7 @@ class SharedPrefsManager(private val context: Context) {
     /**
      * Экспортирует все настройки в текстовом формате (человекочитаемый)
      * Формат: ключ=значение, каждая настройка на новой строке
+     * Включает: сотрудники, чекпоинты, маршруты, расписание, будильники, настройки контроля
      */
     fun exportSettingsAsText(): String {
         val sb = StringBuilder()
@@ -807,12 +810,18 @@ class SharedPrefsManager(private val context: Context) {
             // 5. Настройки маршрута
             sb.append("# Настройки маршрута\n")
             sb.append("route_rounds_count=${loadRouteRoundsCount()}\n")
-            sb.append("route_tolerance=${loadRouteTolerance()}\n\n")
+            sb.append("route_tolerance=${loadRouteTolerance()}\n")
+            sb.append("max_round_duration=${loadMaxRoundDuration()}\n\n")
             
-            // 6. Будильники (формат: id;время;включено;маршрут)
-            sb.append("# Будильники (формат: id;время;включено;маршрут)\n")
+            // 6. Будильники (формат: id;время;включено;id_маршрута;имя_маршрута)
+            sb.append("# Будильники (формат: id;время;включено;id_маршрута;имя_маршрута)\n")
             loadRouteAlarms().forEach { alarm ->
-                sb.append("alarm=${alarm.id};${alarm.time};${alarm.isEnabled};${alarm.routeId ?: ""}\n")
+                val routeName = if (alarm.routeId != null) {
+                    getRouteById(alarm.routeId)?.name ?: ""
+                } else {
+                    ""
+                }
+                sb.append("alarm=${alarm.id};${alarm.time};${alarm.isEnabled};${alarm.routeId ?: ""};${routeName}\n")
             }
             sb.append("\n")
             
@@ -1033,6 +1042,9 @@ class SharedPrefsManager(private val context: Context) {
                     }
                     "route_tolerance" -> {
                         prefs.edit().putString("route_tolerance", value).apply()
+                    }
+                    "max_round_duration" -> {
+                        saveMaxRoundDuration(value)
                     }
                     "alarm" -> {
                         val parts2 = value.split(";")

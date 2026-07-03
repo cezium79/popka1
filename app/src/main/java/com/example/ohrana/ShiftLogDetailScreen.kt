@@ -577,7 +577,10 @@ fun ShiftLogDetailScreen(
                 Column {
                     Button(onClick = { 
                         showPdfExportDialog = false
-                        exportToPdf(shift!!, rounds, sortedLogs, context)
+                        val pdfPath = exportToPdf(shift!!, rounds, sortedLogs, context, null)
+                        if (pdfPath != null) {
+                            android.widget.Toast.makeText(context, "PDF сохранен: $pdfPath", android.widget.Toast.LENGTH_LONG).show()
+                        }
                     }) {
                         Text("Экспорт в PDF")
                     }
@@ -634,12 +637,8 @@ fun ShiftLogDetailScreen(
 }
 
 // Функция экспорта отчета в PDF
-fun exportToPdf(
-    shift: ShiftRecord,
-    rounds: List<RoundRecord>,
-    logs: List<ShiftLogEntry>,
-    context: android.content.Context
-) {
+// Возвращает путь к сохраненному файлу или null в случае ошибки
+fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftLogEntry>, context: android.content.Context, outputPath: String? = null, showPreview: Boolean = true): String? {
     val shiftNumber = extractShiftSequenceNumber(shift.id)
     val fileName = "shift_report_${shift.id}_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())}.pdf"
     
@@ -963,6 +962,19 @@ fun exportToPdf(
         pdfDocument.finishPage(page)
         
         // Сохраняем PDF
+        var pdfPath: String? = outputPath
+        
+        // Если путь не задан, создаем его по умолчанию
+        if (pdfPath == null) {
+            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val ohranaDir = File(downloadDir, "Ohrana")
+            val pdfDir = File(ohranaDir, "PDF")
+            if (!pdfDir.exists()) {
+                pdfDir.mkdirs()
+            }
+            pdfPath = File(pdfDir, fileName).absolutePath
+        }
+        
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             // Для Android 10+ используем MediaStore API
             val contentValues = ContentValues().apply {
@@ -979,30 +991,30 @@ fun exportToPdf(
                 }
                 pdfDocument.close()
                 
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/pdf")
-                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                }
-                    
-                if (intent.resolveActivity(context.packageManager) != null) {
-                    context.startActivity(intent)
-                    android.widget.Toast.makeText(context, "PDF сохранен в:\nDownload/Ohrana/PDF/$fileName", android.widget.Toast.LENGTH_LONG).show()
-                } else {
-                    android.widget.Toast.makeText(context, "PDF сохранен:\nDownload/Ohrana/PDF/$fileName\nНет приложения для просмотра", android.widget.Toast.LENGTH_LONG).show()
+                // Открываем файл только если showPreview=true
+                if (showPreview) {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/pdf")
+                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    }
+                        
+                    if (intent.resolveActivity(context.packageManager) != null) {
+                        context.startActivity(intent)
+                    }
+                    // Toast будет показан в вызывающем коде
                 }
             } else {
                 throw Exception("Не удалось создать URI для файла")
             }
         } else {
             // Для Android 9 и ниже используем Environment.getExternalStoragePublicDirectory
-            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val ohranaDir = File(downloadDir, "Ohrana")
-            val pdfDir = File(ohranaDir, "PDF")
-            if (!pdfDir.exists()) {
-                pdfDir.mkdirs()
-            }
+            val outputFile = File(pdfPath)
             
-            val outputFile = File(pdfDir, fileName)
+            // Убедимся, что директория существует
+            val parentDir = outputFile.parentFile
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs()
+            }
             
             // Записываем PDF в файл
             FileOutputStream(outputFile).use { fos ->
@@ -1010,27 +1022,30 @@ fun exportToPdf(
             }
             pdfDocument.close()
             
-            // Открываем файл через FileProvider
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                outputFile
-            )
-            
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/pdf")
-                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-            
-            if (intent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(intent)
-                android.widget.Toast.makeText(context, "PDF сохранен:\n${outputFile.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
-            } else {
-                android.widget.Toast.makeText(context, "PDF сохранен:\n${outputFile.absolutePath}\nНет приложения для просмотра", android.widget.Toast.LENGTH_LONG).show()
+            // Открываем файл только если showPreview=true
+            if (showPreview) {
+                // Открываем файл через FileProvider
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    outputFile
+                )
+                
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/pdf")
+                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                }
+                
+                if (intent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(intent)
+                }
+                // Toast будет показан в вызывающем коде
             }
         }
+        
+        return pdfPath
     } catch (e: Exception) {
         e.printStackTrace()
-        android.widget.Toast.makeText(context, "Ошибка при сохранении PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        return null
     }
 }

@@ -3,10 +3,17 @@ package com.example.ohrana
 import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import android.widget.Toast
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,6 +35,21 @@ fun CloudSettingsScreen(
 ) {
     val context = LocalContext.current
     val cloudManager = remember { CloudStorageManager(context) }
+    val tokenManager = remember { CloudTokenManager(context) }
+    
+    // Инициализируем токены при первом запуске
+    LaunchedEffect(Unit) {
+        tokenManager.initializeDefaultTokens()
+    }
+    
+    // Список доступных токенов
+    val tokens by remember { mutableStateOf(tokenManager.loadTokens()) }
+    
+    // Выбранный токен
+    var selectedTokenName by remember {
+        val defaultName = tokenManager.getDefaultTokenName()
+        mutableStateOf(defaultName ?: if (tokens.isNotEmpty()) tokens[0].name else "")
+    }
     
     // Состояние полей ввода для Yandex Cloud
     var oauthToken by remember { mutableStateOf("") }
@@ -44,6 +68,234 @@ fun CloudSettingsScreen(
     
     // Состояние цвета статуса
     var saveStatusColor by remember { mutableStateOf<Color>(Color.Unspecified) }
+    
+    // Состояние диалога выбора токена
+    var showTokenDialog by remember { mutableStateOf(false) }
+    
+    // Состояние диалога добавления токена
+    var showAddTokenDialog by remember { mutableStateOf(false) }
+    
+    // Временные поля для добавления нового токена
+    var newTokenName by remember { mutableStateOf("") }
+    var newTokenValue by remember { mutableStateOf("") }
+    var newTokenPath by remember { mutableStateOf("") }
+    
+    // Обновляем поля при изменении выбранного токена
+    LaunchedEffect(selectedTokenName) {
+        val selectedToken = tokens.find { it.name == selectedTokenName }
+        if (selectedToken != null) {
+            diskToken = selectedToken.token
+            diskPath = selectedToken.path
+        }
+    }
+    
+    // Загружаем текущие значения при инициализации
+    LaunchedEffect(cloudManager) {
+        oauthToken = cloudManager.getOAuthToken() ?: ""
+        bucketName = cloudManager.getBucketName() ?: ""
+        bucketPath = cloudManager.getBucketPath() ?: ""
+    }
+    
+    // Диалог выбора токена
+    if (showTokenDialog) {
+        Dialog(
+            onDismissRequest = { showTokenDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                modifier = Modifier.padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Выберите токен",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    LazyColumn {
+                        items(tokens) { token ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp)
+                                    .clickable {
+                                        selectedTokenName = token.name
+                                        tokenManager.setDefaultToken(token.name)
+                                        showTokenDialog = false
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(if (token.name == selectedTokenName) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = token.name.first().toString(),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = token.name,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = token.path.ifEmpty { "Без пути" },
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedButton(
+                        onClick = {
+                            showTokenDialog = false
+                            showAddTokenDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Добавить новый токен")
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    TextButton(
+                        onClick = { showTokenDialog = false },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Отмена")
+                    }
+                }
+            }
+        }
+    }
+    
+    // Диалог добавления токена
+    if (showAddTokenDialog) {
+        Dialog(
+            onDismissRequest = { showAddTokenDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                modifier = Modifier.padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Добавить токен",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = newTokenName,
+                        onValueChange = { newTokenName = it },
+                        label = { Text("Имя токена") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    OutlinedTextField(
+                        value = newTokenValue,
+                        onValueChange = { newTokenValue = it },
+                        label = { Text("OAuth Token") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    OutlinedTextField(
+                        value = newTokenPath,
+                        onValueChange = { newTokenPath = it },
+                        label = { Text("Путь (опционально)") },
+                        placeholder = { Text("напр., Ohrana/Reports") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = { showAddTokenDialog = false }
+                        ) {
+                            Text("Отмена")
+                        }
+                        
+                        Spacer(modifier = Modifier.width(8.dp))
+                        
+                        Button(
+                            onClick = {
+                                if (newTokenName.isNotEmpty() && newTokenValue.isNotEmpty()) {
+                                    tokenManager.addToken(
+                                        CloudTokenManager.TokenInfo(
+                                            name = newTokenName,
+                                            token = newTokenValue,
+                                            path = newTokenPath
+                                        )
+                                    )
+                                    tokenManager.setDefaultToken(newTokenName)
+                                    selectedTokenName = newTokenName
+                                    diskToken = newTokenValue
+                                    diskPath = newTokenPath
+                                    
+                                    newTokenName = ""
+                                    newTokenValue = ""
+                                    newTokenPath = ""
+                                    showAddTokenDialog = false
+                                    
+                                    Toast.makeText(
+                                        context,
+                                        "Токен добавлен и установлен по умолчанию!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Заполните все обязательные поля!",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        ) {
+                            Text("Сохранить")
+                        }
+                    }
+                }
+            }
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -78,6 +330,33 @@ fun CloudSettingsScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
+                
+                // Выпадающий список выбора токена
+                Text(
+                    text = "Выберите токен:",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                OutlinedButton(
+                    onClick = { showTokenDialog = true },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                ) {
+                    Text(selectedTokenName)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                }
+                
+                // Кнопка добавления нового токена
+                TextButton(
+                    onClick = { showAddTokenDialog = true },
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Добавить новый токен")
+                }
                 
                 Text(
                     text = "Настройте Yandex Cloud Storage для загрузки отчетов",
@@ -209,15 +488,6 @@ fun CloudSettingsScreen(
                         )
                     }
                 }
-            }
-            
-            // Загружаем текущие значения при инициализации
-            LaunchedEffect(cloudManager) {
-                oauthToken = cloudManager.getOAuthToken() ?: ""
-                bucketName = cloudManager.getBucketName() ?: ""
-                bucketPath = cloudManager.getBucketPath() ?: ""
-                diskToken = cloudManager.getDiskToken() ?: ""
-                diskPath = cloudManager.getDiskPath() ?: ""
             }
         }
     }
