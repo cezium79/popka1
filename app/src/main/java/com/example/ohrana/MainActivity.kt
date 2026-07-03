@@ -34,6 +34,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.example.ohrana.ShiftDatabaseManager
 import com.example.ohrana.ShiftLogDetailScreen
 import com.example.ohrana.ShiftLogEntry
+import com.example.ohrana.CloudStorageManager
+import com.example.ohrana.CloudSettingsScreen
 
 
 class MainActivity : ComponentActivity() {
@@ -265,11 +267,9 @@ fun AppNavigation() {
         
         "admin" -> AdministratorScreen(
             onNavigateToEmployeeList = { currentScreen = "employee_list" },
-            onNavigateToArchive = {
-                previousScreenWasAdmin = true
-                currentScreen = "spisok_otchetov"
-            },
             onNavigateToRoutes = { currentScreen = "routes" },
+            onNavigateToLogs = { currentScreen = "shift_logs" },
+            onNavigateToCloudSettings = { currentScreen = "cloud_settings" },
             onBack = { currentScreen = "privet" }
         )
         
@@ -290,10 +290,6 @@ fun AppNavigation() {
             onLogout = {
                 selectedEmployeeName = ""
                 currentScreen = "privet"
-            },
-            onNavigateToReports = {
-                previousScreenWasAdmin = false
-                currentScreen = "spisok_otchetov"
             },
             onNavigateToPhoto = { manager, checkpointId ->
                 // Переход на экран фото
@@ -385,15 +381,10 @@ fun AppNavigation() {
             employeeName = selectedEmployeeName
         )
         
-        "spisok_otchetov" -> SpisokOtchetovScreen(
-            onBack = {
-                currentScreen = "privet"
-            },
-            onBackToAdmin = {
-                currentScreen = "admin"
-            },
-            previousScreenWasAdmin = previousScreenWasAdmin
-        )
+        "spisok_otchetov" -> {
+            // Архив отчетов удален
+            currentScreen = "privet"
+        }
         
         "employee_list" -> EmployeeListScreen(
             employees = employeeList,
@@ -447,12 +438,15 @@ fun AppNavigation() {
         
         "shift_logs" -> ShiftLogsListScreen(
             onBack = {
-                currentScreen = "privet"
+                currentScreen = "admin"
             },
             selectedEmployeeName = selectedEmployeeName,
             onNavigateToDetails = { shiftId ->
                 currentScreen = "shift_detail"
                 currentShiftId = shiftId
+            },
+            onNavigateToCloudSettings = {
+                currentScreen = "cloud_settings"
             }
         )
         
@@ -462,6 +456,10 @@ fun AppNavigation() {
             },
             shiftId = currentShiftId,
             employeeName = selectedEmployeeName
+        )
+        
+        "cloud_settings" -> CloudSettingsScreen(
+            onBack = { currentScreen = "admin" }
         )
         
     }

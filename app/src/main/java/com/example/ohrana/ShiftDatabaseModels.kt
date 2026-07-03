@@ -118,20 +118,6 @@ data class SimpleLogEntry(
     val result: String
 )
 
-/**
- * Формат отчета для владельца объекта (краткий)
- */
-data class OwnerReport(
-    val date: String,
-    val employeeName: String,
-    val startTime: String,
-    val endTime: String?,
-    val checkpointsTotal: Int,
-    val checkpointsPassed: Int,
-    val violationsCount: Int,
-    val completionPercentage: Double
-)
-
 // ============================================
 // СТАТУСЫ И ТИПЫ
 // ============================================
@@ -142,8 +128,4 @@ enum class ScanType {
 
 enum class ActionType {
     CHECKPOINT, QUESTION, INPUT, PHOTO
-}
-
-enum class ReportType {
-    ADMIN, GUARD, OWNER
 }

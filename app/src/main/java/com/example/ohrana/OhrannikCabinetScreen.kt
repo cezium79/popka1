@@ -57,7 +57,6 @@ fun OhrannikCabinetScreen(
     employeeName: String,
     onBack: () -> Unit,
     onLogout: () -> Unit,
-    onNavigateToReports: () -> Unit,
     onNavigateToPhoto: (SharedPrefsManager, String) -> Unit,
     onEndRound: () -> Unit,
     onCloseShift: () -> Unit
@@ -437,9 +436,6 @@ fun OhrannikCabinetScreen(
                                                                     is QrResult.PhotoFormat -> {
                                                                         // Запоминаем ID чекпоинта и переходим на экран фото
                                                                         photoCheckpointId = qrResult.checkpointId
-                                                                    }
-                                                                    is QrResult.ShiftReportTrigger -> {
-                                                                        onNavigateToReports()
                                                                     }
                                                                     is QrResult.Error -> {
                                                                         showErrorDialog = qrResult.message

@@ -12,7 +12,6 @@ sealed class QrResult {
     data class QuestionFormat(val checkpointId: String, val checkpointName: String, val text: String, val answers: List<String>) : QrResult()
     data class InputFormat(val checkpointId: String, val checkpointName: String, val title: String) : QrResult()
     data class PhotoFormat(val checkpointId: String, val checkpointName: String, val imageUri: String? = null) : QrResult()
-    object ShiftReportTrigger : QrResult()
     data class Error(val message: String) : QrResult()
 }
 
@@ -100,10 +99,6 @@ object QrHandler {
     fun parseQrCode(rawText: String, prefsManager: SharedPrefsManager): QrResult {
 
         val trimmed = rawText.trim()
-
-        if (trimmed.equals("отчет о смене", ignoreCase = true)) {
-            return QrResult.ShiftReportTrigger
-        }
 
         if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
             return QrResult.Error("Игнорируется: это не рабочий QR-код системы")

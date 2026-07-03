@@ -6,6 +6,21 @@
         <Execute>
           <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; .\gradlew.bat assembleDebug 2&gt;&amp;1" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /C:&quot;DIRECTORY_DOWNLOADS&quot; &quot;C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\ShiftLogDetailScreen.kt&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:\Android\Ohrana-c7953c45; .\gradlew.bat assembleDebug" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;Remove-Item -Path 'C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/SpisokOtchetov.kt' -Force&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git show HEAD:app/src/main/java/com/example/ohrana/ShiftLogDetailScreen.kt &gt; app/src/main/java/com/example/ohrana/ShiftLogDetailScreen.kt" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="wc -l C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/ShiftLogDetailScreen.kt" />
+        </Execute>
       </list>
     </option>
   </component>

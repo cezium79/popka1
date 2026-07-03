@@ -56,6 +56,10 @@ dependencies {
     implementation(libs.kotlinx.serialization)
     implementation("com.google.code.gson:gson:2.10.1")
     
+    // Coroutines for background tasks
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
+    
     // CameraX
     val cameraxVersion = "1.4.0"
     implementation("androidx.camera:camera-core:$cameraxVersion")

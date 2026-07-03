@@ -18,35 +18,38 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.regex.Pattern
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import android.os.Environment
+import android.content.Intent
+import android.net.Uri
+import android.util.Log
 
-// Извлекает порядковый номер смены из её ID
-// Формат ID: NSDDMMYY_NNN (например, NS020726_001 -> номер 1)
-private fun extractShiftSequenceNumber(shiftId: String): Int {
-    val pattern = Pattern.compile("NS\\d{6}_(\\d{3})")
-    val matcher = pattern.matcher(shiftId)
-    return if (matcher.find()) {
-        matcher.group(1)?.toInt() ?: 0
-    } else {
-        0
-    }
-}
+private const val TAG = "ShiftLogsListScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShiftLogsListScreen(
     onBack: () -> Unit,
     selectedEmployeeName: String,
-    onNavigateToDetails: (shiftId: String) -> Unit
+    onNavigateToDetails: (shiftId: String) -> Unit,
+    onNavigateToCloudSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
     val shiftDatabase = prefsManager.shiftDatabase
     
-    // Загружаем все завершенные смены для текущего охранника
+    // Загружаем все завершенные смены
     val allShifts = remember { shiftDatabase.loadAllShifts() }
     val completedShifts = remember(allShifts) {
         allShifts.filter { shift ->
-            shift.employeeName == selectedEmployeeName && !shift.isShiftActive && shift.endTime != null
+            // Если selectedEmployeeName пустой - показываем все смены всех сотрудников
+            // Иначе фильтруем по имени сотрудника
+            (selectedEmployeeName.isEmpty() || shift.employeeName == selectedEmployeeName) &&
+            !shift.isShiftActive && shift.endTime != null
         }
     }
     
@@ -104,8 +107,16 @@ fun ShiftLogsListScreen(
                         // Формируем дату смены для заголовка
                         val shiftDate = shift.startTime.split(" ").firstOrNull() ?: "-"
                         
-                        // Извлекаем номер смены из ID (например, NS020726_001 -> номер 1)
-                        val shiftNumber = extractShiftSequenceNumber(shift.id)
+                        // Извлекаем номер смены из ID (формат: NSDDMMYY_NNN)
+                        val shiftNumber = run {
+                            val pattern = Pattern.compile("NS\\d{6}_(\\d{3})")
+                            val matcher = pattern.matcher(shift.id)
+                            if (matcher.find()) {
+                                matcher.group(1)?.toInt() ?: 0
+                            } else {
+                                0
+                            }
+                        }
                         
                         Card(
                             modifier = Modifier
@@ -174,6 +185,73 @@ fun ShiftLogsListScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text("Подробнее")
+                                }
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Кнопка загрузки в Яндекс.Диск
+                                val scope = rememberCoroutineScope()
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val cloudManager = CloudStorageManager(context)
+                                            val diskToken = cloudManager.getDiskToken()
+                                            
+                                            if (diskToken == null || diskToken.isEmpty()) {
+                                                // Token не найден, показываем диалог с предложением настроить Яндекс.Диск
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Настройте Яндекс.Диск в настройках",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                    Log.w(TAG, "Disk token not found for shift ${shift.id}, redirecting to cloud settings")
+                                                }
+                                            } else {
+                                                // Прямая загрузка в Яндекс.Диск
+                                                val reportResult = withContext(Dispatchers.IO) {
+                                                    cloudManager.exportShiftReportWithCloud(shift.id, shiftDatabase, uploadToDisk = true)
+                                                }
+                                                
+                                                withContext(Dispatchers.Main) {
+                                                    if (reportResult.isDiskSuccess()) {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Отчет загружен в Яндекс.Диск!",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                        Log.i(TAG, "Report uploaded to disk for shift ${shift.id}")
+                                                    } else {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Ошибка при загрузке в Диск: ${reportResult.getDiskErrorMessage()}",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                        Log.e(TAG, "Failed to upload report to disk for shift ${shift.id}: ${reportResult.getDiskErrorMessage()}")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.secondary
+                                    )
+                                ) {
+                                    Text("📤 Загрузить в Яндекс.Диск", fontSize = 12.sp)
+                                }
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Кнопка настроек облачных хранилищ
+                                OutlinedButton(
+                                    onClick = onNavigateToCloudSettings,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                ) {
+                                    Text("⚙️ Настройки облачных хранилищ", fontSize = 12.sp)
                                 }
                             }
                         }

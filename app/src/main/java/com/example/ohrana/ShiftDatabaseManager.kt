@@ -564,33 +564,6 @@ class ShiftDatabaseManager(private val context: Context) {
         )
     }
 
-    /**
-     * Генерировать краткий отчет для владельца объекта
-     */
-    fun generateOwnerReport(shiftId: String): OwnerReport? {
-        val shift = loadAllShifts().find { it.id == shiftId } ?: return null
-        val rounds = loadAllRounds().filter { it.shiftId == shiftId }
-        val logs = loadLogsByShift(shiftId)
-        val violations = loadAllViolations().filter { it.roundId in rounds.map { it.id } }
-        
-        val checkpointsTotal = rounds.sumOf { it.checkpointsCount }
-        val checkpointsPassed = logs.size
-        val completionPercentage = if (checkpointsTotal > 0) {
-            (checkpointsPassed.toDouble() / checkpointsTotal * 100).coerceIn(0.0, 100.0)
-        } else 0.0
-        
-        return OwnerReport(
-            date = shift.startTime.split(" ").firstOrNull() ?: "-",
-            employeeName = shift.employeeName,
-            startTime = shift.startTime,
-            endTime = shift.endTime,
-            checkpointsTotal = checkpointsTotal,
-            checkpointsPassed = checkpointsPassed,
-            violationsCount = violations.size,
-            completionPercentage = completionPercentage
-        )
-    }
-
     // ============================================
     // ОЧИСТКА ДАННЫХ
     // ============================================

@@ -35,6 +35,10 @@ import android.content.Intent
 import android.content.ContentValues
 import android.graphics.pdf.PdfDocument
 import android.graphics.Bitmap
+import android.util.Log
+import android.widget.Toast
+
+private const val TAG = "ShiftLogDetailScreen"
 
 // Вспомогательная функция для масштабирования изображения до максимального размера
 private fun scaleBitmap(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
@@ -455,6 +459,39 @@ fun ShiftLogDetailScreen(
                                     fontSize = 14.sp,
                                     color = if (totalViolations > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Кнопка загрузки в облако (скрыта - будет реализована позже)
+                                /*
+                                OutlinedButton(
+                                    onClick = {
+                                        val cloudManager = CloudStorageManager(context)
+                                        val cloudToken = cloudManager.getOAuthToken()
+                                        val diskToken = cloudManager.getDiskToken()
+                                        
+                                        if ((cloudToken == null || cloudToken.isEmpty()) && (diskToken == null || diskToken.isEmpty())) {
+                                            // Token не найден, показываем диалог с предложением настроить облачное хранилище
+                                            Toast.makeText(
+                                                context,
+                                                "Настройте облачные хранилища в настройках",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            Log.w(TAG, "OAuth tokens not found, redirecting to cloud settings")
+                                        } else {
+                                            // Показываем диалог выбора хранилища
+                                            showStorageSelectionDialog = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.secondary
+                                    )
+                                ) {
+                                    Text("📤 Загрузить в облако", fontSize = 12.sp)
+                                }
+                                */
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
                         }
                         Spacer(modifier = Modifier.height(16.dp))
@@ -529,22 +566,71 @@ fun ShiftLogDetailScreen(
         AlertDialog(
             onDismissRequest = { showPdfExportDialog = false },
             title = { Text("Экспорт отчета") },
-            text = { Text("Экспортировать отчет в PDF формат?") },
+            text = { 
+                Column {
+                    Text("Экспортировать отчет в PDF формат?")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Также можно загрузить отчет в облачное хранилище (JSON/HTML)")
+                }
+            },
             confirmButton = {
-                Button(onClick = { 
-                    showPdfExportDialog = false
-                    exportToPdf(shift!!, rounds, sortedLogs, context)
-                }) {
-                    Text("Да")
+                Column {
+                    Button(onClick = { 
+                        showPdfExportDialog = false
+                        exportToPdf(shift!!, rounds, sortedLogs, context)
+                    }) {
+                        Text("Экспорт в PDF")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    /*
+                    OutlinedButton(
+                        onClick = { 
+                            showPdfExportDialog = false
+                            val cloudManager = CloudStorageManager(context)
+                            val token = cloudManager.getOAuthToken()
+                            
+                            if (token == null || token.isEmpty()) {
+                                Toast.makeText(
+                                    context,
+                                    "Настройте Yandex Cloud в настройках",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                Log.w(TAG, "OAuth token not found in PDF export dialog")
+                            } else {
+                                val reportResult = cloudManager.exportShiftReportWithCloud(shift!!.id, shiftDatabase, uploadToCloud = true)
+                                
+                                if (reportResult.isSuccess()) {
+                                    Toast.makeText(
+                                        context,
+                                        "Отчет загружен в облако!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    Log.i(TAG, "Report uploaded to cloud from PDF export dialog for shift ${shift.id}")
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Ошибка при загрузке: ${reportResult.getErrorMessage()}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    Log.e(TAG, "Failed to upload report from PDF export dialog for shift ${shift.id}: ${reportResult.getErrorMessage()}")
+                                }
+                            }
+                        }
+                    ) {
+                        Text("📤 Загрузить в облако", fontSize = 12.sp)
+                    }
+                    */
                 }
             },
             dismissButton = {
                 Button(onClick = { showPdfExportDialog = false }) {
-                    Text("Нет")
+                    Text("Отмена")
                 }
             }
         )
     }
+    
+
 }
 
 // Функция экспорта отчета в PDF

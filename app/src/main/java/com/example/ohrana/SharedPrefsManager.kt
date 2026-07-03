@@ -11,10 +11,6 @@ import com.example.ohrana.ShiftLogEntry
 import com.example.ohrana.ShiftRecord
 import com.example.ohrana.RoundRecord
 import com.example.ohrana.SequenceViolation
-import com.example.ohrana.AdminReport
-import com.example.ohrana.GuardReport
-import com.example.ohrana.OwnerReport
-import com.example.ohrana.SimpleLogEntry
 
 // Модель для сохранения сканирований
 data class QrScanRecord(val employeeName: String, val time: String, val qrContent: String)
@@ -426,56 +422,6 @@ class SharedPrefsManager(private val context: Context) {
     // Очистка логов после генерации отчета
     fun clearScanLogs() {
         prefs.edit().remove("qr_logs").apply()
-    }
-
-    // Генерация CSV отчета для Excel
-    fun generateExcelReport(employeeName: String): File? {
-        val logs = getScanLogs()
-
-        // 🗓️ Понятный формат: день.месяц.yy_HH-mm (например, 25.06.26_14-30)
-        val fileTimestamp = SimpleDateFormat("dd.MM.yy_HH-mm", Locale.US).format(Date())
-
-        // Шаблон имени файла: Фамилия_Имя_ДАТА_ВРЕМЯ.csv
-        val fileName = "${employeeName.replace(" ", "_")}_$fileTimestamp.csv"
-
-        val reportsDir = File(context.filesDir, "reports")
-        if (!reportsDir.exists()) reportsDir.mkdirs()
-
-        val file = File(reportsDir, fileName)
-
-        try {
-            // Открываем поток записи строго в кодировке UTF-8
-            file.bufferedWriter(charset = Charsets.UTF_8).use { writer ->
-
-                // Записываем правильный UTF-8 BOM маркер, чтобы Excel сразу понял русский язык
-                writer.write("\uFEFF")
-
-                // Заголовки столбцов
-                writer.write("Сотрудник;Дата и Время;Данные QR-кода\n")
-
-                // Запись статуса контроля последовательности
-                val sequenceControlStatus = getSequenceControlStatus()
-                writer.write("; $sequenceControlStatus\n")
-
-                // Запись накопленных данных
-                for (log in logs) {
-                    writer.write("${log.employeeName};${log.time};${log.qrContent}\n")
-                }
-            }
-            // После успешной записи отчета очищаем текущие логи (включая shiftLogs)
-            clearScanLogs()
-            QrHandler.clearShiftLogs()
-            return file
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return null
-        }
-    }
-
-    // Получить список всех файлов отчетов
-    fun getReportsList(): List<File> {
-        val reportsDir = File(context.filesDir, "reports")
-        return reportsDir.listFiles()?.filter { it.isFile && it.extension == "csv" }?.toList() ?: emptyList()
     }
 
     // ==================================================
@@ -1245,120 +1191,4 @@ class SharedPrefsManager(private val context: Context) {
     fun getAllRoutes(): List<Route> {
         return loadRoutes()
     }
-    
-    /**
-     * Экспортирует настройки в файл во внешнее хранилище (Download)
-     * Возвращает true если успешно, false если произошла ошибка
-     */
-    fun exportSettingsToFile(context: Context): Boolean {
-        val settingsText = exportSettingsAsText()
-        if (settingsText.isEmpty()) {
-            android.util.Log.e("SharedPrefsManager", "exportSettingsAsText() returned empty string")
-            return false
-        }
-        
-        return try {
-            android.util.Log.d("SharedPrefsManager", "Exporting settings to external storage...")
-            // Сохраняем во внешнее хранилище (Download папка)
-            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-            android.util.Log.d("SharedPrefsManager", "Download dir: ${downloadDir.absolutePath}")
-            
-            val backupDir = File(downloadDir, "Ohrana")
-            android.util.Log.d("SharedPrefsManager", "Backup dir: ${backupDir.absolutePath}")
-            if (!backupDir.exists()) backupDir.mkdirs()
-            
-            val fileTimestamp = SimpleDateFormat("dd.MM.yy_HH-mm-ss", Locale.US).format(Date())
-            val fileName = "settings_backup_$fileTimestamp.txt"  // .txt вместо .json
-            val file = File(backupDir, fileName)
-            android.util.Log.d("SharedPrefsManager", "Export file: ${file.absolutePath}")
-            
-            file.bufferedWriter(charset = Charsets.UTF_8).use { writer ->
-                writer.write(settingsText)
-            }
-            android.util.Log.d("SharedPrefsManager", "Settings exported successfully!")
-            
-            // Уведомляем систему о новом файле через MediaScannerConnection (работает на всех версиях)
-            android.media.MediaScannerConnection.scanFile(
-                context,
-                arrayOf(file.absolutePath),
-                arrayOf("text/plain"),
-                null
-            )
-            
-            true
-        } catch (e: Exception) {
-            android.util.Log.e("SharedPrefsManager", "Error exporting settings: ${e.message}", e)
-            false
-        }
-    }
-    
-    /**
-     * Импортирует настройки из файла во внешнем хранилище (Download)
-     * Возвращает true если успешно, false если произошла ошибка
-     */
-    fun importSettingsFromFile(context: Context): Boolean {
-        android.util.Log.d("SharedPrefsManager", "Starting import from file...")
-        return try {
-            // Ищем во внешнем хранилище (Download папка)
-            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-            val backupDir = File(downloadDir, "Ohrana")
-            android.util.Log.d("SharedPrefsManager", "Download dir: ${downloadDir.absolutePath}")
-            android.util.Log.d("SharedPrefsManager", "Backup dir: ${backupDir.absolutePath}")
-            
-            if (!backupDir.exists()) {
-                android.util.Log.d("SharedPrefsManager", "Backup dir does not exist")
-                android.widget.Toast.makeText(context, "Нет резервных копий", android.widget.Toast.LENGTH_SHORT).show()
-                return false
-            }
-            
-            val files = backupDir.listFiles()?.filter { it.extension == "json" }?.toList() ?: emptyList()
-            android.util.Log.d("SharedPrefsManager", "Found ${files.size} JSON files: ${files.map { it.name }}")
-            
-            if (files.isEmpty()) {
-                android.util.Log.d("SharedPrefsManager", "No JSON files found")
-                android.widget.Toast.makeText(context, "Нет резервных копий", android.widget.Toast.LENGTH_SHORT).show()
-                return false
-            }
-            
-            // Сортируем по дате, берем последний (самый свежий)
-            val latestFile = files.maxByOrNull { it.lastModified() } ?: return false
-            android.util.Log.d("SharedPrefsManager", "Latest file: ${latestFile.absolutePath}")
-            
-            val jsonString = latestFile.bufferedReader(charset = Charsets.UTF_8).use { it.readText() }
-            android.util.Log.d("SharedPrefsManager", "JSON loaded, length: ${jsonString.length}")
-            return importSettings(jsonString)
-        } catch (e: Exception) {
-            android.util.Log.e("SharedPrefsManager", "Error importing from file: ${e.message}", e)
-            false
-        }
-    }
-    
-    // ==================================================
-    // 📊 ГЕНЕРАЦИЯ ОТЧЕТОВ ИЗ БАЗЫ ДАННЫХ ОБХОДОВ
-    // ==================================================
-    
-    /**
-     * Генерирует полный отчет для администратора
-     */
-    fun generateAdminReport(): AdminReport? {
-        val activeShiftId = prefs.getString("active_shift_id", null)
-        return activeShiftId?.let { shiftDatabase.generateAdminReport(it) }
-    }
-    
-    /**
-     * Генерирует упрощенный отчет для охранника
-     */
-    fun generateGuardReport(): GuardReport? {
-        val activeShiftId = prefs.getString("active_shift_id", null)
-        return activeShiftId?.let { shiftDatabase.generateGuardReport(it) }
-    }
-    
-    /**
-     * Генерирует краткий отчет для владельца объекта
-     */
-    fun generateOwnerReport(): OwnerReport? {
-        val activeShiftId = prefs.getString("active_shift_id", null)
-        return activeShiftId?.let { shiftDatabase.generateOwnerReport(it) }
-    }
 }
-

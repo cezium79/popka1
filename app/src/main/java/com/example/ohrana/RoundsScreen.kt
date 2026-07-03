@@ -264,9 +264,6 @@ fun RoundsScreen(
                                 // Железно фиксируем дату и время закрытия смены в SharedPreferences
                                 prefsManager.closeCurrentShift()
                                 
-                                // Формируем Excel-отчет
-                                prefsManager.generateExcelReport(activeEmployeeName)
-                                
                                 // Показываем окно прощания
                                 showGoodbyeDialog = true
                             }
