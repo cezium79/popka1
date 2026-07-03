@@ -129,7 +129,6 @@ fun OhrannikCabinetScreen(
     
     // Для съемки фото
     var photoCheckpointId by remember { mutableStateOf("") }
-    var showPhotoDialog by remember { mutableStateOf<QrResult.PhotoFormat?>(null) }
     
     // Для подтверждения завершения обхода
     var showEndRoundDialog by remember { mutableStateOf(false) }
@@ -143,6 +142,16 @@ fun OhrannikCabinetScreen(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted -> hasStoragePermission = granted }
     )
+    
+    // Запуск экрана фото при изменении photoCheckpointId
+    LaunchedEffect(photoCheckpointId) {
+        if (photoCheckpointId.isNotEmpty()) {
+            // Переход на экран фото с передачей manager и ID чекпоинта
+            onNavigateToPhoto(manager, photoCheckpointId)
+            // Очищаем после использования
+            photoCheckpointId = ""
+        }
+    }
     
     // NFC сканер включён постоянно для автоматического считывания NFC-тегов
     val activity = context as? ComponentActivity
@@ -278,11 +287,8 @@ fun OhrannikCabinetScreen(
                             )
                         }
                         
-                        // PhotoFormat обрабатывается через диалог подтверждения
-                        showPhotoDialog = QrResult.PhotoFormat(
-                            checkpointId = checkpoint.id,
-                            checkpointName = checkpoint.name
-                        )
+                        // PhotoFormat обрабатывается через экран PhotoCaptureScreen
+                        photoCheckpointId = checkpoint.id
                     }
                 }
             } else {
@@ -429,8 +435,8 @@ fun OhrannikCabinetScreen(
                                                                         showInputDialog = qrResult
                                                                     }
                                                                     is QrResult.PhotoFormat -> {
-                                                                        // Показать диалог подтверждения для фото
-                                                                        showPhotoDialog = qrResult
+                                                                        // Запоминаем ID чекпоинта и переходим на экран фото
+                                                                        photoCheckpointId = qrResult.checkpointId
                                                                     }
                                                                     is QrResult.ShiftReportTrigger -> {
                                                                         onNavigateToReports()
@@ -672,60 +678,6 @@ fun OhrannikCabinetScreen(
                 TextButton(onClick = {
                     showInputDialog = null
                 }) { Text("Отмена") }
-            }
-        )
-    }
-
-    // 3.5. Диалог для PHOTO (съемка фото)
-    showPhotoDialog?.let { result ->
-        AlertDialog(
-            onDismissRequest = { showPhotoDialog = null },
-            title = { Text("Фотография прибора") },
-            text = {
-                Column {
-                    Text("Чекпоинт: ${result.checkpointName}", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("ID: ${result.checkpointId}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Сделайте фото прибора и нажмите «Сохранить»",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showPhotoDialog = null
-                        // Сохраняем лог в SharedPreferences
-                        val logText = "Фото прибора: ${result.checkpointName} -> ID: ${result.checkpointId}"
-                        manager.saveScanResult(employeeName = employeeName, qrContent = logText)
-                        
-                        // Обновляем последнюю запись SCAN на тип PHOTO
-                        val activeRoundIndex = manager.getActiveRoundIndex()
-                        if (activeRoundIndex != -1) {
-                            manager.shiftDatabase.updateLastScanEntry(
-                                roundId = activeRoundIndex,
-                                actionType = "PHOTO",
-                                photoPath = null
-                            )
-                        }
-                        
-                        // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
-                        manager.updateCurrentCheckpointIndex(manager.getCurrentCheckpointIndex() + 1)
-                        // Обновляем имя следующего чекпоинта
-                        checkpointScanTrigger = System.currentTimeMillis()
-                    }
-                ) {
-                    Text("📷 Сохранить фото")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPhotoDialog = null }) {
-                    Text("Отмена")
-                }
             }
         )
     }

@@ -386,7 +386,7 @@ class SharedPrefsManager(private val context: Context) {
                     id = jsonObject.optString("id", ""),
                     name = jsonObject.optString("name", ""),
                     role = jsonObject.optString("role", ""),
-                    nfcId = jsonObject.optString("nfcId", null)
+                    nfcId = if (jsonObject.has("nfcId")) jsonObject.getString("nfcId") else null
                 )
             }
         } catch (e: Exception) {
@@ -544,7 +544,7 @@ class SharedPrefsManager(private val context: Context) {
                     id = id,
                     time = jsonObject.optString("time", "08:00"),
                     isEnabled = jsonObject.optBoolean("enabled", true),
-                    routeId = jsonObject.optString("routeId", null)
+                    routeId = if (jsonObject.has("routeId")) jsonObject.getString("routeId") else null
                 ))
             }
             Log.d("SharedPrefsManager", "Loaded ${alarms.size} alarms (after deduplication): $alarms")
@@ -644,16 +644,16 @@ class SharedPrefsManager(private val context: Context) {
                     action = CheckpointAction.valueOf(
                         jsonObject.optString("action", "checkpoint").uppercase()
                     ),
-                    questionText = jsonObject.optString("text", null),
+                    questionText = if (jsonObject.has("text")) jsonObject.getString("text") else null,
                     answers = if (jsonObject.has("answers")) {
                         val answersArray = jsonObject.getJSONArray("answers")
-                        List(answersArray.length()) { answersArray.getString(it) }
+                        List(answersArray.length()) { answersArray.optString(it) }
                     } else {
                         emptyList()
                     },
-                    inputTitle = jsonObject.optString("title", null),
-                    imageUri = jsonObject.optString("image", null),
-                    nfcId = jsonObject.optString("nfcId", null)
+                    inputTitle = if (jsonObject.has("title")) jsonObject.getString("title") else null,
+                    imageUri = if (jsonObject.has("image")) jsonObject.getString("image") else null,
+                    nfcId = if (jsonObject.has("nfcId")) jsonObject.getString("nfcId") else null
                 )
             }
         } catch (e: Exception) {
@@ -899,7 +899,7 @@ class SharedPrefsManager(private val context: Context) {
                     employees.add(Employee(
                         name = empObj.optString("name", ""),
                         role = empObj.optString("role", ""),
-                        nfcId = empObj.optString("nfcId", null)
+                        nfcId = if (empObj.has("nfcId")) empObj.getString("nfcId") else null
                     ))
                 }
                 saveEmployees(employees.toList())
@@ -927,11 +927,11 @@ class SharedPrefsManager(private val context: Context) {
                         action = CheckpointAction.valueOf(
                             checkpointObj.optString("action", "checkpoint").uppercase()
                         ),
-                        questionText = checkpointObj.optString("text", null),
+                        questionText = if (checkpointObj.has("text")) checkpointObj.getString("text") else null,
                         answers = answers,
-                        inputTitle = checkpointObj.optString("title", null),
-                        imageUri = checkpointObj.optString("image", null),
-                        nfcId = checkpointObj.optString("nfcId", null)
+                        inputTitle = if (checkpointObj.has("title")) checkpointObj.getString("title") else null,
+                        imageUri = if (checkpointObj.has("image")) checkpointObj.getString("image") else null,
+                        nfcId = if (checkpointObj.has("nfcId")) checkpointObj.getString("nfcId") else null
                     ))
                 }
                 saveCheckpoints(checkpoints.toList())
@@ -990,7 +990,7 @@ class SharedPrefsManager(private val context: Context) {
                         id = alarmObj.optInt("id", 0),
                         time = alarmObj.optString("time", "08:00"),
                         isEnabled = alarmObj.optBoolean("enabled", true),
-                        routeId = alarmObj.optString("routeId", null)
+                        routeId = if (alarmObj.has("routeId")) alarmObj.getString("routeId") else null
                     ))
                 }
                 saveRouteAlarms(alarms.toList())

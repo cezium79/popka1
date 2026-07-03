@@ -17,6 +17,19 @@ import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.regex.Pattern
+
+// Извлекает порядковый номер смены из её ID
+// Формат ID: NSDDMMYY_NNN (например, NS020726_001 -> номер 1)
+private fun extractShiftSequenceNumber(shiftId: String): Int {
+    val pattern = Pattern.compile("NS\\d{6}_(\\d{3})")
+    val matcher = pattern.matcher(shiftId)
+    return if (matcher.find()) {
+        matcher.group(1)?.toInt() ?: 0
+    } else {
+        0
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +64,11 @@ fun ShiftLogsListScreen(
         }
     }
     
+    // Сортируем завершенные смены по убыванию (новые сверху)
+    val sortedCompletedShifts = remember(completedShifts) {
+        completedShifts.sortedByDescending { it.startTime }
+    }
+    
     val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
     
     Scaffold(
@@ -79,12 +97,15 @@ fun ShiftLogsListScreen(
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(completedShifts) { shift ->
+                    items(sortedCompletedShifts) { shift ->
                         val logs = shiftLogsMap[shift] ?: emptyList()
                         val rounds = shiftRoundsMap[shift] ?: emptyList()
                         
                         // Формируем дату смены для заголовка
                         val shiftDate = shift.startTime.split(" ").firstOrNull() ?: "-"
+                        
+                        // Извлекаем номер смены из ID (например, NS020726_001 -> номер 1)
+                        val shiftNumber = extractShiftSequenceNumber(shift.id)
                         
                         Card(
                             modifier = Modifier
@@ -97,9 +118,9 @@ fun ShiftLogsListScreen(
                                     .padding(16.dp)
                                     .fillMaxWidth()
                             ) {
-                                // Заголовок смены
+                                // Заголовок смены с номером
                                 Text(
-                                    text = "Смена от $shiftDate",
+                                    text = "СМЕНА №$shiftNumber от $shiftDate",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary

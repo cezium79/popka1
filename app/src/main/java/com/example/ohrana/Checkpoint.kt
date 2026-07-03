@@ -48,14 +48,14 @@ data class Checkpoint(
                 val actionStr = JSONObject.optString("action", "checkpoint")
                 val action = CheckpointAction.valueOf(actionStr.uppercase())
                 
-                val questionText = JSONObject.optString("text", null)
-                val inputTitle = JSONObject.optString("title", null)
-                val imageUri = JSONObject.optString("image", null)
-                val nfcId = JSONObject.optString("nfcId", null)
+                val questionText = if (JSONObject.has("text")) JSONObject.getString("text") else null
+                val inputTitle = if (JSONObject.has("title")) JSONObject.getString("title") else null
+                val imageUri = if (JSONObject.has("image")) JSONObject.getString("image") else null
+                val nfcId = if (JSONObject.has("nfcId")) JSONObject.getString("nfcId") else null
                 
                 val answersList = if (JSONObject.has("answers")) {
                     val answersArray = JSONObject.getJSONArray("answers")
-                    List(answersArray.length()) { answersArray.getString(it) }
+                    List(answersArray.length()) { answersArray.optString(it) }
                 } else {
                     emptyList()
                 }

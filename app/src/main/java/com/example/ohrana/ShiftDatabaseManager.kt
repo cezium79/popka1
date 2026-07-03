@@ -134,7 +134,7 @@ class ShiftDatabaseManager(private val context: Context) {
                         id = json.getString("id"),
                         employeeName = json.getString("employeeName"),
                         startTime = json.getString("startTime"),
-                        endTime = json.optString("endTime", null),
+                        endTime = if (json.has("endTime")) json.getString("endTime") else null,
                         isShiftActive = json.optBoolean("isShiftActive", false),
                         strictSequenceEnabled = json.optBoolean("strictSequenceEnabled", false)
                     )
@@ -174,9 +174,14 @@ class ShiftDatabaseManager(private val context: Context) {
         // Загружаем текущий обход
         val round = loadRound(roundId)
         round?.let {
+            // Подсчитываем количество пройденных чекпоинтов на основе логов
+            val logs = loadLogsByShift(round.shiftId).filter { it.roundId == roundId }
+            val checkpointsPassed = logs.filter { it.actionType != "SCAN" }.size
+            
             val updatedRound = round.copy(
                 endTime = endTime,
-                isCompleted = true
+                isCompleted = true,
+                checkpointsPassed = checkpointsPassed
             )
             saveRound(updatedRound)
         }
@@ -184,11 +189,16 @@ class ShiftDatabaseManager(private val context: Context) {
 
     /**
      * Обновить количество пройденных чекпоинтов
+     * Подсчитывает на основе логов для точности
      */
-    fun updateRoundProgress(roundId: Int, checkpointsPassed: Int, sequenceViolations: Int) {
+    fun updateRoundProgress(roundId: Int, sequenceViolations: Int) {
         // Загружаем текущий обход
         val round = loadRound(roundId)
         round?.let {
+            // Подсчитываем количество пройденных чекпоинтов на основе логов
+            val logs = loadLogsByShift(round.shiftId).filter { it.roundId == roundId }
+            val checkpointsPassed = logs.filter { it.actionType != "SCAN" }.size
+            
             val updatedRound = round.copy(
                 checkpointsPassed = checkpointsPassed,
                 sequenceViolations = sequenceViolations
@@ -229,10 +239,10 @@ class ShiftDatabaseManager(private val context: Context) {
                 id = json.getInt("id"),
                 shiftId = json.getString("shiftId"),
                 startTime = json.getString("startTime"),
-                endTime = json.optString("endTime", null),
+                endTime = if (json.has("endTime")) json.getString("endTime") else null,
                 isCompleted = json.optBoolean("isCompleted", false),
-                routeId = json.optString("routeId", null),
-                routeName = json.optString("routeName", null),
+                routeId = if (json.has("routeId")) json.getString("routeId") else null,
+                routeName = if (json.has("routeName")) json.getString("routeName") else null,
                 checkpointsCount = json.optInt("checkpointsCount", 0),
                 checkpointsPassed = json.optInt("checkpointsPassed", 0),
                 sequenceViolations = json.optInt("sequenceViolations", 0)
@@ -410,12 +420,12 @@ class ShiftDatabaseManager(private val context: Context) {
                         isSequenceCorrect = json.getBoolean("isSequenceCorrect"),
                         scanType = json.getString("scanType"),
                         actionType = json.getString("actionType"),
-                        answer = json.optString("answer", null),
-                        inputValue = json.optString("inputValue", null),
-                        photoPath = json.optString("photoPath", null),
+                        answer = if (json.has("answer")) json.getString("answer") else null,
+                        inputValue = if (json.has("inputValue")) json.getString("inputValue") else null,
+                        photoPath = if (json.has("photoPath")) json.getString("photoPath") else null,
                         latitude = json.optDouble("latitude", Double.NaN).takeIf { !it.isNaN() },
                         longitude = json.optDouble("longitude", Double.NaN).takeIf { !it.isNaN() },
-                        sequenceErrorExpected = json.optString("sequenceErrorExpected", null)
+                        sequenceErrorExpected = if (json.has("sequenceErrorExpected")) json.getString("sequenceErrorExpected") else null
                     )
                 } catch (e: Exception) {
                     null
@@ -485,6 +495,9 @@ class ShiftDatabaseManager(private val context: Context) {
         // Ищем последнюю запись, которая имеет тип SCAN (еще не обновлена)
         val lastScanEntry = logs.asReversed().find { it.actionType == "SCAN" }
         
+        android.util.Log.d("ShiftDatabaseManager", "updateLastScanEntry: roundId=$roundId, actionType=$actionType, found=${lastScanEntry != null}")
+        lastScanEntry?.let { android.util.Log.d("ShiftDatabaseManager", "  - Updating log: ${it.checkpointName} (${it.checkpointId})") }
+        
         lastScanEntry?.let { entry ->
             val updatedEntry = entry.copy(
                 actionType = actionType,
@@ -496,9 +509,11 @@ class ShiftDatabaseManager(private val context: Context) {
             // Удаляем старую запись и сохраняем новую
             prefs.edit().remove("log_${entry.id}").apply()
             saveLogEntry(updatedEntry)
+            android.util.Log.d("ShiftDatabaseManager", "  - Log updated successfully")
             return true
         }
         
+        android.util.Log.d("ShiftDatabaseManager", "  - No SCAN entry found to update")
         return false
     }
 

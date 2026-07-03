@@ -19,8 +19,84 @@ import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.regex.Pattern
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
+import android.os.Build
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.print.PrintDocumentAdapter
+import android.print.PrintDocumentInfo
+import java.io.FileOutputStream
+import java.io.File
+import android.os.Environment
+import android.net.Uri
+import android.content.Intent
+import android.content.ContentValues
+import android.graphics.pdf.PdfDocument
+import android.graphics.Bitmap
+
+// Вспомогательная функция для масштабирования изображения до максимального размера
+private fun scaleBitmap(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+    
+    val scaleWidth = maxWidth.toFloat() / width
+    val scaleHeight = maxHeight.toFloat() / height
+    
+    val scale = minOf(scaleWidth, scaleHeight)
+    
+    return Bitmap.createBitmap(
+        bitmap,
+        0,
+        0,
+        width,
+        height,
+        android.graphics.Matrix().apply {
+            postScale(scale, scale)
+        },
+        true
+    )
+}
+
+// Вспомогательная функция для отрисовки изображения в PDF
+private fun drawImageOnPdf(
+    canvas: android.graphics.Canvas,
+    paint: android.graphics.Paint,
+    bitmap: Bitmap,
+    x: Float,
+    y: Float,
+    maxWidth: Float,
+    maxHeight: Float
+): Float {
+    val scaledBitmap = scaleBitmap(bitmap, maxWidth.toInt(), maxHeight.toInt())
+    
+    val left = x + (maxWidth - scaledBitmap.width) / 2
+    val top = y + (maxHeight - scaledBitmap.height) / 2
+    
+    canvas.drawBitmap(scaledBitmap, left, top, paint)
+    
+    scaledBitmap.recycle()
+    
+    return y + maxHeight + 10f
+}
+
+// Вспомогательная функция для проверки существования файла
+private fun fileExists(path: String?): Boolean {
+    return path != null && File(path).exists()
+}
+
+// Извлекает порядковый номер смены из её ID
+// Формат ID: NSDDMMYY_NNN (например, NS020726_001 -> номер 1)
+private fun extractShiftSequenceNumber(shiftId: String): Int {
+    val pattern = Pattern.compile("NS\\d{6}_(\\d{3})")
+    val matcher = pattern.matcher(shiftId)
+    return if (matcher.find()) {
+        matcher.group(1)?.toInt() ?: 0
+    } else {
+        0
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +127,9 @@ fun ShiftLogDetailScreen(
     // Переменные для отображения фото
     var showPhotoDialog by remember { mutableStateOf(false) }
     var selectedPhotoPath by remember { mutableStateOf<String?>(null) }
+    
+    // Переменная для диалога экспорта в PDF
+    var showPdfExportDialog by remember { mutableStateOf(false) }
     
     val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
     
@@ -92,8 +171,11 @@ fun ShiftLogDetailScreen(
                                     .padding(16.dp)
                                     .fillMaxWidth()
                             ) {
+                                // Извлекаем номер смены из ID
+                                val shiftNumber = extractShiftSequenceNumber(shift.id)
+                                
                                 Text(
-                                    text = "СМЕНА",
+                                    text = "СМЕНА №$shiftNumber",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -163,8 +245,11 @@ fun ShiftLogDetailScreen(
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    // Подсчитываем пройденные чекпоинты на основе логов (исключаем SCAN записи)
+                                    val roundLogs = sortedLogs.filter { it.roundId == round.id }
+                                    val passedCount = roundLogs.filter { it.actionType != "SCAN" }.size
                                     Text(
-                                        text = "Пройдено чекпоинтов: ${round.checkpointsPassed}",
+                                        text = "Пройдено чекпоинтов: $passedCount",
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -376,6 +461,21 @@ fun ShiftLogDetailScreen(
                     }
                 }
             }
+            
+            // Кнопка экспорта внизу экрана
+            Button(
+                onClick = { showPdfExportDialog = true },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .height(56.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text("ЭКСПОРТИРОВАТЬ В PDF", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
     
@@ -422,5 +522,429 @@ fun ShiftLogDetailScreen(
                 }
             }
         )
+    }
+    
+    // Диалог экспорта в PDF
+    if (showPdfExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showPdfExportDialog = false },
+            title = { Text("Экспорт отчета") },
+            text = { Text("Экспортировать отчет в PDF формат?") },
+            confirmButton = {
+                Button(onClick = { 
+                    showPdfExportDialog = false
+                    exportToPdf(shift!!, rounds, sortedLogs, context)
+                }) {
+                    Text("Да")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showPdfExportDialog = false }) {
+                    Text("Нет")
+                }
+            }
+        )
+    }
+}
+
+// Функция экспорта отчета в PDF
+fun exportToPdf(
+    shift: ShiftRecord,
+    rounds: List<RoundRecord>,
+    logs: List<ShiftLogEntry>,
+    context: android.content.Context
+) {
+    val shiftNumber = extractShiftSequenceNumber(shift.id)
+    val fileName = "shift_report_${shift.id}_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())}.pdf"
+    
+    try {
+        // Создаем PDF документ
+        val pdfDocument = PdfDocument()
+        var currentPage = 1
+        
+        // Создаем страницу
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, currentPage).create()
+        var page = pdfDocument.startPage(pageInfo)
+        
+        var canvas = page.canvas
+        val paint = android.graphics.Paint()
+        
+        // Инициализируем начальную позицию по Y
+        var yPos = 40f
+        
+        // Создаем красивые цвета Material Design
+        val primaryColor = android.graphics.Color.rgb(33, 150, 243) // Blue 500
+        val primaryDarkColor = android.graphics.Color.rgb(30, 136, 229) // Blue 600
+        val secondaryColor = android.graphics.Color.rgb(96, 125, 139) // Blue Grey 600
+        val accentColor = android.graphics.Color.rgb(255, 87, 34) // Deep Orange 500
+        val backgroundColor = android.graphics.Color.rgb(245, 245, 245) // Grey 100
+        val headerBackgroundColor = android.graphics.Color.rgb(63, 81, 181) // Indigo 700
+        val textColor = android.graphics.Color.rgb(33, 33, 33) // Grey 900
+        val dividerColor = android.graphics.Color.rgb(224, 224, 224) // Grey 300
+        val errorColor = android.graphics.Color.rgb(244, 67, 54) // Red 500
+        val successColor = android.graphics.Color.rgb(76, 175, 80) // Green 500
+        
+        paint.textSize = 14f
+        paint.typeface = android.graphics.Typeface.DEFAULT
+        
+        // Функция для рисования заголовка на новой странице
+        fun drawPageHeader(pageNum: Int, totalPages: Int = -1) {
+            // Заголовочная полоса
+            paint.color = headerBackgroundColor
+            canvas.drawRect(0f, 0f, 595f, 60f, paint)
+            
+            // Заголовок отчета
+            paint.color = android.graphics.Color.WHITE
+            paint.textSize = 28f
+            paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+            canvas.drawText("ОТЧЕТ О СМЕНЕ №$shiftNumber", 20f, 42f, paint)
+            
+            // Подзаголовок - информация о смене
+            paint.textSize = 12f
+            paint.typeface = android.graphics.Typeface.DEFAULT
+            val datePart = shift.startTime.substring(0, 10)
+            canvas.drawText("Дата: $datePart  |  Сотрудник: ${shift.employeeName}", 20f, 65f, paint)
+            canvas.drawText("Начало: ${shift.startTime}", 20f, 78f, paint)
+            
+            // Номер страницы
+            val totalPagesText = if (totalPages > 0) " / $totalPages" else ""
+            paint.textSize = 10f
+            val pageText = "Страница: $pageNum$totalPagesText"
+            canvas.drawText(pageText, 575f - paint.measureText(pageText) - 10f, 820f, paint)
+        }
+        
+        // Функция для проверки необходимости новой страницы и создания новой
+        fun checkNewPage(minHeight: Float) {
+            if (yPos + minHeight > 800f) {
+                // Завершаем текущую страницу
+                pdfDocument.finishPage(page)
+                
+                // Создаем новую страницу
+                currentPage++
+                val newPageInfo = PdfDocument.PageInfo.Builder(595, 842, currentPage).create()
+                page = pdfDocument.startPage(newPageInfo)
+                canvas = page.canvas
+                yPos = 100f // Начинаем с обычным отступом после заголовка
+                
+                // Рисуем заголовок на новой странице
+                drawPageHeader(currentPage)
+                
+                // Разделитель
+                paint.color = dividerColor
+                canvas.drawLine(20f, yPos - 50f, 575f, yPos - 50f, paint)
+                paint.color = primaryColor
+                canvas.drawLine(20f, yPos - 48f, 575f, yPos - 48f, paint)
+            }
+        }
+        
+        // Рисуем верхнюю секцию с заголовком
+        // Заголовочная полоса
+        paint.color = headerBackgroundColor
+        canvas.drawRect(0f, 0f, 595f, 60f, paint)
+        
+        // Заголовок отчета
+        paint.color = android.graphics.Color.WHITE
+        paint.textSize = 28f
+        paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        canvas.drawText("ОТЧЕТ О СМЕНЕ №$shiftNumber", 20f, 42f, paint)
+        
+        // Подзаголовок - информация о смене
+        paint.textSize = 12f
+        paint.typeface = android.graphics.Typeface.DEFAULT
+        val datePart = shift.startTime.substring(0, 10)
+        canvas.drawText("Дата: $datePart  |  Сотрудник: ${shift.employeeName}", 20f, 65f, paint)
+        canvas.drawText("Начало: ${shift.startTime}  |  Контроль последовательности: ${if (shift.strictSequenceEnabled) "ВКЛ" else "ВЫКЛ"}", 20f, 78f, paint)
+        
+        // Номер страницы
+        val pageText1 = "Страница: $currentPage"
+        canvas.drawText(pageText1, 575f - paint.measureText(pageText1) - 10f, 820f, paint)
+        
+        // Разделитель
+        yPos = 100f
+        paint.color = dividerColor
+        canvas.drawLine(20f, yPos, 575f, yPos, paint)
+        paint.color = primaryColor
+        canvas.drawLine(20f, yPos + 2f, 575f, yPos + 2f, paint)
+        
+        // Обходы
+        rounds.forEach { round ->
+            // Проверяем место для карточки обхода
+            checkNewPage(120f)
+            
+            yPos += 15f
+            
+            // Карточка обхода с фоном
+            paint.color = backgroundColor
+            canvas.drawRect(20f, yPos - 5f, 575f, yPos + 60f, paint)
+            
+            // Заголовок обхода
+            paint.color = primaryDarkColor
+            paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+            canvas.drawText("ОБХОД №${round.id}", 30f, yPos + 15f, paint)
+            
+            // Детали обхода
+            paint.color = textColor
+            paint.typeface = android.graphics.Typeface.DEFAULT
+            paint.textSize = 11f
+            
+            var detailY = yPos + 25f
+            canvas.drawText("Маршрут: ${round.routeName ?: "не указан"}", 30f, detailY, paint)
+            detailY += 12f
+            
+            canvas.drawText("Начало: ${round.startTime}", 30f, detailY, paint)
+            canvas.drawText("Окончание: ${round.endTime ?: "-"}", 250f, detailY, paint)
+            detailY += 12f
+            
+            canvas.drawText("Чекпоинтов: ${round.checkpointsCount}", 30f, detailY, paint)
+            canvas.drawText("Пройдено: ${round.checkpointsPassed}", 250f, detailY, paint)
+            detailY += 12f
+            
+            // Рисуем иконку нарушений (если есть)
+            if (round.sequenceViolations > 0) {
+                paint.color = errorColor
+                canvas.drawText("⚠️ Нарушений: ${round.sequenceViolations}", 30f, detailY, paint)
+            } else {
+                paint.color = successColor
+                canvas.drawText("✓ Нарушений: 0", 30f, detailY, paint)
+            }
+            
+            yPos += 85f
+            
+            // Проверяем, хватает ли места для логов и карточки
+            checkNewPage(200f)
+            
+            // Логи обхода
+            val roundLogs = logs.filter { it.roundId == round.id }
+            if (roundLogs.isNotEmpty()) {
+                yPos += 5f
+                
+                // Заголовок логов
+                paint.color = primaryColor
+                paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+                canvas.drawText("Логи обхода:", 30f, yPos, paint)
+                yPos += 15f
+                
+                // Таблица логов
+                roundLogs.forEach { log ->
+                    // Разделитель строк
+                    paint.color = dividerColor
+                    canvas.drawLine(30f, yPos - 2f, 575f, yPos - 2f, paint)
+                    
+                    yPos += 3f
+                    
+                    // Имя чекпоинта
+                    paint.color = textColor
+                    paint.typeface = if (log.isSequenceCorrect) android.graphics.Typeface.DEFAULT else android.graphics.Typeface.DEFAULT_BOLD
+                    canvas.drawText("${log.checkpointName}", 30f, yPos, paint)
+                    
+                    // Время
+                    val timePart = log.timestamp.split(" ").getOrNull(1) ?: "-"
+                    paint.color = secondaryColor
+                    canvas.drawText("$timePart", 250f, yPos, paint)
+                    
+                    // Статус
+                    val statusText = when (log.actionType) {
+                        "CHECKPOINT" -> "✓ Пройден"
+                        "QUESTION" -> "❓ Ответ"
+                        "INPUT" -> "✏️ Ввод"
+                        "PHOTO" -> "📷 Фото"
+                        "SCAN" -> "🔍 Сканирование"
+                        else -> "❓ Статус"
+                    }
+                    
+                    if (log.isSequenceCorrect) {
+                        paint.color = successColor
+                    } else {
+                        paint.color = errorColor
+                    }
+                    paint.textSize = 10f
+                    canvas.drawText(statusText, 320f, yPos, paint)
+                    
+                    yPos += 15f
+                    
+                    // Если есть фото - вставляем его
+                    if (log.actionType == "PHOTO" && fileExists(log.photoPath)) {
+                        try {
+                            val photoBitmap = BitmapFactory.decodeFile(log.photoPath)
+                            if (photoBitmap != null) {
+                                // Ограничиваем размер фото
+                                val maxPhotoWidth = 500f
+                                val maxPhotoHeight = 300f
+                                
+                                yPos += 5f
+                                
+                                // Рисуем рамку для фото
+                                paint.color = dividerColor
+                                canvas.drawRect(30f, yPos - 2f, 530f, yPos + maxPhotoHeight + 2f, paint)
+                                
+                                // Вставляем изображение
+                                yPos = drawImageOnPdf(
+                                    canvas,
+                                    paint,
+                                    photoBitmap,
+                                    30f,
+                                    yPos,
+                                    maxPhotoWidth,
+                                    maxPhotoHeight
+                                )
+                                
+                                // Название чекпоинта под фото
+                                paint.color = secondaryColor
+                                paint.textSize = 10f
+                                canvas.drawText("Фото на чекпоинте: ${log.checkpointName}", 30f, yPos - 8f, paint)
+                                
+                                yPos += 10f
+                                
+                                photoBitmap.recycle()
+                            }
+                        } catch (e: Exception) {
+                            // Если не удалось загрузить фото - пропускаем
+                            e.printStackTrace()
+                        }
+                    }
+                    
+                    // Если нарушение последовательности - добавляем строку
+                    if (!log.isSequenceCorrect && log.sequenceErrorExpected != null) {
+                        paint.color = errorColor
+                        paint.typeface = android.graphics.Typeface.DEFAULT
+                        canvas.drawText("Ожидался: ${log.sequenceErrorExpected}", 35f, yPos, paint)
+                        yPos += 12f
+                    }
+                }
+                
+                // Нижний разделитель после логов
+                paint.color = dividerColor
+                canvas.drawLine(30f, yPos - 2f, 575f, yPos - 2f, paint)
+                yPos += 10f
+            }
+            
+            // Разделитель между обходами
+            paint.color = dividerColor
+            canvas.drawLine(20f, yPos, 575f, yPos, paint)
+        }
+        
+        // Проверяем место для итоговой секции
+        checkNewPage(100f)
+        
+        // Итоговая секция с фоном
+        yPos += 15f
+        paint.color = backgroundColor
+        canvas.drawRect(20f, yPos - 5f, 575f, yPos + 60f, paint)
+        
+        yPos += 10f
+        
+        // Заголовок итога
+        paint.color = primaryDarkColor
+        paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        canvas.drawText("ИТОГО:", 30f, yPos, paint)
+        
+        yPos += 20f
+        
+        // Статистика
+        paint.color = textColor
+        paint.typeface = android.graphics.Typeface.DEFAULT
+        paint.textSize = 12f
+        
+        canvas.drawText("Всего обходов: ${rounds.size}", 30f, yPos, paint)
+        
+        yPos += 15f
+        canvas.drawText("Всего пройденных чекпоинтов: ${logs.size}", 30f, yPos, paint)
+        
+        yPos += 15f
+        val totalViolations = rounds.sumOf { it.sequenceViolations }
+        if (totalViolations > 0) {
+            paint.color = errorColor
+        } else {
+            paint.color = successColor
+        }
+        canvas.drawText("Всего нарушений последовательности: $totalViolations", 30f, yPos, paint)
+        
+        // Рисуем иконку статуса
+        val completionPercent = if (rounds.isNotEmpty()) {
+            val completedRounds = rounds.filter { it.isCompleted }.size
+            (completedRounds.toDouble() / rounds.size * 100).toInt()
+        } else 0
+        
+        yPos += 15f
+        paint.color = primaryColor
+        if (completionPercent == 100) {
+            canvas.drawText("✓ Отчет сформирован успешно", 30f, yPos, paint)
+        } else {
+            canvas.drawText("⚡ Завершенность отчета: $completionPercent%", 30f, yPos, paint)
+        }
+        
+        // Завершаем страницу
+        pdfDocument.finishPage(page)
+        
+        // Сохраняем PDF
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            // Для Android 10+ используем MediaStore API
+            val contentValues = ContentValues().apply {
+                put(android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME, fileName)
+                put(android.provider.MediaStore.Files.FileColumns.MIME_TYPE, "application/pdf")
+                put(android.provider.MediaStore.Files.FileColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/Ohrana/PDF")
+            }
+            
+            val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            
+            if (uri != null) {
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    pdfDocument.writeTo(outputStream)
+                }
+                pdfDocument.close()
+                
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/pdf")
+                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                }
+                    
+                if (intent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(intent)
+                    android.widget.Toast.makeText(context, "PDF сохранен в:\nDownload/Ohrana/PDF/$fileName", android.widget.Toast.LENGTH_LONG).show()
+                } else {
+                    android.widget.Toast.makeText(context, "PDF сохранен:\nDownload/Ohrana/PDF/$fileName\nНет приложения для просмотра", android.widget.Toast.LENGTH_LONG).show()
+                }
+            } else {
+                throw Exception("Не удалось создать URI для файла")
+            }
+        } else {
+            // Для Android 9 и ниже используем Environment.getExternalStoragePublicDirectory
+            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val ohranaDir = File(downloadDir, "Ohrana")
+            val pdfDir = File(ohranaDir, "PDF")
+            if (!pdfDir.exists()) {
+                pdfDir.mkdirs()
+            }
+            
+            val outputFile = File(pdfDir, fileName)
+            
+            // Записываем PDF в файл
+            FileOutputStream(outputFile).use { fos ->
+                pdfDocument.writeTo(fos)
+            }
+            pdfDocument.close()
+            
+            // Открываем файл через FileProvider
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                outputFile
+            )
+            
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            
+            if (intent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(intent)
+                android.widget.Toast.makeText(context, "PDF сохранен:\n${outputFile.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                android.widget.Toast.makeText(context, "PDF сохранен:\n${outputFile.absolutePath}\nНет приложения для просмотра", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        android.widget.Toast.makeText(context, "Ошибка при сохранении PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
     }
 }

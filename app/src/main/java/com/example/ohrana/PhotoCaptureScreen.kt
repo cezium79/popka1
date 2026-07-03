@@ -59,8 +59,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 fun PhotoCaptureScreen(
     checkpointId: String,
     onPhotoTaken: (String) -> Unit,
-    onCheckpointComplete: () -> Unit,
     onBack: () -> Unit,
+    onCheckpointComplete: () -> Unit,
     prefsManager: SharedPrefsManager,
     employeeName: String
 ) {
@@ -89,24 +89,28 @@ fun PhotoCaptureScreen(
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     // ImageCapture для захвата фото
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    // Флаг для отслеживания завершения
+    var isPhotoComplete by remember { mutableStateOf(false) }
 
     // Сначала сохраняем в приватную папку
     val filesDir = context.filesDir
     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
     val fileName = "${checkpointId.replace(" ", "_")}_${timestamp}.jpg"
     val imageFile = File(filesDir, fileName)
-    
-    // Лог для диагностики
-    android.widget.Toast.makeText(context, "Файл будет сохранен в: ${imageFile.absolutePath}", android.widget.Toast.LENGTH_SHORT).show()
+
+    // Вызываем onCheckpointComplete при завершении съемки
+    LaunchedEffect(isPhotoComplete) {
+        if (isPhotoComplete) {
+            onCheckpointComplete()
+            isPhotoComplete = false
+            // Закрываем экран после завершения
+            onBack()
+        }
+    }
 
     // Функция захвата фото через CameraX
     fun capturePhoto() {
         val capture = imageCapture ?: run {
-            android.widget.Toast.makeText(
-                context,
-                "Камера не инициализирована",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
             return
         }
 
@@ -119,14 +123,10 @@ fun PhotoCaptureScreen(
                 ContextCompat.getMainExecutor(context),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                        android.widget.Toast.makeText(context, "Фото успешно сохранено!", android.widget.Toast.LENGTH_SHORT).show()
-                        
                         lastPhotoPath = imageFile.absolutePath
                         
                         // Проверяем, что файл действительно создан
                         if (imageFile.exists()) {
-                            android.widget.Toast.makeText(context, "Файл существует: ${imageFile.length()} байт", android.widget.Toast.LENGTH_SHORT).show()
-                            
                             val bitmap = BitmapFactory.decodeFile(imageFile.absolutePath)
                             if (bitmap != null) {
                                 capturedBitmap = bitmap
@@ -135,31 +135,17 @@ fun PhotoCaptureScreen(
                                 // Сохраняем лог в SharedPreferences
                                 val logText = "Фото прибора: $checkpointId -> Файл: $fileName"
                                 prefsManager.saveScanResult(employeeName = employeeName, qrContent = logText)
-                            } else {
-                                android.widget.Toast.makeText(context, "Ошибка: не удалось декодировать bitmap!", android.widget.Toast.LENGTH_SHORT).show()
                             }
-                        } else {
-                            android.widget.Toast.makeText(context, "Ошибка: файл не создан!", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
 
                     override fun onError(exception: ImageCaptureException) {
                         exception.printStackTrace()
-                        android.widget.Toast.makeText(
-                            context,
-                            "Ошибка съемки: ${exception.message}",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
                     }
                 }
             )
         } catch (e: Exception) {
             e.printStackTrace()
-            android.widget.Toast.makeText(
-                context,
-                "Ошибка: ${e.message}",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
         }
     }
 
@@ -210,10 +196,6 @@ fun PhotoCaptureScreen(
         if (!hasStoragePermission) {
             storageLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-    }
-
-    LaunchedEffect(Unit) {
-        android.widget.Toast.makeText(context, "Съемка: $checkpointId", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     Scaffold(
@@ -418,9 +400,8 @@ fun PhotoCaptureScreen(
                                 savedFileName?.let { 
                                     onPhotoTaken(it)
                                 }
-                                // Увеличиваем индекс при сохранении фото (чекпоинт пройден)
-                                onCheckpointComplete()
-                                onBack()
+                                // Увеличиваем индекс при подтверждении
+                                isPhotoComplete = true
                             },
                             modifier = Modifier.width(140.dp).height(56.dp),
                             shape = RoundedCornerShape(28.dp)
@@ -437,10 +418,7 @@ fun PhotoCaptureScreen(
 // Функция для сохранения фото в галерею
 fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context): String? {
     try {
-        android.widget.Toast.makeText(context, "Сохранение в галерею...", android.widget.Toast.LENGTH_SHORT).show()
-        
         if (!sourceFile.exists()) {
-            android.widget.Toast.makeText(context, "Исходный файл не найден!", android.widget.Toast.LENGTH_SHORT).show()
             return null
         }
         
@@ -452,7 +430,6 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
         val ohranaDir = File(galleryDir, "Ohrana")
         if (!ohranaDir.exists()) {
             ohranaDir.mkdirs()
-            android.widget.Toast.makeText(context, "Создана папка: ${ohranaDir.absolutePath}", android.widget.Toast.LENGTH_SHORT).show()
         }
         
         val destFile = File(ohranaDir, destFileName)
@@ -466,8 +443,6 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
         
         // Проверяем, что файл скопирован
         if (destFile.exists()) {
-            android.widget.Toast.makeText(context, "Файл скопирован: ${destFile.absolutePath}", android.widget.Toast.LENGTH_SHORT).show()
-            
             // Обновляем галерею через MediaScannerConnection
             MediaScannerConnection.scanFile(
                 context,
@@ -476,20 +451,15 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
                 null
             )
             
-            android.widget.Toast.makeText(context, "Галерея обновлена!", android.widget.Toast.LENGTH_SHORT).show()
-            
             // Удаляем временный файл из private папки
             sourceFile.delete()
-            android.widget.Toast.makeText(context, "Фото сохранено в галерее!", android.widget.Toast.LENGTH_SHORT).show()
             
             return destFile.absolutePath
         } else {
-            android.widget.Toast.makeText(context, "Ошибка: файл не создан!", android.widget.Toast.LENGTH_SHORT).show()
             return null
         }
     } catch (e: Exception) {
         e.printStackTrace()
-        android.widget.Toast.makeText(context, "Ошибка: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
         return null
     }
 }
