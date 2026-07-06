@@ -3,6 +3,17 @@ package com.example.ohrana
 import java.util.Date
 
 // ============================================
+// МОДЕЛЬ ОХРАННИКА В ГРУППЕ
+// ============================================
+
+data class GuardMember(
+    val nfcId: String,          // NFC ID охранника
+    val name: String,           // Имя охранника
+    val role: String,           // Роль: "старший смены" или "охранник"
+    val startTime: String? = null  // Время начала работы (если применяется)
+)
+
+// ============================================
 // БАЗА ДАННЫХ ДЛЯ ХРАНЕНИЯ ИНФОРМАЦИИ ОБ ОБХОДАХ
 // ============================================
 
@@ -41,7 +52,8 @@ data class ShiftLogEntry(
  */
 data class ShiftRecord(
     val id: String,                      // Уникальный ID смены
-    val employeeName: String,            // Имя сотрудника
+    val employeeName: String,            // Имя сотрудника (для совместимости)
+    val guardList: List<GuardMember>,    // Список охранников на смене
     val startTime: String,               // Время начала смены
     val endTime: String? = null,         // Время окончания смены (null если активна)
     val isShiftActive: Boolean = false,  // Активна ли смена

@@ -8,6 +8,7 @@ import android.net.Uri
 import android.nfc.NfcAdapter
 import android.os.Build
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +24,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.derivedStateOf
@@ -35,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.ohrana.Checkpoint
@@ -45,10 +50,12 @@ import com.example.ohrana.QrResult
 import com.example.ohrana.SharedPrefsManager
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
 import java.util.concurrent.Executors
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+
+private const val TAG = "OhrannikCabinetScreen"
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,28 +89,75 @@ fun OhrannikCabinetScreen(
     
     // Отслеживаем изменения индексов через derivedStateOf
     val activeRoundIndex by remember { derivedStateOf { manager.getActiveRoundIndex() } }
-    val currentCheckpointIndex by remember { derivedStateOf { manager.getCurrentCheckpointIndex() } }
+    val currentCheckpointIndex by remember { derivedStateOf { manager.getRoundCheckpointIndex(activeRoundIndex) } }
     
-    // При изменении индексов пересчитываем имя следующего чекпоинта
-    LaunchedEffect(activeRoundIndex, currentCheckpointIndex) {
-        nextCheckpointName = manager.getNextCheckpointName()
-    }
+    // Для анимации автоматического завершения обхода
+    var showAutoEndAnimation by remember { mutableStateOf(false) }
+    var autoEndMessage by remember { mutableStateOf("") }
     
-    // Принудительное обновление имени чекпоинта после каждого сканирования
-    LaunchedEffect(checkpointScanTrigger) {
-        nextCheckpointName = manager.getNextCheckpointName()
-    }
-    
-    // Дополнительно: отслеживаем изменения в SharedPreferences через snapshotFlow
-    // Это гарантирует обновление даже если индексы не изменились через derivedStateOf
-    LaunchedEffect(Unit) {
-        snapshotFlow { 
-            manager.getActiveRoundIndex() to manager.getCurrentCheckpointIndex()
-        }.collectLatest { (roundIndex, checkpointIndex) ->
-            nextCheckpointName = manager.getNextCheckpointName()
+    // Функция для завершения обхода (тот же алгоритм, что и в автоматическом и ручном режимах)
+    fun completeRoundManually() {
+        Log.d(TAG, "completeRoundManually: Manual round completion triggered")
+        val activeRoundIndex = manager.getActiveRoundIndex()
+        if (activeRoundIndex != -1) {
+            Log.d(TAG, "completeRoundManually: Completing round $activeRoundIndex")
+            val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            manager.completeRound(activeRoundIndex, currentTime)
+            QrHandler.endRoundIfActive()
+            
+            // Показываем анимацию завершения
+            showAutoEndAnimation = true
+            autoEndMessage = "Обход успешно завершен!"
+            Log.d(TAG, "completeRoundManually: Set showAutoEndAnimation=true, autoEndMessage=$autoEndMessage")
         }
     }
-
+    
+    // При изменении индексов или после сканирования пересчитываем имя следующего чекпоинта и проверяем авто-завершение
+    LaunchedEffect(activeRoundIndex, currentCheckpointIndex, checkpointScanTrigger) {
+        nextCheckpointName = manager.getNextCheckpointName()
+        
+        // Проверяем, нужно ли автоматически завершить обход
+        val expectedCheckpointName = manager.getNextCheckpointName()
+        Log.d(TAG, "LaunchedEffect: checkpointIndex=${currentCheckpointIndex}, expectedCheckpointName=$expectedCheckpointName, autoEndEnabled=${manager.isAutoEndRoundEnabled()}")
+        Log.d(TAG, "LaunchedEffect: nextCheckpointName=$nextCheckpointName")
+        if (expectedCheckpointName == "Обход завершен") {
+            Log.d(TAG, "LaunchedEffect: Auto end round triggered!")
+            val autoEndEnabled = manager.isAutoEndRoundEnabled()
+            Log.d(TAG, "LaunchedEffect: isAutoEndRoundEnabled=$autoEndEnabled")
+            if (autoEndEnabled) {
+                Log.d(TAG, "LaunchedEffect: Auto end round is enabled")
+                // Выполняем тот же алгоритм, что и в ручном режиме
+                completeRoundManually()
+            } else {
+                Log.d(TAG, "LaunchedEffect: Auto end round is disabled, waiting for manual completion via TopAppBar button")
+                // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
+                // nextCheckpointName уже обновлен через LaunchedEffect при смене checkpointScanTrigger
+            }
+        }
+    }
+    
+    // Отдельный LaunchedEffect для обработки анимации завершения
+    LaunchedEffect(showAutoEndAnimation) {
+        Log.d(TAG, "Animation LaunchedEffect triggered, showAutoEndAnimation=$showAutoEndAnimation")
+        if (showAutoEndAnimation) {
+            // Ждем 3 секунды, затем скрываем анимацию и возвращаемся
+            kotlinx.coroutines.delay(3000)
+            if (showAutoEndAnimation) {
+                showAutoEndAnimation = false
+                Log.d(TAG, "Animation completed, hiding dialog")
+                
+                // Вызываем коллбэк для возврата в RoundsScreen
+                if (manager.isShiftActive()) {
+                    Log.d(TAG, "Animation LaunchedEffect: Calling onEndRound")
+                    onEndRound()
+                } else {
+                    Log.d(TAG, "Animation LaunchedEffect: Calling onCloseShift")
+                    onCloseShift()
+                }
+            }
+        }
+    }
+    
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -126,11 +180,11 @@ fun OhrannikCabinetScreen(
     var showInputDialog by remember { mutableStateOf<QrResult.InputFormat?>(null) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
     
+    // Для отображения ошибки последовательности в строгом режиме
+    var showSequenceErrorScreen by remember { mutableStateOf<QrResult.SequenceError?>(null) }
+    
     // Для съемки фото
     var photoCheckpointId by remember { mutableStateOf("") }
-    
-    // Для подтверждения завершения обхода
-    var showEndRoundDialog by remember { mutableStateOf(false) }
     
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -191,6 +245,63 @@ fun OhrannikCabinetScreen(
             val checkpoint = manager.getCheckpointByNfcId(scannedNfcId)
             
             if (checkpoint != null) {
+                // Если включен строгий контроль последовательности - проверяем顺序
+                if (manager.isStrictSequenceEnabled()) {
+                    val activeRoundIndex = manager.getActiveRoundIndex()
+                    val currentCheckpointIndex = manager.getCurrentCheckpointIndex()
+                    
+                    // Проверяем, является ли этот чекпоинт следующим в последовательности
+                    val expectedCheckpointName = manager.getNextCheckpointName()
+                    val isSequenceCorrect = (checkpoint.name == expectedCheckpointName)
+                    
+                    if (!isSequenceCorrect) {
+                        // Нарушение последовательности
+                        val activeShiftId = manager.prefs.getString("active_shift_id", null)
+                        val activeEmployeeName = manager.getActiveShiftEmployeeName()
+                        
+                        activeShiftId?.let { shiftId ->
+                            if (activeRoundIndex != -1) {
+                                manager.shiftDatabase.addLogEntry(
+                                    checkpointName = checkpoint.name,
+                                    checkpointId = checkpoint.id,
+                                    employeeName = activeEmployeeName,
+                                    roundId = activeRoundIndex,
+                                    routeName = "Маршрут обхода",
+                                    sequenceIndex = currentCheckpointIndex,
+                                    isSequenceCorrect = false,
+                                    scanType = "NFC",
+                                    actionType = "SCAN",
+                                    sequenceErrorExpected = expectedCheckpointName ?: ""
+                                )
+                            }
+                        }
+                        
+                        // Записываем нарушение последовательности в базу данных
+                        activeShiftId?.let { shiftId ->
+                            if (activeRoundIndex != -1) {
+                                manager.shiftDatabase.addSequenceViolation(
+                                    employeeName = activeEmployeeName,
+                                    roundId = activeRoundIndex,
+                                    expectedCheckpointId = "",
+                                    expectedCheckpointName = expectedCheckpointName ?: "",
+                                    actualCheckpointId = checkpoint.id,
+                                    actualCheckpointName = checkpoint.name,
+                                    isNfc = true
+                                )
+                            }
+                        }
+                        
+                        // Показываем диалог с красным X вместо обычного диалога
+                        showSequenceErrorScreen = QrResult.SequenceError(
+                            expectedCheckpointId = expectedCheckpointName,
+                            message = "ТОчка вне очереди"
+                        )
+                        
+                        nfcScanResult = null
+                        return@LaunchedEffect
+                    }
+                }
+                
                 // NFC-ID найден в базе - обрабатываем в зависимости от типа
                 when (checkpoint.action) {
                     CheckpointAction.CHECKPOINT -> {
@@ -320,7 +431,10 @@ fun OhrannikCabinetScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showEndRoundDialog = true }) {
+                    TextButton(onClick = { 
+                        // Выполняем тот же алгоритм, что и в автоматическом режиме
+                        completeRoundManually()
+                    }) {
                         Text("Завершить обход", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
                 }
@@ -423,7 +537,14 @@ fun OhrannikCabinetScreen(
                                                                     }
                                                                     is QrResult.SequenceError -> {
                                                                         // Логика при ошибке последовательности
-                                                                        android.widget.Toast.makeText(context, qrResult.message, android.widget.Toast.LENGTH_LONG).show()
+                                                                        // Проверяем, включен ли строгий контроль
+                                                                        if (manager.isStrictSequenceEnabled()) {
+                                                                            // Показываем экран с красным X и сообщением "ТОчка вне очереди"
+                                                                            showSequenceErrorScreen = qrResult
+                                                                        } else {
+                                                                            // В нестрогом режиме показываем просто Toast
+                                                                            android.widget.Toast.makeText(context, qrResult.message, android.widget.Toast.LENGTH_LONG).show()
+                                                                        }
                                                                     }
                                                                     is QrResult.QuestionFormat -> {
                                                                         // Показать диалог с вопросом
@@ -488,7 +609,9 @@ fun OhrannikCabinetScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Button(
-                            onClick = { isScanRequested = true },
+                            onClick = { 
+                                isScanRequested = true
+                            },
                             modifier = Modifier.width(200.dp).height(56.dp),
                             shape = RoundedCornerShape(28.dp)
                         ) {
@@ -502,44 +625,49 @@ fun OhrannikCabinetScreen(
     
     // ================= РЕНДЕРИНГ ДИАЛОГОВЫХ ОКОН =================
     
-    // Диалог подтверждения завершения обхода
-    if (showEndRoundDialog) {
+    // Анимация автоматического завершения обхода (показывается при ручном и авто завершении)
+    Log.d(TAG, "Checking showAutoEndAnimation=$showAutoEndAnimation for rendering")
+    if (showAutoEndAnimation) {
+        Log.d(TAG, "Rendering auto-end animation dialog, message=$autoEndMessage")
         AlertDialog(
-            onDismissRequest = { showEndRoundDialog = false },
-            title = { Text("Завершить обход?") },
-            text = { Text("Вы уверены, что хотите завершить текущий обход?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showEndRoundDialog = false
-                    
-                    // Получаем индекс активного обхода
-                    val activeRoundIndex = manager.getActiveRoundIndex()
-                    
-                    if (activeRoundIndex != -1) {
-                        // Завершаем активный обход в SharedPreferences
-                        val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-                        manager.completeRound(activeRoundIndex, currentTime)
+            onDismissRequest = { }, // Отключаем закрытие при клике вне
+            title = { Text("Обход завершен!") },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // Зеленая иконка успеха
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(50.dp))
+                            .background(Color(0xFF4CAF50))
+                            .align(Alignment.CenterHorizontally),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Успех",
+                            modifier = Modifier.size(60.dp),
+                            tint = Color.White
+                        )
                     }
-                    
-                    // Завершаем активный обход
-                    QrHandler.endRoundIfActive()
-                    
-                    // Вызываем коллбэк для возврата в RoundsScreen
-                    // Проверяем, активна ли смена
-                    if (manager.isShiftActive()) {
-                        onEndRound()
-                    } else {
-                        onCloseShift()
-                    }
-                }) {
-                    Text("Завершить", color = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = autoEndMessage,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Теперь вы свободны до следующего обхода",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showEndRoundDialog = false }) {
-                    Text("Отмена")
-                }
-            }
+            confirmButton = {}  // Пустой confirmButton для компиляции
         )
     }
 
@@ -560,18 +688,52 @@ fun OhrannikCabinetScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showCheckpointPassedDialog = null
-                    // Обновляем последнюю запись SCAN на тип CHECKPOINT
+                    // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
                     val activeRoundIndex = manager.getActiveRoundIndex()
                     if (activeRoundIndex != -1) {
                         manager.shiftDatabase.updateLastScanEntry(
                             roundId = activeRoundIndex,
                             actionType = "CHECKPOINT"
                         )
+                        val newCheckpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex) + 1
+                        manager.updateCurrentCheckpointIndex(newCheckpointIndex)
                     }
-                    // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
-                    manager.updateCurrentCheckpointIndex(manager.getCurrentCheckpointIndex() + 1)
                     // Обновляем имя следующего чекпоинта
                     checkpointScanTrigger = System.currentTimeMillis()
+                    
+                    // Проверяем, является ли это последним чекпоинтом
+                    val expectedCheckpointName = manager.getNextCheckpointName()
+                    
+                    // Получаем количество чекпоинтов в маршруте
+                    var isLastCheckpoint = false
+                    if (activeRoundIndex != -1) {
+                        val routeId = manager.getRoundRouteId(activeRoundIndex)
+                        val route = routeId?.let { manager.getRouteById(it) }
+                        val checkpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex)
+                        if (route != null && checkpointIndex >= route.checkpointIds.size) {
+                            isLastCheckpoint = true
+                        }
+                    }
+                    
+                    Log.d(TAG, "CheckpointPassed: expectedCheckpointName=${expectedCheckpointName.orEmpty()}, isLastCheckpoint=$isLastCheckpoint, autoEndEnabled=${manager.isAutoEndRoundEnabled()}")
+                    
+                    // Проверяем, является ли это последним чекпоинтом
+                    val isLastCheckpointResult = (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank() || isLastCheckpoint)
+                    
+                    if (isLastCheckpointResult) {
+                        Log.d(TAG, "CheckpointPassed: Last checkpoint reached")
+                        // Если включен авто-финал - завершаем обход
+                        if (manager.isAutoEndRoundEnabled()) {
+                            Log.d(TAG, "CheckpointPassed: Auto end round is enabled")
+                            completeRoundManually()
+                        } else {
+                            Log.d(TAG, "CheckpointPassed: Auto end round is disabled, waiting for manual completion via TopAppBar button")
+                            // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
+                            // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
+                        }
+                    } else {
+                        Log.d(TAG, "CheckpointPassed: More checkpoints available, continuing...")
+                    }
                 }) {
                     Text("ОК")
                 }
@@ -609,9 +771,47 @@ fun OhrannikCabinetScreen(
                                 
                                 showQuestionDialog = null
                                 // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
-                                manager.updateCurrentCheckpointIndex(manager.getCurrentCheckpointIndex() + 1)
+                                val activeRoundIndexQ = manager.getActiveRoundIndex()
+                                if (activeRoundIndexQ != -1) {
+                                    val newCheckpointIndex = manager.getRoundCheckpointIndex(activeRoundIndexQ) + 1
+                                    manager.updateCurrentCheckpointIndex(newCheckpointIndex)
+                                }
                                 // Обновляем имя следующего чекпоинта
                                 checkpointScanTrigger = System.currentTimeMillis()
+                                
+                                // Проверяем, является ли это последним чекпоинтом
+                                val expectedCheckpointName = manager.getNextCheckpointName()
+                                
+                                // Получаем количество чекпоинтов в маршруте
+                                var isLastCheckpoint = false
+                                if (activeRoundIndexQ != -1) {
+                                    val routeId = manager.getRoundRouteId(activeRoundIndexQ)
+                                    val route = routeId?.let { manager.getRouteById(it) }
+                                    val checkpointIndex = manager.getRoundCheckpointIndex(activeRoundIndexQ)
+                                    if (route != null && checkpointIndex >= route.checkpointIds.size) {
+                                        isLastCheckpoint = true
+                                    }
+                                }
+                                
+                                Log.d(TAG, "QuestionFormat: expectedCheckpointName=${expectedCheckpointName.orEmpty()}, isLastCheckpoint=$isLastCheckpoint, autoEndEnabled=${manager.isAutoEndRoundEnabled()}")
+                                
+                                // Проверяем, является ли это последним чекпоинтом
+                                val isLastCheckpointResult = (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank() || isLastCheckpoint)
+                                
+                                if (isLastCheckpointResult) {
+                                    Log.d(TAG, "QuestionFormat: Last checkpoint reached")
+                                    // Если включен авто-финал - завершаем обход
+                                    if (manager.isAutoEndRoundEnabled()) {
+                                        Log.d(TAG, "QuestionFormat: Auto end round is enabled")
+                                        completeRoundManually()
+                                    } else {
+                                        Log.d(TAG, "QuestionFormat: Auto end round is disabled, waiting for manual completion via TopAppBar button")
+                                        // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
+                                        // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
+                                    }
+                                } else {
+                                    Log.d(TAG, "QuestionFormat: More checkpoints available, continuing...")
+                                }
                             },
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -663,9 +863,32 @@ fun OhrannikCabinetScreen(
 
                             showInputDialog = null
                             // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
-                            manager.updateCurrentCheckpointIndex(manager.getCurrentCheckpointIndex() + 1)
+                            val newCheckpointIndex = manager.getCurrentCheckpointIndex() + 1
+                            manager.updateCurrentCheckpointIndex(newCheckpointIndex)
                             // Обновляем имя следующего чекпоинта
                             checkpointScanTrigger = System.currentTimeMillis()
+                            
+                            // Проверяем, является ли это последним чекпоинтом
+                            val expectedCheckpointName = manager.getNextCheckpointName()
+                            Log.d(TAG, "InputFormat: getNextCheckpointName: ${expectedCheckpointName.orEmpty()}")
+                            
+                            // Проверяем, является ли это последним чекпоинтом
+                            val isLastCheckpointResult = (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank())
+                            
+                            if (isLastCheckpointResult) {
+                                Log.d(TAG, "InputFormat: Last checkpoint reached")
+                                // Если включен авто-финал - завершаем обход
+                                if (manager.isAutoEndRoundEnabled()) {
+                                    Log.d(TAG, "InputFormat: Auto end round is enabled")
+                                    completeRoundManually()
+                                } else {
+                                    Log.d(TAG, "InputFormat: Auto end round is disabled, waiting for manual completion via TopAppBar button")
+                                    // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
+                                    // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
+                                }
+                            } else {
+                                Log.d(TAG, "InputFormat: More checkpoints available, continuing...")
+                            }
                         }
                     }
                 ) { Text("Сохранить") }
@@ -685,6 +908,72 @@ fun OhrannikCabinetScreen(
             title = { Text("Ошибка сканирования") },
             text = { Text(message) },
             confirmButton = { Button(onClick = { showErrorDialog = null }) { Text("ОК") } }
+        )
+    }
+    
+    // 5. Диалог ошибки последовательности в строгом режиме - большой красный X
+    showSequenceErrorScreen?.let { result ->
+        AlertDialog(
+            onDismissRequest = { showSequenceErrorScreen = null },
+            title = null,
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Большой красный X
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .background(color = MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = "Ошибка",
+                            modifier = Modifier.size(80.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    
+                    // Текст сообщения
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Точка вне очереди",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        
+                        Text(
+                            text = result.message,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        // Если есть ожидаемый чекпоинт - показываем его
+                        if (result.expectedCheckpointId != null) {
+                            Text(
+                                text = "Ожидался чекпоинт: ${result.expectedCheckpointId}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSequenceErrorScreen = null },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Понятно", fontSize = 16.sp)
+                }
+            }
         )
     }
 }

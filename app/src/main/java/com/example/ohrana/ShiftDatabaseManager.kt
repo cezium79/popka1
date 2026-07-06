@@ -7,6 +7,8 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.ohrana.ShiftRecord
+import com.example.ohrana.GuardMember
 
 // ============================================
 // УПРАВЛЕНИЕ БАЗОЙ ДАННЫХ ОБХОДОВ
@@ -56,13 +58,18 @@ class ShiftDatabaseManager(private val context: Context) {
     /**
      * Начать новую смену
      */
-    fun startNewShift(employeeName: String, strictSequenceEnabled: Boolean): String {
+    fun startNewShift(
+        employeeName: String, 
+        guardList: List<GuardMember>,
+        strictSequenceEnabled: Boolean
+    ): String {
         val shiftId = generateShiftId()
         val currentTime = dateFormat.format(Date())
         
         val shift = ShiftRecord(
             id = shiftId,
             employeeName = employeeName,
+            guardList = guardList,
             startTime = currentTime,
             isShiftActive = true,
             strictSequenceEnabled = strictSequenceEnabled
@@ -112,6 +119,19 @@ class ShiftDatabaseManager(private val context: Context) {
         val json = JSONObject().apply {
             put("id", shift.id)
             put("employeeName", shift.employeeName)
+            
+            // Сохраняем список охранников
+            val guardsArray = JSONArray()
+            shift.guardList.forEach { guard ->
+                val guardObj = JSONObject()
+                guardObj.put("nfcId", guard.nfcId)
+                guardObj.put("name", guard.name)
+                guardObj.put("role", guard.role)
+                guard.startTime?.let { guardObj.put("startTime", it) }
+                guardsArray.put(guardObj)
+            }
+            put("guardList", guardsArray)
+            
             put("startTime", shift.startTime)
             shift.endTime?.let { put("endTime", it) }
             put("isShiftActive", shift.isShiftActive)
@@ -130,9 +150,31 @@ class ShiftDatabaseManager(private val context: Context) {
             .mapNotNull { 
                 try {
                     val json = JSONObject(it.value as String)
+                    // Загружаем список охранников
+                    val guardList = if (json.has("guardList")) {
+                        val guardsArray = json.getJSONArray("guardList")
+                        List(guardsArray.length()) { index ->
+                            val guardObj = guardsArray.getJSONObject(index)
+                            GuardMember(
+                                nfcId = guardObj.optString("nfcId", ""),
+                                name = guardObj.optString("name", ""),
+                                role = guardObj.optString("role", "охранник"),
+                                startTime = if (guardObj.has("startTime")) guardObj.getString("startTime") else null
+                            )
+                        }
+                    } else {
+                        // Для совместимости с旧ими данными
+                        listOf(GuardMember(
+                            nfcId = "",
+                            name = json.getString("employeeName"),
+                            role = "охранник"
+                        ))
+                    }
+                    
                     ShiftRecord(
                         id = json.getString("id"),
                         employeeName = json.getString("employeeName"),
+                        guardList = guardList,
                         startTime = json.getString("startTime"),
                         endTime = if (json.has("endTime")) json.getString("endTime") else null,
                         isShiftActive = json.optBoolean("isShiftActive", false),

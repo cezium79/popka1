@@ -8,13 +8,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
@@ -43,6 +48,8 @@ fun AdministratorScreen(
     val scope = rememberCoroutineScope()
 
     var isStrictSequence by remember { mutableStateOf(prefsManager.isStrictSequenceEnabled()) }
+    var isAutoEndRound by remember { mutableStateOf(prefsManager.isAutoEndRoundEnabled()) }
+    var guardsCount by remember { mutableStateOf(prefsManager.getGuardsCount()) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportStatus by remember { mutableStateOf(false) }
@@ -247,6 +254,122 @@ fun AdministratorScreen(
                             prefsManager.setStrictSequenceEnabled(isChecked)
                         }
                     )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Настройки автоматического завершения обхода
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Автоматическое завершение обхода",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                        Text(
+                            text = "Завершать обход автоматически после прохождения последнего чекпоинта",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Switch(
+                        checked = isAutoEndRound,
+                        onCheckedChange = { isChecked ->
+                            isAutoEndRound = isChecked
+                            prefsManager.setAutoEndRoundEnabled(isChecked)
+                        }
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Настройка количества охранников
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Количество охранников",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                        
+                        // Выпадающее меню для выбора количества охранников
+                        var showGuardDropdown by remember { mutableStateOf(false) }
+                        
+                        Box {
+                            OutlinedButton(
+                                onClick = { showGuardDropdown = true },
+                                modifier = Modifier.width(260.dp)
+                            ) {
+                                Text(
+                                    when (guardsCount) {
+                                        1 -> "1 охранник (старший)"
+                                        2 -> "Старший и 1 охранник"
+                                        3 -> "Старший и 2 охранника"
+                                        else -> "Выберите количество"
+                                    },
+                                    fontSize = 14.sp
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Раскрыть меню"
+                                )
+                            }
+                            
+                            DropdownMenu(
+                                modifier = Modifier.width(260.dp),
+                                expanded = showGuardDropdown,
+                                onDismissRequest = { showGuardDropdown = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("1 охранник (старший)") },
+                                    onClick = {
+                                        guardsCount = 1
+                                        prefsManager.setGuardsCount(1)
+                                        showGuardDropdown = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Старший и 1 охранник") },
+                                    onClick = {
+                                        guardsCount = 2
+                                        prefsManager.setGuardsCount(2)
+                                        showGuardDropdown = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Старший и 2 охранника") },
+                                    onClick = {
+                                        guardsCount = 3
+                                        prefsManager.setGuardsCount(3)
+                                        showGuardDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
             

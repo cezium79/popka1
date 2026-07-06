@@ -1,26 +1,34 @@
 package com.example.ohrana
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoundsScreen(
     onBack: () -> Unit,
     onCloseShift: () -> Unit, // Вызывается при завершении смены
-    onStartRound: (roundIndex: Int, routeId: String?) -> Unit
+    onStartRound: (guardName: String, roundIndex: Int, routeId: String?) -> Unit
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -34,12 +42,37 @@ fun RoundsScreen(
     // Получаем имя активного сотрудника
     val activeEmployeeName by remember { mutableStateOf(prefsManager.getActiveShiftEmployeeName()) }
     
+    // Получаем список охранников
+    val guardList by remember { mutableStateOf(prefsManager.loadGuards()) }
+    
     // Проверяем, активна ли смена
     val isShiftActive by remember { mutableStateOf(prefsManager.isShiftActive()) }
     
-    // Переменные для диалогов
-    var showGoodbyeDialog by remember { mutableStateOf(false) }
+    // Переменные для анимации
+    var showGoodbyeAnimation by remember { mutableStateOf(false) }
     var showConfirmCloseShiftDialog by remember { mutableStateOf(false) }
+    var showGuardSelectionDialog by remember { mutableStateOf(false) }
+    var showUnfinishedRoundWarning by remember { mutableStateOf(false) }
+    var selectedRoundForGuardSelection by remember { mutableStateOf<Pair<Int, String?>>(0 to null) }
+    
+    // Проверка: есть ли незавершённый обход
+    fun hasUnfinishedRound(): Boolean {
+        return routeAlarms.any { alarm ->
+            prefsManager.isRoundStarted(alarm.id) && !prefsManager.isRoundCompleted(alarm.id)
+        }
+    }
+    
+    // Функция для завершения смены (без диалога подтверждения)
+    fun completeShiftManually() {
+        // Сохраняем статус контроля последовательности для отчета
+        prefsManager.saveSequenceControlStatus(prefsManager.isStrictSequenceEnabled())
+        
+        // Железно фиксируем дату и время закрытия смены в SharedPreferences
+        prefsManager.closeCurrentShift()
+        
+        // Показываем анимацию завершения смены
+        showGoodbyeAnimation = true
+    }
     
     // Функция для обработки нажатия кнопки "Назад"
     fun onNavigateBack() {
@@ -47,6 +80,26 @@ fun RoundsScreen(
             onBack()
         } else {
             onCloseShift()
+        }
+    }
+    
+    // Функция для обработки нажатия кнопки "Начать обход"
+    fun handleStartRound(roundIndex: Int, routeId: String?, isContinuation: Boolean = false) {
+        // Проверяем, есть ли незавершённый обход - только для новых обходов (не для продолжения)
+        if (!isContinuation && hasUnfinishedRound()) {
+            showUnfinishedRoundWarning = true
+            return
+        }
+        
+        val guardsCount = guardList.size
+        
+        if (guardsCount == 1) {
+            // Для одного охранника сразу начинаем обход
+            onStartRound(guardList[0].name, roundIndex, routeId)
+        } else {
+            // Для группы охранников показываем диалог выбора
+            selectedRoundForGuardSelection = roundIndex to routeId
+            showGuardSelectionDialog = true
         }
     }
 
@@ -70,15 +123,44 @@ fun RoundsScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Отображаем имя сотрудника
-            if (activeEmployeeName.isNotEmpty()) {
-                Text(
-                    text = "Сотрудник: $activeEmployeeName",
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
+            // Отображаем список охранников или одного сотрудника
+            if (guardList.isNotEmpty()) {
+                if (guardList.size == 1) {
+                    // Для одного охранника показываем имя
+                    Text(
+                        text = "Сотрудник: ${guardList[0].name}",
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                } else {
+                    // Для группы охранников показываем список
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Text(
+                                text = "Сотрудники:",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            guardList.forEach { guard ->
+                                Text(
+                                    text = "• ${guard.name} (${guard.role})",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
             
             // Если смена не активна - показываем предупреждение
@@ -189,10 +271,20 @@ fun RoundsScreen(
                                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                                         fontWeight = FontWeight.Bold
                                     )
+                                } else if (prefsManager.isRoundStarted(alarm.id)) {
+                                    // Если обход начат, но не завершен - показываем кнопку "Продолжить обход" красным
+                                    Button(
+                                        onClick = { handleStartRound(alarm.id, alarm.routeId, isContinuation = true) },
+                                        enabled = isShiftActive,
+                                        modifier = Modifier.width(150.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Text("Продолжить обход", fontSize = 14.sp, color = MaterialTheme.colorScheme.onError)
+                                    }
                                 } else {
                                     // Кнопка "Начать обход" для незавершенных обходов
                                     Button(
-                                        onClick = { onStartRound(alarm.id, alarm.routeId) },
+                                        onClick = { handleStartRound(alarm.id, alarm.routeId) },
                                         enabled = isShiftActive,
                                         modifier = Modifier.width(150.dp)
                                     ) {
@@ -247,6 +339,45 @@ fun RoundsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
             
+            // Диалог выбора охранника для обхода (только если guardsCount > 1)
+            if (showGuardSelectionDialog && guardList.size > 1) {
+                AlertDialog(
+                    onDismissRequest = { showGuardSelectionDialog = false },
+                    title = { Text("Кто будет проходить обход №${selectedRoundForGuardSelection.first}?") },
+                    text = {
+                        Column {
+                            guardList.forEach { guard ->
+                                TextButton(
+                                    onClick = {
+                                        showGuardSelectionDialog = false
+                                        onStartRound(guard.name, selectedRoundForGuardSelection.first, selectedRoundForGuardSelection.second)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = guard.name,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = guard.role,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showGuardSelectionDialog = false }) {
+                            Text("Отмена")
+                        }
+                    }
+                )
+            }
+            
             // Диалог подтверждения завершения смены
             if (showConfirmCloseShiftDialog) {
                 AlertDialog(
@@ -257,15 +388,7 @@ fun RoundsScreen(
                         TextButton(
                             onClick = {
                                 showConfirmCloseShiftDialog = false
-                                
-                                // Сохраняем статус контроля последовательности для отчета
-                                prefsManager.saveSequenceControlStatus(prefsManager.isStrictSequenceEnabled())
-                                
-                                // Железно фиксируем дату и время закрытия смены в SharedPreferences
-                                prefsManager.closeCurrentShift()
-                                
-                                // Показываем окно прощания
-                                showGoodbyeDialog = true
+                                completeShiftManually()
                             }
                         ) {
                             Text("Да, завершить", color = MaterialTheme.colorScheme.error)
@@ -279,23 +402,102 @@ fun RoundsScreen(
                 )
             }
             
-            // Окно прощания
-            if (showGoodbyeDialog) {
+            // Яркое предупреждение о незавершённом обходе
+            if (showUnfinishedRoundWarning) {
                 AlertDialog(
-                    onDismissRequest = { },
-                    title = { Text("Смена успешно завершена", fontWeight = FontWeight.Bold) },
-                    text = { Text("Смена закрыта. До свидания!", fontSize = 16.sp) },
+                    onDismissRequest = { showUnfinishedRoundWarning = false },
+                    title = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Предупреждение",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "ВНИМАНИЕ!",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "Сначала необходимо завершить текущий обход! Нельзя начинать новый обход, не завершив предыдущий.",
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    },
                     confirmButton = {
                         Button(
-                            onClick = {
-                                showGoodbyeDialog = false
-                                onCloseShift()
-                            }
+                            onClick = { showUnfinishedRoundWarning = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text("ОК")
+                            Text("Понятно", fontSize = 16.sp, color = MaterialTheme.colorScheme.onError)
                         }
                     }
                 )
+            }
+        }
+        
+        // Анимация завершения смены (без кнопок) - поверх всего экрана
+        if (showGoodbyeAnimation) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFFFFFFF))
+                    .zIndex(100f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(50.dp))
+                            .background(Color(0xFF4CAF50)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Успех",
+                            modifier = Modifier.size(60.dp),
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Смена успешно завершена",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Смена закрыта. До свидания!",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            // Через 3 секунды возвращаемся на экран выбора сотрудника
+            LaunchedEffect(showGoodbyeAnimation) {
+                if (showGoodbyeAnimation) {
+                    kotlinx.coroutines.delay(3000)
+                    if (showGoodbyeAnimation) {
+                        showGoodbyeAnimation = false
+                        onCloseShift()
+                    }
+                }
             }
         }
     }

@@ -15,6 +15,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.text.font.FontWeight
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -27,16 +30,17 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import com.example.ohrana.ShiftDatabaseManager
 import com.example.ohrana.ShiftLogDetailScreen
 import com.example.ohrana.ShiftLogEntry
 import com.example.ohrana.CloudStorageManager
 import com.example.ohrana.CloudSettingsScreen
-
+import com.example.ohrana.GuardMember
+import com.example.ohrana.GuardNfcSelectionScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -106,6 +110,7 @@ fun AppNavigation() {
     var selectedEmployeeName by remember { mutableStateOf("") }
     var selectedCheckpointId by remember { mutableStateOf<String?>(null) }
     var currentShiftId by remember { mutableStateOf("") }
+    var guardsCount by remember { mutableStateOf(1) }
 
     // Состояние для 5-кликового механизма админ-кнопки
     var clickCount by remember { mutableStateOf(0) }
@@ -159,7 +164,11 @@ fun AppNavigation() {
 
     when (currentScreen) {
         "privet" -> {
-            // Автоматическое NFC-сканирование при загрузке экрана
+            // Проверяем статус смены
+            val isShiftActive = prefsManager.isAnyShiftActive()
+            val guardsCount = prefsManager.getGuardsCount()
+            
+            // Автоматическое NFC-сканирование при загрузке экрана (только для групповой работы и открытой смены)
             val context = LocalContext.current
             val activity = context as? ComponentActivity
             
@@ -221,13 +230,38 @@ fun AppNavigation() {
                 ) {
                     Text(text = "Добро пожаловать!", fontSize = 24.sp, color = androidx.compose.ui.graphics.Color.White, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Поднесите личную карту к телефону", fontSize = 18.sp, color = androidx.compose.ui.graphics.Color.White)
+                    
+                    // Для guardsCount = 1 показываем текст про NFC
+                    if (guardsCount == 1) {
+                        Text(text = "Поднесите личную карту к телефону", fontSize = 18.sp, color = androidx.compose.ui.graphics.Color.White)
+                    }
+                }
+                
+                // Кнопка "ОТКРЫТЬ СМЕНУ" для групповой работы (только если смена закрыта)
+                if (guardsCount > 1 && !isShiftActive) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 32.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                currentScreen = "guard_nfc_selection"
+                            },
+                            modifier = Modifier.fillMaxWidth(0.8f).height(60.dp)
+                        ) {
+                            Text("ОТКРЫТЬ СМЕНУ", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
             
-            // Активируем reader mode при загрузке экрана
-            LaunchedEffect(nfcAdapter, activity) {
-                if (nfcAdapter != null && activity != null) {
+            // NFC-сканирование: 
+            // - Для guardsCount = 1: при NFC сразу начинаем смену
+            // - Для guardsCount > 1 и открытой смены: NFC сразу открывает экран rounds
+            // - Для guardsCount > 1 и закрытой смены: NFC сканирует постоянно, обрабатывает только администратора
+            LaunchedEffect(nfcAdapter, activity, guardsCount, isShiftActive) {
+                if (nfcAdapter != null && activity != null && (guardsCount == 1 || (guardsCount > 1 && isShiftActive) || guardsCount > 1)) {
                     try {
                         nfcAdapter.enableReaderMode(
                             activity,
@@ -245,20 +279,67 @@ fun AppNavigation() {
                                 if (employee != null) {
                                     val isAdmin = employee.role.contains("администратор", ignoreCase = true) || 
                                                  employee.role.contains("administrator", ignoreCase = true)
+                                
+                                if (isAdmin) {
+                                    currentScreen = "admin"
+                                } else if (guardsCount > 1 && !isShiftActive) {
+                                    // Для групповой работы и закрытой смены игнорируем карты охранников
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Для открытия смены нажмите кнопку «ОТКРЫТЬ СМЕНУ»",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    selectedEmployeeName = employee.name
                                     
-                                    if (isAdmin) {
-                                        currentScreen = "admin"
+                                    // Если смена открыта - сразу открываем экран rounds
+                                    if (isShiftActive) {
+                                        currentScreen = "rounds"
                                     } else {
-                                        selectedEmployeeName = employee.name
-                                        // Всегда переходим в shift_control для обычных сотрудников
-                                        currentScreen = "shift_control"
+                                        // Для guardsCount = 1 сразу начинаем смену
+                                        if (guardsCount == 1) {
+                                            prefsManager.startNewShift(selectedEmployeeName, prefsManager.isStrictSequenceEnabled())
+                                            currentScreen = "rounds"
+                                        }
                                     }
+                                }
                                 } else {
                                     android.widget.Toast.makeText(
                                         context,
                                         "NFC-тег не найден в списке сотрудников",
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
+                                }
+                                
+                                // Перезапускаем сканирование
+                                activity.runOnUiThread {
+                                    try {
+                                        nfcAdapter.enableReaderMode(
+                                            activity,
+                                            { tag2 ->
+                                                val nfcId2 = tag2.id.joinToString(":") { byte -> String.format("%02X", byte) }
+                                                
+                                                activity.runOnUiThread {
+                                                    nfcAdapter.disableReaderMode(activity)
+                                                }
+                                                
+                                                val employee2 = employeeList.find { it.nfcId == nfcId2 }
+                                                
+                                                if (employee2 != null) {
+                                                    val isAdmin2 = employee2.role.contains("администратор", ignoreCase = true) || 
+                                                                 employee2.role.contains("administrator", ignoreCase = true)
+                                                    
+                                                    if (isAdmin2) {
+                                                        currentScreen = "admin"
+                                                    }
+                                                }
+                                            },
+                                            android.nfc.NfcAdapter.FLAG_READER_NFC_A or android.nfc.NfcAdapter.FLAG_READER_NFC_B,
+                                            null
+                                        )
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
                                 }
                             },
                             android.nfc.NfcAdapter.FLAG_READER_NFC_A or android.nfc.NfcAdapter.FLAG_READER_NFC_B,
@@ -282,10 +363,13 @@ fun AppNavigation() {
         "ohrannik_cabinet" -> OhrannikCabinetScreen(
             employeeName = selectedEmployeeName,
             onBack = {
-                // Если смена открыта кем-то другим, возвращаемся в shift_control
-                // Если у этого сотрудника активна смена, возвращаемся в rounds
-                // Если смены нет у никого, возвращаемся в shift_control
-                if (prefsManager.isShiftActiveByOther(selectedEmployeeName)) {
+                val guardsCount = prefsManager.getGuardsCount()
+                
+                // Если guardsCount > 1, всегда возвращаемся в rounds
+                // Если guardsCount = 1, проверяем статус смены как раньше
+                if (guardsCount > 1) {
+                    currentScreen = "rounds"
+                } else if (prefsManager.isShiftActiveByOther(selectedEmployeeName)) {
                     currentScreen = "shift_control"
                 } else if (prefsManager.isShiftActiveFor(selectedEmployeeName)) {
                     currentScreen = "rounds"
@@ -334,13 +418,41 @@ fun AppNavigation() {
             }
         )
         
+        "guard_selection" -> GuardSelectionScreen(
+            onBack = { currentScreen = "privet" },
+            onStartShift = { guardList ->
+                // Сохраняем количество охранников
+                guardsCount = guardList.size
+                prefsManager.setGuardsCount(guardList.size)
+                
+                // Начинаем новую смену с группой охранников
+                prefsManager.startNewShift(guardList, prefsManager.isStrictSequenceEnabled())
+                currentScreen = "rounds"
+            }
+        )
+        
+        "guard_nfc_selection" -> GuardNfcSelectionScreen(
+            onBack = { currentScreen = "privet" },
+            onStartShift = { guardList ->
+                // Сохраняем количество охранников
+                guardsCount = guardList.size
+                prefsManager.setGuardsCount(guardList.size)
+                
+                // Начинаем новую смену с группой охранников
+                prefsManager.startNewShift(guardList, prefsManager.isStrictSequenceEnabled())
+                currentScreen = "rounds"
+            }
+        )
+        
         "rounds" -> RoundsScreen(
             onBack = { currentScreen = "shift_control" },
             onCloseShift = {
                 selectedEmployeeName = ""
                 currentScreen = "privet"
             },
-            onStartRound = { roundIndex, routeId ->
+            onStartRound = { guardName, roundIndex, routeId ->
+                // Обновляем selectedEmployeeName с выбранным именем охранника
+                selectedEmployeeName = guardName
                 val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
                 prefsManager.startRound(roundIndex, currentTime, routeId)
                 

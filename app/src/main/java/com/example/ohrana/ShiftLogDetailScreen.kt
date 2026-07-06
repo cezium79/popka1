@@ -680,7 +680,7 @@ fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftL
             
             // Заголовок отчета
             paint.color = android.graphics.Color.WHITE
-            paint.textSize = 28f
+            paint.textSize = 22f
             paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
             canvas.drawText("ОТЧЕТ О СМЕНЕ №$shiftNumber", 20f, 42f, paint)
             
@@ -709,10 +709,7 @@ fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftL
                 val newPageInfo = PdfDocument.PageInfo.Builder(595, 842, currentPage).create()
                 page = pdfDocument.startPage(newPageInfo)
                 canvas = page.canvas
-                yPos = 100f // Начинаем с обычным отступом после заголовка
-                
-                // Рисуем заголовок на новой странице
-                drawPageHeader(currentPage)
+                yPos = 100f // Начинаем с обычным отступом
                 
                 // Разделитель
                 paint.color = dividerColor

@@ -11,6 +11,7 @@ import com.example.ohrana.ShiftLogEntry
 import com.example.ohrana.ShiftRecord
 import com.example.ohrana.RoundRecord
 import com.example.ohrana.SequenceViolation
+import com.example.ohrana.GuardMember
 
 // Модель для сохранения сканирований
 data class QrScanRecord(val employeeName: String, val time: String, val qrContent: String)
@@ -31,6 +32,91 @@ class SharedPrefsManager(private val context: Context) {
 
     // ОБНОВЛЕНО: Новый, понятный формат даты для логов и смен
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
+    
+    // --- МЕТОДЫ ДЛЯ ГРУППОВОЙ РАБОТЫ ОХРАННИКОВ ---
+    
+    /**
+     * Количество охранников на смене (по умолчанию 1 для совместимости)
+     */
+    fun getGuardsCount(): Int {
+        return prefs.getInt("guards_count", 1)
+    }
+    
+    /**
+     * Установить количество охранников на смене
+     */
+    fun setGuardsCount(count: Int) {
+        prefs.edit().putInt("guards_count", count).apply()
+    }
+    
+    /**
+     * Получить список охранников на смене (из SharedPreferences)
+     */
+    fun loadGuards(): List<GuardMember> {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonString = localPrefs.getString("guards_list", null)
+        if (jsonString.isNullOrBlank()) return emptyList()
+        
+        return try {
+            val jsonArray = org.json.JSONArray(jsonString)
+            List(jsonArray.length()) { index ->
+                val jsonObject = jsonArray.getJSONObject(index)
+                GuardMember(
+                    nfcId = jsonObject.optString("nfcId", ""),
+                    name = jsonObject.optString("name", ""),
+                    role = jsonObject.optString("role", "охранник"),
+                    startTime = if (jsonObject.has("startTime")) jsonObject.getString("startTime") else null
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+    
+    /**
+     * Сохранить список охранников в SharedPreferences
+     */
+    fun saveGuards(guards: List<GuardMember>) {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonArray = org.json.JSONArray()
+        guards.forEach { guard ->
+            val jsonObject = org.json.JSONObject()
+            jsonObject.put("nfcId", guard.nfcId)
+            jsonObject.put("name", guard.name)
+            jsonObject.put("role", guard.role)
+            guard.startTime?.let { jsonObject.put("startTime", it) }
+            jsonArray.put(jsonObject)
+        }
+        localPrefs.edit().putString("guards_list", jsonArray.toString()).apply()
+    }
+    
+    /**
+     * Получить текущего охранника (по NFC ID)
+     */
+    fun getCurrentGuard(): GuardMember? {
+        val currentNfcId = prefs.getString("current_guard_nfc_id", null)
+        if (currentNfcId.isNullOrEmpty()) return null
+        
+        val guards = loadGuards()
+        return guards.find { it.nfcId == currentNfcId }
+    }
+    
+    /**
+     * Установить текущего охранника по NFC ID
+     */
+    fun setCurrentGuard(nfcId: String) {
+        prefs.edit().putString("current_guard_nfc_id", nfcId).apply()
+    }
+    
+    /**
+     * Получить старшего смены
+     */
+    fun getShiftLeader(): GuardMember? {
+        val guards = loadGuards()
+        return guards.find { it.role.contains("старший", ignoreCase = true) || it.role.contains("lead", ignoreCase = true) }
+    }
+    
     // --- МЕТОДЫ УПРАВЛЕНИЯ СМЕНОЙ ОХРАННИКА ---
 // Включен ли строгий контроль последовательности сканирования (true/false)
     fun isStrictSequenceEnabled(): Boolean {
@@ -39,6 +125,15 @@ class SharedPrefsManager(private val context: Context) {
 
     fun setStrictSequenceEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("strict_sequence_enabled", enabled).apply()
+    }
+
+    // Включен ли автоматический перехват обхода при завершении последнего чекпоинта
+    fun isAutoEndRoundEnabled(): Boolean {
+        return prefs.getBoolean("auto_end_round_enabled", true)
+    }
+
+    fun setAutoEndRoundEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_end_round_enabled", enabled).apply()
     }
 
     // Сохраняет, был ли контроль последовательности включён в этой смене
@@ -67,12 +162,15 @@ class SharedPrefsManager(private val context: Context) {
         return saved.split(",")
     }
 
-    // Получить индекс чекпоинта, который мы ждем от сканера (начиная с 0)
-    fun getCurrentCheckpointIndex(): Int {
-        return prefs.getInt("active_route_current_index", 0)
-    }
-
+    // Получить индекс чекпоинта, который мы ждем от сканера (начиная с 0) - устаревший, используйте getRoundCheckpointIndex
+    fun getCurrentCheckpointIndex(): Int = prefs.getInt("active_route_current_index", 0)
+    
+    // Обновить индекс чекпоинта для активного обхода
     fun updateCurrentCheckpointIndex(index: Int) {
+        val activeRoundIndex = getActiveRoundIndex()
+        if (activeRoundIndex != -1) {
+            prefs.edit().putInt("round_${activeRoundIndex}_checkpoint_index", index).apply()
+        }
         prefs.edit().putInt("active_route_current_index", index).apply()
     }
 
@@ -81,8 +179,15 @@ class SharedPrefsManager(private val context: Context) {
     }
 
     // Начать новую смену (сохраняем имя и время старта)
-    fun startNewShift(employeeName: String, strictSequenceEnabled: Boolean) {
+    // Для совместимости - может принимать один employeeName или список guardList
+    fun startNewShift(
+        guardList: List<GuardMember>, 
+        strictSequenceEnabled: Boolean
+    ) {
         val currentTime = dateFormat.format(Date()) // Генерирует строку вида "27.06.2026 15:30:00"
+        
+        // Сохраняем список охранников в SharedPreferences
+        saveGuards(guardList)
         
         // Очищаем shiftLogs при старте новой смены
         QrHandler.clearShiftLogs()
@@ -91,19 +196,37 @@ class SharedPrefsManager(private val context: Context) {
         // Сбрасываем статус всех обходов при старте новой смены
         resetAllRounds()
         
-        // Создаем новую запись смены в базе данных
-        val shiftId = shiftDatabase.startNewShift(employeeName, strictSequenceEnabled)
+        // Создаем новую запись смены в базе данных (передаем первого охранника как основного)
+        val mainGuard = guardList.firstOrNull()
+        val mainGuardName = mainGuard?.name ?: ""
+        val shiftId = shiftDatabase.startNewShift(mainGuardName, guardList, strictSequenceEnabled)
         // Сохраняем ID активной смены в SharedPreferences
         prefs.edit().putString("active_shift_id", shiftId).apply()
         
+        // Устанавливаем текущего охранника (первого в списке)
+        if (guardList.isNotEmpty()) {
+            setCurrentGuard(guardList[0].nfcId)
+        }
+        
         prefs.edit().apply {
-            putString("active_shift_employee", employeeName)
+            putString("active_shift_employee", mainGuardName)
             putString("active_shift_start_time", currentTime)
             putBoolean("active_shift_is_running", true)
             // Сохраняем статус контроля последовательности при старте смены
             putBoolean("sequence_control_was_enabled", strictSequenceEnabled)
             apply()
         }
+    }
+    
+    // Старый метод для совместимости - принимает один employeeName
+    fun startNewShift(employeeName: String, strictSequenceEnabled: Boolean) {
+        // Для совместимости создаем список с одним охранником
+        val guard = GuardMember(
+            nfcId = "",
+            name = employeeName,
+            role = "охранник"
+        )
+        startNewShift(listOf(guard), strictSequenceEnabled)
     }
     // Просто возвращает true, если смена запущена на устройстве, и false, если закрыта
     fun isShiftActive(): Boolean {
@@ -181,6 +304,13 @@ class SharedPrefsManager(private val context: Context) {
             // Удаляем данные сотрудника, так как смена завершена
             remove("active_shift_employee")
             remove("active_shift_start_time")
+            
+            // Сбрасываем индексы чекпоинтов всех обходов
+            val routeAlarms = loadRouteAlarms()
+            routeAlarms.forEach { alarm ->
+                prefs.edit().putInt("round_${alarm.id}_checkpoint_index", 0).apply()
+            }
+            
             apply()
         }
     }
@@ -196,8 +326,7 @@ class SharedPrefsManager(private val context: Context) {
             putString("round_${roundIndex}_scanned_points", "") // Очищаем отсканированные точки для этого обхода
             putString("round_${roundIndex}_route_id", routeId ?: "")
             putBoolean("round_${roundIndex}_is_completed", false)
-            // Сбрасываем индекс чекпоинта при запуске нового обхода
-            putInt("active_route_current_index", 0)
+            // НЕ сбрасываем индекс чекпоинта - он сохраняется при возврате в незавершённый обход
             apply()
         }
         
@@ -215,8 +344,8 @@ class SharedPrefsManager(private val context: Context) {
             putBoolean("round_${roundIndex}_is_completed", true)
             putString("round_${roundIndex}_end_time", endTime)
             putInt("active_shift_current_round_index", -1)
-            // Сбрасываем индекс чекпоинта при завершении обхода
-            putInt("active_route_current_index", 0)
+            // НЕ сбрасываем индекс чекпоинта - он сохраняется для отображения "Завершен"
+            // putInt("round_${roundIndex}_checkpoint_index", 0) // УДАЛЕНО: сбрасывал индекс
             apply()
         }
         
@@ -226,6 +355,9 @@ class SharedPrefsManager(private val context: Context) {
 
     // Получить индекс обхода, который выполняется прямо сейчас (-1 означает, что никакой обход не запущен)
     fun getActiveRoundIndex(): Int = prefs.getInt("active_shift_current_round_index", -1)
+    
+    // Получить индекс чекпоинта для конкретного обхода
+    fun getRoundCheckpointIndex(roundIndex: Int): Int = prefs.getInt("round_${roundIndex}_checkpoint_index", 0)
     
     // Получить ID маршрута активного обхода
     fun getActiveRoundRouteId(): String? {
@@ -257,8 +389,8 @@ class SharedPrefsManager(private val context: Context) {
         val route = getRouteById(routeId)
         if (route == null || route.checkpointIds.isEmpty()) return "Свободный обход"
         
-        // Получаем индекс текущего чекпоинта
-        val checkpointIndex = getCurrentCheckpointIndex()
+        // Получаем индекс текущего чекпоинта для активного обхода
+        val checkpointIndex = getRoundCheckpointIndex(activeRoundIndex)
         
         // Если индекс вышел за границы, показываем сообщение о завершении
         if (checkpointIndex >= route.checkpointIds.size) {
@@ -272,6 +404,30 @@ class SharedPrefsManager(private val context: Context) {
 
     // Проверить, завершен ли обход
     fun isRoundCompleted(roundIndex: Int): Boolean = prefs.getBoolean("round_${roundIndex}_is_completed", false)
+    
+    // Проверить, запущен ли обход (начат, но не завершен)
+    // Обход считается запущенным (и готовым к "Продолжить обход"), если:
+    // 1. Он не зав��ршен (isRoundCompleted == false)
+    // 2. Он был запущен (существует время начала не "-")
+    // 3. И есть прогресс (индекс чекпоинта > 0 для этого обхода)
+    //
+    // Это означает, что:
+    // - При нажатии "Начать обход" startTime устанавливается, но checkpointIndex = 0
+    // - После первого сканирования checkpointIndex становится > 0
+    // - Пока checkpointIndex = 0, обход еще не "начат" в смысле прогресса
+    fun isRoundStarted(roundIndex: Int): Boolean {
+        val isCompleted = isRoundCompleted(roundIndex)
+        val startTime = getRoundStartTime(roundIndex)
+        
+        // Если время начала "-" или обход завершен, то обход не запущен
+        if (startTime == "-" || isCompleted) return false
+        
+        // Проверяем прогресс: индекс чекпоинта для этого конкретного обхода
+        val checkpointIndex = getRoundCheckpointIndex(roundIndex)
+        
+        // Обход считается запущенным только если есть прогресс (checkpointIndex > 0)
+        return checkpointIndex > 0
+    }
     
     // Сбросить статус всех обходов
     fun resetAllRounds() {
@@ -753,6 +909,7 @@ class SharedPrefsManager(private val context: Context) {
             
             // 7. Настройки контроля последовательности
             allData.put("strict_sequence_enabled", isStrictSequenceEnabled())
+            allData.put("auto_end_round_enabled", isAutoEndRoundEnabled())
             
         } catch (e: Exception) {
             e.printStackTrace()
@@ -954,6 +1111,9 @@ class SharedPrefsManager(private val context: Context) {
             // 5. Настройки контроля последовательности
             if (data.has("strict_sequence_enabled")) {
                 setStrictSequenceEnabled(data.getBoolean("strict_sequence_enabled"))
+            }
+            if (data.has("auto_end_round_enabled")) {
+                setAutoEndRoundEnabled(data.getBoolean("auto_end_round_enabled"))
             }
             
             true

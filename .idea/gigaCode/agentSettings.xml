@@ -36,6 +36,9 @@
         <Execute>
           <option name="pattern" value="./gradlew assembleDebug" />
         </Execute>
+        <Execute>
+          <option name="pattern" value=".\gradlew assembleDebug" />
+        </Execute>
       </list>
     </option>
   </component>
