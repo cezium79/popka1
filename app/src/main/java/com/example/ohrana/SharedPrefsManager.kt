@@ -12,6 +12,16 @@ import com.example.ohrana.ShiftRecord
 import com.example.ohrana.RoundRecord
 import com.example.ohrana.SequenceViolation
 import com.example.ohrana.GuardMember
+import com.example.ohrana.CheckpointEntry
+
+// Модель для отображения строки в журнале
+data class ShiftJournalRow(
+    val type: String, // "HEADER", "ROUND_HEADER", "SCAN", "FOOTER"
+    val content: String,
+    val subContent: String? = null,
+    val roundId: Int? = null,
+    val rowIndex: Int? = null
+)
 
 // Модель для сохранения сканирований
 data class QrScanRecord(val employeeName: String, val time: String, val qrContent: String)
@@ -211,6 +221,7 @@ class SharedPrefsManager(private val context: Context) {
         prefs.edit().apply {
             putString("active_shift_employee", mainGuardName)
             putString("active_shift_start_time", currentTime)
+            putLong("active_shift_start_time_epoch", System.currentTimeMillis())  // ДОБАВЛЕНО: epoch time
             putBoolean("active_shift_is_running", true)
             // Сохраняем статус контроля последовательности при старте смены
             putBoolean("sequence_control_was_enabled", strictSequenceEnabled)
@@ -304,6 +315,7 @@ class SharedPrefsManager(private val context: Context) {
             // Удаляем данные сотрудника, так как смена завершена
             remove("active_shift_employee")
             remove("active_shift_start_time")
+            remove("active_shift_start_time_epoch")  // УДАЛЕНО: удаляем epoch time при закрытии
             
             // Сбрасываем индексы чекпоинтов всех обходов
             val routeAlarms = loadRouteAlarms()
@@ -551,10 +563,12 @@ class SharedPrefsManager(private val context: Context) {
     fun saveScanResult(employeeName: String, qrContent: String) {
         val currentTime = dateFormat.format(Date())
         val currentLogs = prefs.getString("qr_logs", "") ?: ""
-
+        val shiftId = prefs.getString("active_shift_id", null)
+        
         // Очищаем контент от точек с запятой и переносов, чтобы не ломать структуру CSV таблицы
         val safeContent = qrContent.replace(";", " ").replace("\n", " ")
-        val logLine = "$employeeName;$currentTime;$safeContent"
+        // Добавляем shiftId в начало строки для идентификации
+        val logLine = "${shiftId ?: "none"};$employeeName;$currentTime;$safeContent"
 
         val newLogs = if (currentLogs.isEmpty()) {
             logLine
@@ -571,13 +585,141 @@ class SharedPrefsManager(private val context: Context) {
 
         return logsString.split("\n").mapNotNull { line ->
             val parts = line.split(";")
-            if (parts.size == 3) QrScanRecord(parts[0], parts[1], parts[2]) else null
+            if (parts.size >= 3) {
+                // Формат: shiftId;employeeName;currentTime;qrContent (или старый формат)
+                if (parts.size == 4) {
+                    QrScanRecord(parts[1], parts[2], parts[3])
+                } else if (parts.size == 3) {
+                    // Старый формат без shiftId
+                    QrScanRecord(parts[0], parts[1], parts[2])
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
         }
+    }
+    
+    // Получение логов только для текущей смены
+    fun getCurrentShiftScanLogs(): List<QrScanRecord> {
+        val logsString = prefs.getString("qr_logs", "") ?: ""
+        if (logsString.isEmpty()) return emptyList()
+        
+        val currentShiftId = prefs.getString("active_shift_id", null)
+        if (currentShiftId == null) return emptyList()
+
+        return logsString.split("\n").mapNotNull { line ->
+            val parts = line.split(";")
+            if (parts.size >= 4) {
+                // Формат: shiftId;employeeName;currentTime;qrContent
+                if (parts[0] == currentShiftId) {
+                    QrScanRecord(parts[1], parts[2], parts[3])
+                } else {
+                    null
+                }
+            } else if (parts.size == 3) {
+                // Старый формат без shiftId - возвращаем как есть (возможно, из предыдущих смен)
+                null // Игнорируем старые записи без shiftId
+            } else {
+                null
+            }
+        }
+    }
+    
+    // Получение логов сканирования для конкретного обхода
+    fun getRoundScanLogs(roundId: Int): List<ShiftLogEntry> {
+        val logs = shiftDatabase.loadLogsByRound(roundId)
+        val currentShiftId = prefs.getString("active_shift_id", null)
+        // Фильтруем только логи текущей смены
+        return logs.filter { it.shiftId == currentShiftId }
+    }
+    
+    // Получение нарушений для конкретного обхода
+    fun getRoundViolations(roundId: Int): List<SequenceViolation> {
+        val currentShiftId = prefs.getString("active_shift_id", null)
+        val violations = shiftDatabase.loadViolationsByRound(roundId, currentShiftId)
+        // Фильтруем только нарушения текущей смены (дополнительная защита)
+        return violations.filter { it.shiftId == currentShiftId }
     }
 
     // Очистка логов после генерации отчета
     fun clearScanLogs() {
         prefs.edit().remove("qr_logs").apply()
+    }
+    
+    // Получить строки для табличного отображения журнала текущей смены
+    fun getShiftJournalRows(): List<ShiftJournalRow> {
+        val rows = mutableListOf<ShiftJournalRow>()
+        val currentShiftId = prefs.getString("active_shift_id", null)
+        if (currentShiftId == null) return emptyList()
+        
+        // Заголовок с информацией о смене
+        val shiftStartTime = prefs.getString("active_shift_start_time", "-") ?: "-"
+        val shiftEndTime = prefs.getString("active_shift_end_time", "-") ?: "-"
+        val guards = loadGuards()
+        
+        // Шапка отчета
+        rows.add(ShiftJournalRow("HEADER", "ЖУРНАЛ ОБХОДОВ ОХРАННИКОВ", "", null, null))
+        rows.add(ShiftJournalRow("HEADER", "за ${shiftStartTime.split(" ").getOrNull(0) ?: ""}", "", null, null))
+        rows.add(ShiftJournalRow("HEADER", "---", "", null, null)) // Разделитель
+        
+        // Информация о смене
+        rows.add(ShiftJournalRow("HEADER", "Смена №: ${currentShiftId}", "", null, null))
+        rows.add(ShiftJournalRow("HEADER", "Начало: $shiftStartTime", "", null, null))
+        rows.add(ShiftJournalRow("HEADER", "Завершение: ${if (shiftEndTime != "-") shiftEndTime else "-"}", "", null, null))
+        rows.add(ShiftJournalRow("HEADER", "Сотрудники: ${guards.joinToString(", ") { it.name }}", "", null, null))
+        rows.add(ShiftJournalRow("HEADER", "---", "", null, null)) // Разделитель
+        rows.add(ShiftJournalRow("HEADER", "", "", null, null)) // Пустая строка
+        
+        // Информация об обходах
+        val routeAlarms = loadRouteAlarms()
+        
+        routeAlarms.forEach { alarm ->
+            val startTime = prefs.getString("round_${alarm.id}_start_time", "-") ?: "-"
+            val endTime = prefs.getString("round_${alarm.id}_end_time", "-") ?: "-"
+            val isCompleted = prefs.getBoolean("round_${alarm.id}_is_completed", false)
+            val checkpointIndex = prefs.getInt("round_${alarm.id}_checkpoint_index", 0)
+            val checkpointIds = getActiveRouteCheckpoints()
+            val totalCheckpoints = checkpointIds.size
+            
+            val status = if (isCompleted) "Завершен" else if (startTime != "-") "В процессе" else "Не начат"
+            
+            // Заголовок обхода
+            rows.add(ShiftJournalRow("ROUND_HEADER", "Обход №${alarm.id} ${alarm.time}", "Статус: $status, Пройдено: $checkpointIndex/$totalCheckpoints", alarm.id, null))
+            
+            // Логи для этого обхода
+            val roundLogs = getCurrentShiftScanLogs().filter { log ->
+                // Можно добавить фильтрацию по времени или другим критериям
+                true
+            }
+            
+            if (roundLogs.isNotEmpty()) {
+                rows.add(ShiftJournalRow("HEADER", "Время | Сотрудник | Что сделано", "", alarm.id, null))
+                roundLogs.forEach { log ->
+                    rows.add(ShiftJournalRow("SCAN", "${log.time} | ${log.employeeName} | ${log.qrContent}", "", alarm.id, null))
+                }
+            } else {
+                rows.add(ShiftJournalRow("SCAN", "Нет записей сканирования", "", alarm.id, null))
+            }
+            
+            rows.add(ShiftJournalRow("HEADER", "", "", alarm.id, null)) // Пустая строка
+        }
+        
+        // Итоги
+        rows.add(ShiftJournalRow("HEADER", "---", "", null, null)) // Разделитель
+        rows.add(ShiftJournalRow("HEADER", "ИТОГИ:", "", null, null))
+        
+        // Подсчет статистики
+        val completedRounds = routeAlarms.count { prefs.getBoolean("round_${it.id}_is_completed", false) }
+        val sequenceControlWasEnabled = prefs.getBoolean("sequence_control_was_enabled", false)
+        val totalScans = getCurrentShiftScanLogs().size
+        
+        rows.add(ShiftJournalRow("FOOTER", "Всего обходов:", "$completedRounds/${routeAlarms.size}", null, null))
+        rows.add(ShiftJournalRow("FOOTER", "Сканирований:", "$totalScans", null, null))
+        rows.add(ShiftJournalRow("FOOTER", "Контроль последовательности:", if (sequenceControlWasEnabled) "ВКЛ" else "ВЫКЛ", null, null))
+        
+        return rows
     }
 
     // ==================================================

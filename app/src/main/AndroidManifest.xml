@@ -56,6 +56,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <activity
+            android:name=".JournalActivity"
+            android:exported="false"
+            android:label="Журнал текущей смены"
+            android:theme="@style/Theme.Ohrana"
+            android:screenOrientation="landscape" />
 
         <!-- 🔔 Регистрация нашего приемника будильника -->
         <receiver

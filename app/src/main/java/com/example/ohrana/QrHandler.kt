@@ -4,6 +4,8 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.ohrana.CheckpointAction
+import com.example.ohrana.Checkpoint
 
 // 1. Все возможные исходы сканирования (добавлены новые типы)
 sealed class QrResult {
@@ -57,6 +59,13 @@ private class PatrolRoute(val routeName: String, private val checkpoints: List<S
                 if (currentIndex < checkpoints.size) checkpoints[currentIndex] else null
             return Pair(false, expectedId)
         }
+    }
+    
+    /**
+     * Проверяет, находится ли чекпоинт в маршруте
+     */
+    fun containsCheckpoint(checkpointId: String): Boolean {
+        return checkpoints.contains(checkpointId)
     }
 }
 
@@ -119,8 +128,11 @@ object QrHandler {
             val checkpointFromDatabase = prefsManager.getCheckpointById(checkpointId)
             
             if (checkpointFromDatabase == null) {
-                // Чекпоинт не найден в базе данных
-                return QrResult.Error("Неизвестный QR-код")
+                // Чекпоинт не найден в базе данных - ЧУЖЕРОДНАЯ МЕТКА
+                return QrResult.SequenceError(
+                    null,
+                    "Чужеродная метка: QR-код не найден в базе данных чекпоинтов."
+                )
             }
             
             // 3. Если чекпоинт найден, берем все данные из базы данных
@@ -163,12 +175,16 @@ object QrHandler {
             // СТРОГИЙ РЕЖИМ: проверяем последовательность
             val activeRoute = activeRounds[DEFAULT_ROUND_KEY]
             
+            // Загружаем ID чекпоинтов из настроек активного маршрута
+            val routeId = prefsManager.getActiveRoundRouteId()
+            val route = routeId?.let { prefsManager.getRouteById(it) }
+            val routeCheckpoints = route?.checkpointIds ?: prefsManager.getAllCheckpointIds()
+            
+            // Проверяем, находится ли чекпоинт вообще в маршруте
+            val isCheckpointInRoute = routeCheckpoints.contains(checkpointId)
+            
             // Если маршрута нет - создаем и сразу проверяем первую точку
             val (isValid, expectedId) = if (activeRoute == null) {
-                // Загружаем ID чекпоинтов из настроек активного маршрута
-                val routeId = prefsManager.getActiveRoundRouteId()
-                val route = routeId?.let { prefsManager.getRouteById(it) }
-                val routeCheckpoints = route?.checkpointIds ?: prefsManager.getAllCheckpointIds()
                 startNewRound(DEFAULT_ROUND_KEY, routeCheckpoints)
                 activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId)
             } else {
@@ -176,6 +192,36 @@ object QrHandler {
             }
             
             if (!isValid) {
+                // Если чекпоинт не в маршруте - это "ВНЕ МАРШРУТА"
+                if (!isCheckpointInRoute) {
+                    // Сохраняем факт сканирования (для аудита)
+                    val activeRoundIndex = prefsManager.getActiveRoundIndex()
+                    val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+                    val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+                    
+                    activeShiftId?.let { shiftId ->
+                        if (activeRoundIndex != -1) {
+                            prefsManager.shiftDatabase.addLogEntry(
+                                checkpointName = name,
+                                checkpointId = checkpointId,
+                                employeeName = activeEmployeeName,
+                                roundId = activeRoundIndex,
+                                routeName = "Маршрут обхода",
+                                sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                                isSequenceCorrect = false,
+                                scanType = "QR",
+                                actionType = "SCAN",
+                                sequenceErrorExpected = "ВНЕ МАРШРУТА"
+                            )
+                        }
+                    }
+                    
+                    return QrResult.SequenceError(
+                        null,
+                        "Чекпоинт '${name}' не найден в текущем маршруте обхода."
+                    )
+                }
+                
                 // Сохраняем факт сканирования (для аудита) даже при нарушении последовательности
                 val activeRoundIndex = prefsManager.getActiveRoundIndex()
                 val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
@@ -192,7 +238,7 @@ object QrHandler {
                             sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
                             isSequenceCorrect = false,
                             scanType = "QR",
-                            actionType = "SCAN",  // Тип SCAN для аудита
+                            actionType = "SCAN",
                             sequenceErrorExpected = expectedId ?: ""
                         )
                     }
@@ -204,6 +250,7 @@ object QrHandler {
                         prefsManager.shiftDatabase.addSequenceViolation(
                             employeeName = activeEmployeeName,
                             roundId = activeRoundIndex,
+                            shiftId = shiftId,
                             expectedCheckpointId = expectedId ?: "",
                             expectedCheckpointName = "Чекпоинт #${expectedId ?: ""}",
                             actualCheckpointId = checkpointId,
@@ -287,6 +334,9 @@ object QrHandler {
         
         activeShiftId?.let { shiftId ->
             if (activeRoundIndex != -1) {
+                // Загружаем чекпоинт для получения вопроса и заголовка
+                val checkpoint = prefsManager.getCheckpointById(id)
+                
                 // Сохраняем факт сканирования
                 prefsManager.shiftDatabase.addLogEntry(
                     checkpointName = name,
@@ -297,7 +347,9 @@ object QrHandler {
                     sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
                     isSequenceCorrect = isSequenceCorrect,
                     scanType = scanType,
-                    actionType = "SCAN"  // Тип SCAN - для аудита, не отображается в отчете
+                    actionType = "SCAN",
+                    questionText = if (checkpoint?.action == CheckpointAction.QUESTION) checkpoint.questionText else null,
+                    inputTitle = if (checkpoint?.action == CheckpointAction.INPUT) checkpoint.inputTitle else null
                 )
             }
         }
@@ -397,7 +449,10 @@ object QrHandler {
         val checkpointFromDatabase = checkpoints.find { it.nfcId == trimmed }
         
         if (checkpointFromDatabase == null) {
-            return QrResult.Error("Неизвестный NFC-тег")
+            return QrResult.SequenceError(
+                null,
+                "Чужеродная метка: NFC-тег не найден в базе данных чекпоинтов."
+            )
         }
         
         val checkpointId = checkpointFromDatabase.id
@@ -440,12 +495,16 @@ object QrHandler {
         // СТРОГИЙ РЕЖИМ: проверяем последовательность
         val activeRoute = activeRounds[DEFAULT_ROUND_KEY]
         
+        // Загружаем ID чекпоинтов из настроек активного маршрута
+        val routeId = prefsManager.getActiveRoundRouteId()
+        val route = routeId?.let { prefsManager.getRouteById(it) }
+        val routeCheckpoints = route?.checkpointIds ?: prefsManager.getAllCheckpointIds()
+        
+        // Проверяем, находится ли чекпоинт вообще в маршруте
+        val isCheckpointInRoute = routeCheckpoints.contains(checkpointId)
+        
         // Если маршрута нет - создаем и сразу проверяем первую точку
         val (isValid, expectedId) = if (activeRoute == null) {
-            // Загружаем ID чекпоинтов из настроек активного маршрута
-            val routeId = prefsManager.getActiveRoundRouteId()
-            val route = routeId?.let { prefsManager.getRouteById(it) }
-            val routeCheckpoints = route?.checkpointIds ?: prefsManager.getAllCheckpointIds()
             startNewRound(DEFAULT_ROUND_KEY, routeCheckpoints)
             activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId)
         } else {
@@ -453,6 +512,34 @@ object QrHandler {
         }
         
         if (!isValid) {
+            // Если чекпоинт не в маршруте - это "ВНЕ МАРШРУТА"
+            if (!isCheckpointInRoute) {
+                // Записываем нарушение последовательности в базу данных
+                val activeRoundIndex = prefsManager.getActiveRoundIndex()
+                val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+                val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+                
+                activeShiftId?.let { shiftId ->
+                    if (activeRoundIndex != -1) {
+                        prefsManager.shiftDatabase.addSequenceViolation(
+                            employeeName = activeEmployeeName,
+                            roundId = activeRoundIndex,
+                            shiftId = shiftId,
+                            expectedCheckpointId = "",
+                            expectedCheckpointName = "ВНЕ МАРШРУТА",
+                            actualCheckpointId = checkpointId,
+                            actualCheckpointName = name,
+                            isNfc = true
+                        )
+                    }
+                }
+                
+                return QrResult.SequenceError(
+                    null,
+                    "Чекпоинт '${name}' не найден в текущем маршруте обхода."
+                )
+            }
+            
             // Записываем нарушение последовательности в базу данных
             val activeRoundIndex = prefsManager.getActiveRoundIndex()
             val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
@@ -463,6 +550,7 @@ object QrHandler {
                     prefsManager.shiftDatabase.addSequenceViolation(
                         employeeName = activeEmployeeName,
                         roundId = activeRoundIndex,
+                        shiftId = shiftId,
                         expectedCheckpointId = expectedId ?: "",
                         expectedCheckpointName = "Чекпоинт #${expectedId ?: ""}",
                         actualCheckpointId = checkpointId,

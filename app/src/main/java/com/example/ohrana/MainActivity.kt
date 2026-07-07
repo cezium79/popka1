@@ -41,6 +41,7 @@ import com.example.ohrana.CloudStorageManager
 import com.example.ohrana.CloudSettingsScreen
 import com.example.ohrana.GuardMember
 import com.example.ohrana.GuardNfcSelectionScreen
+import com.example.ohrana.JournalActivity
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,6 +112,9 @@ fun AppNavigation() {
     var selectedCheckpointId by remember { mutableStateOf<String?>(null) }
     var currentShiftId by remember { mutableStateOf("") }
     var guardsCount by remember { mutableStateOf(1) }
+    var showErrorOverlay by remember { mutableStateOf<String?>(null) }
+    var roundsClickCount by remember { mutableStateOf(0) }
+    var roundsLastClickTime by remember { mutableStateOf(0L) }
 
     // Состояние для 5-кликового механизма админ-кнопки
     var clickCount by remember { mutableStateOf(0) }
@@ -144,29 +148,13 @@ fun AppNavigation() {
     var isPasswordError by remember { mutableStateOf(false) }
 
 
-    // 🔔 ВСПЛЫВАЮЩЕЕ ДИАЛОГОВОЕ ОКНО
-    if (showPasswordDialog) {
-        AdminPasswordDialog(
-            onDismiss = { showPasswordDialog = false; isPasswordError = false },
-            onConfirm = { enteredPassword ->
-                if (enteredPassword == "1234")// Пароль для входа в окно настроек
-                {
-                    showPasswordDialog = false
-                    isPasswordError = false
-                    currentScreen = "admin"
-                } else {
-                    isPasswordError = true
-                }
-            },
-            isError = isPasswordError
-        )
-    }
-
     when (currentScreen) {
         "privet" -> {
+            // Синхронизируем guardsCount из SharedPreferences
+            guardsCount = prefsManager.getGuardsCount()
+            
             // Проверяем статус смены
             val isShiftActive = prefsManager.isAnyShiftActive()
-            val guardsCount = prefsManager.getGuardsCount()
             
             // Автоматическое NFC-сканирование при загрузке экрана (только для групповой работы и открытой смены)
             val context = LocalContext.current
@@ -175,7 +163,7 @@ fun AppNavigation() {
             val nfcManager = context.getSystemService(android.content.Context.NFC_SERVICE) as android.nfc.NfcManager
             val nfcAdapter = nfcManager.defaultAdapter
             
-            // Рендеринг экрана приветствия
+            // Рендеринг экрана приветствия поверх всех элементов
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -224,6 +212,42 @@ fun AppNavigation() {
                     )
                 }
                 
+                // Скрываемая кнопка для входа в меню обхода без NFC (10 кликов за 1 сек)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp)
+                        .size(60.dp)
+                        .clickable(
+                            onClick = {
+                                val currentTime = System.currentTimeMillis()
+                                // Если клик произошел в течение 1 секунды от предыдущего
+                                if (currentTime - roundsLastClickTime <= 1000) {
+                                    roundsClickCount++
+                                    // Если достигнуто 10 кликов - переходим в меню обхода
+                                    if (roundsClickCount >= 10) {
+                                        currentScreen = "rounds"
+                                        roundsClickCount = 0 // Сброс счетчика
+                                    }
+                                } else {
+                                    // Таймер вышел, сбрасываем счетчик и начинаем заново
+                                    roundsClickCount = 1
+                                }
+                                roundsLastClickTime = currentTime
+                            },
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "ROUNDS",
+                        fontSize = 12.sp,
+                        color = androidx.compose.ui.graphics.Color.Transparent,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                
                 // Текст поверх фона
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -254,13 +278,42 @@ fun AppNavigation() {
                         }
                     }
                 }
+                
+                // Всплывающее окно ошибки поверх экрана приветствия
+                if (showErrorOverlay != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(androidx.compose.ui.graphics.Color(0x80000000)), // Полупрозрачный черный фон
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.material3.Card(
+                            modifier = Modifier
+                                .fillMaxWidth(0.8f)
+                                .padding(32.dp),
+                            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFFFF0000))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                            ) {
+                                androidx.compose.material3.Text(
+                                    text = showErrorOverlay!!,
+                                    fontSize = 20.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = androidx.compose.ui.graphics.Color.White
+                                )
+                            }
+                        }
+                    }
+                }
             }
             
             // NFC-сканирование: 
             // - Для guardsCount = 1: при NFC сразу начинаем смену
             // - Для guardsCount > 1 и открытой смены: NFC сразу открывает экран rounds
             // - Для guardsCount > 1 и закрытой смены: NFC сканирует постоянно, обрабатывает только администратора
-            LaunchedEffect(nfcAdapter, activity, guardsCount, isShiftActive) {
+            LaunchedEffect(nfcAdapter, activity, guardsCount, isShiftActive, showErrorOverlay) {
                 if (nfcAdapter != null && activity != null && (guardsCount == 1 || (guardsCount > 1 && isShiftActive) || guardsCount > 1)) {
                     try {
                         nfcAdapter.enableReaderMode(
@@ -284,11 +337,19 @@ fun AppNavigation() {
                                     currentScreen = "admin"
                                 } else if (guardsCount > 1 && !isShiftActive) {
                                     // Для групповой работы и закрытой смены игнорируем карты охранников
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Для открытия смены нажмите кнопку «ОТКРЫТЬ СМЕНУ»",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
+                                    showErrorOverlay = "Для открытия смены нажмите кнопку «ОТКРЫТЬ СМЕНУ»"
+                                } else if (guardsCount > 1 && isShiftActive) {
+                                    // Для групповой работы и открытой смены проверяем, есть ли охранник в списке
+                                    val guards = prefsManager.loadGuards()
+                                    val isGuardInShift = guards.any { it.nfcId == nfcId }
+                                    
+                                    if (isGuardInShift) {
+                                        selectedEmployeeName = employee.name
+                                        currentScreen = "rounds"
+                                    } else {
+                                        // Охранник не у смены - отказываем в доступе через overlay
+                                        showErrorOverlay = "Доступ запрещен: вы не в текущей смене"
+                                    }
                                 } else {
                                     selectedEmployeeName = employee.name
                                     
@@ -304,11 +365,8 @@ fun AppNavigation() {
                                     }
                                 }
                                 } else {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "NFC-тег не найден в списке сотрудников",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
+                                    // NFC-тег не найден в списке сотрудников
+                                    showErrorOverlay = "NFC-тег не найден в списке сотрудников"
                                 }
                                 
                                 // Перезапускаем сканирование
@@ -331,7 +389,11 @@ fun AppNavigation() {
                                                     
                                                     if (isAdmin2) {
                                                         currentScreen = "admin"
+                                                    } else {
+                                                        showErrorOverlay = "NFC-тег не найден в списке сотрудников"
                                                     }
+                                                } else {
+                                                    showErrorOverlay = "NFC-тег не найден в списке сотрудников"
                                                 }
                                             },
                                             android.nfc.NfcAdapter.FLAG_READER_NFC_A or android.nfc.NfcAdapter.FLAG_READER_NFC_B,
@@ -348,6 +410,14 @@ fun AppNavigation() {
                     } catch (e: Exception) {
                         // Error handling
                     }
+                }
+            }
+            
+            // Через 3 секунды убираем ошибку
+            LaunchedEffect(showErrorOverlay) {
+                if (showErrorOverlay != null) {
+                    kotlinx.coroutines.delay(3000)
+                    showErrorOverlay = null
                 }
             }
         }
@@ -445,7 +515,16 @@ fun AppNavigation() {
         )
         
         "rounds" -> RoundsScreen(
-            onBack = { currentScreen = "shift_control" },
+            onBack = {
+                val guardsCount = prefsManager.getGuardsCount()
+                // Если guardsCount > 1, возвращаемся в privet
+                // Если guardsCount = 1, возвращаемся в shift_control как раньше
+                if (guardsCount > 1) {
+                    currentScreen = "privet"
+                } else {
+                    currentScreen = "shift_control"
+                }
+            },
             onCloseShift = {
                 selectedEmployeeName = ""
                 currentScreen = "privet"
@@ -464,8 +543,15 @@ fun AppNavigation() {
                 }
                 
                 currentScreen = "ohrannik_cabinet"
+            },
+            onOpenJournal = {
+                // Открываем JournalActivity с горизонтальной ориентацией
+                val intent = android.content.Intent(context, JournalActivity::class.java)
+                context.startActivity(intent)
             }
         )
+        
+        // JournalScreen удален - теперь используется JournalActivity
         
         "photo_capture" -> PhotoCaptureScreen(
             checkpointId = selectedCheckpointId ?: "",

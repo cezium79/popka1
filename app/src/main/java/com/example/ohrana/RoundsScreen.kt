@@ -2,8 +2,12 @@ package com.example.ohrana
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -11,6 +15,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 
@@ -28,7 +35,8 @@ import kotlinx.coroutines.delay
 fun RoundsScreen(
     onBack: () -> Unit,
     onCloseShift: () -> Unit, // Вызывается при завершении смены
-    onStartRound: (guardName: String, roundIndex: Int, routeId: String?) -> Unit
+    onStartRound: (guardName: String, roundIndex: Int, routeId: String?) -> Unit,
+    onOpenJournal: () -> Unit // Вызывается при нажатии кнопки "Журнал текущей смены"
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -297,6 +305,25 @@ fun RoundsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
+            
+            // Кнопка "Журнал текущей смены"
+            Button(
+                onClick = {
+                    // Сохраняем статус контроля последовательности для отчета
+                    prefsManager.saveSequenceControlStatus(prefsManager.isStrictSequenceEnabled())
+                    
+                    // Переходим на экран журнала
+                    onOpenJournal()
+                },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text("Журнал текущей смены", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
             
             // Информационная карточка
             Card(

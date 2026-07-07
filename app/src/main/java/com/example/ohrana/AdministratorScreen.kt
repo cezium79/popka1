@@ -346,6 +346,11 @@ fun AdministratorScreen(
                                 DropdownMenuItem(
                                     text = { Text("1 охранник (старший)") },
                                     onClick = {
+                                        // Проверяем, есть ли активная смена
+                                        if (prefsManager.isAnyShiftActive()) {
+                                            // Закрываем текущую смену
+                                            prefsManager.closeCurrentShift()
+                                        }
                                         guardsCount = 1
                                         prefsManager.setGuardsCount(1)
                                         showGuardDropdown = false
@@ -354,6 +359,11 @@ fun AdministratorScreen(
                                 DropdownMenuItem(
                                     text = { Text("Старший и 1 охранник") },
                                     onClick = {
+                                        // Проверяем, есть ли активная смена
+                                        if (prefsManager.isAnyShiftActive()) {
+                                            // Закрываем текущую смену
+                                            prefsManager.closeCurrentShift()
+                                        }
                                         guardsCount = 2
                                         prefsManager.setGuardsCount(2)
                                         showGuardDropdown = false
@@ -362,6 +372,11 @@ fun AdministratorScreen(
                                 DropdownMenuItem(
                                     text = { Text("Старший и 2 охранника") },
                                     onClick = {
+                                        // Проверяем, есть ли активная смена
+                                        if (prefsManager.isAnyShiftActive()) {
+                                            // Закрываем текущую смену
+                                            prefsManager.closeCurrentShift()
+                                        }
                                         guardsCount = 3
                                         prefsManager.setGuardsCount(3)
                                         showGuardDropdown = false

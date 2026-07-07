@@ -38,6 +38,8 @@ data class ShiftLogEntry(
     val isSequenceCorrect: Boolean,      // Правильная ли последовательность
     val scanType: String,                // Тип сканирования (QR/NFC)
     val actionType: String,              // Тип действия (CHECKPOINT/QUESTION/INPUT/PHOTO)
+    val questionText: String? = null,    // Текст вопроса (если есть)
+    val inputTitle: String? = null,      // Заголовок поля ввода (если есть)
     val answer: String? = null,          // Ответ на вопрос (если есть)
     val inputValue: String? = null,      // Введенное значение (если есть)
     val photoPath: String? = null,       // Путь к фото (если есть)
@@ -86,6 +88,7 @@ data class SequenceViolation(
     val timestamp: String,
     val employeeName: String,
     val roundId: Int,
+    val shiftId: String,                 // ID смены (для фильтрации)
     val expectedCheckpointId: String,
     val expectedCheckpointName: String,
     val actualCheckpointId: String,

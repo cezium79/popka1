@@ -282,6 +282,7 @@ fun OhrannikCabinetScreen(
                                 manager.shiftDatabase.addSequenceViolation(
                                     employeeName = activeEmployeeName,
                                     roundId = activeRoundIndex,
+                                    shiftId = shiftId,
                                     expectedCheckpointId = "",
                                     expectedCheckpointName = expectedCheckpointName ?: "",
                                     actualCheckpointId = checkpoint.id,
@@ -317,7 +318,7 @@ fun OhrannikCabinetScreen(
                                 sequenceIndex = manager.getCurrentCheckpointIndex(),
                                 isSequenceCorrect = true,
                                 scanType = "NFC",
-                                actionType = "SCAN"  // Тип SCAN для аудита
+                                actionType = "SCAN"
                             )
                         }
                         
@@ -344,7 +345,8 @@ fun OhrannikCabinetScreen(
                                 sequenceIndex = manager.getCurrentCheckpointIndex(),
                                 isSequenceCorrect = true,
                                 scanType = "NFC",
-                                actionType = "SCAN"  // Тип SCAN для аудита
+                                actionType = "SCAN"
+                                // questionText не сохраняем - он будет взят из чекпоинта по checkpointId
                             )
                         }
                         
@@ -369,7 +371,8 @@ fun OhrannikCabinetScreen(
                                 sequenceIndex = manager.getCurrentCheckpointIndex(),
                                 isSequenceCorrect = true,
                                 scanType = "NFC",
-                                actionType = "SCAN"  // Тип SCAN для аудита
+                                actionType = "SCAN"
+                                // inputTitle не сохраняем - он будет взят из чекпоинта по checkpointId
                             )
                         }
                         
@@ -393,7 +396,7 @@ fun OhrannikCabinetScreen(
                                 sequenceIndex = manager.getCurrentCheckpointIndex(),
                                 isSequenceCorrect = true,
                                 scanType = "NFC",
-                                actionType = "SCAN"  // Тип SCAN для аудита
+                                actionType = "SCAN"
                             )
                         }
                         
@@ -691,9 +694,12 @@ fun OhrannikCabinetScreen(
                     // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
                     val activeRoundIndex = manager.getActiveRoundIndex()
                     if (activeRoundIndex != -1) {
+                        // Получаем последнюю запись SCAN
+                        val lastScanEntry = manager.shiftDatabase.loadLogsByRound(activeRoundIndex).asReversed().find { it.actionType == "SCAN" }
                         manager.shiftDatabase.updateLastScanEntry(
                             roundId = activeRoundIndex,
                             actionType = "CHECKPOINT"
+                            // questionText и inputTitle не передаются - они будут взяты из чекпоинта
                         )
                         val newCheckpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex) + 1
                         manager.updateCurrentCheckpointIndex(newCheckpointIndex)
@@ -762,10 +768,13 @@ fun OhrannikCabinetScreen(
                                 // Обновляем последнюю запись SCAN на тип QUESTION
                                 val activeRoundIndex = manager.getActiveRoundIndex()
                                 if (activeRoundIndex != -1) {
+                                    // Получаем последнюю запись SCAN для получения questionText
+                                    val lastScanEntry = manager.shiftDatabase.loadLogsByRound(activeRoundIndex).asReversed().find { it.actionType == "SCAN" }
                                     manager.shiftDatabase.updateLastScanEntry(
                                         roundId = activeRoundIndex,
                                         actionType = "QUESTION",
                                         answer = answer
+                                        // questionText не передаётся - он будет взят из чекпоинта
                                     )
                                 }
                                 
@@ -854,11 +863,19 @@ fun OhrannikCabinetScreen(
                             // Обновляем последнюю запись SCAN на тип INPUT
                             val activeRoundIndex = manager.getActiveRoundIndex()
                             if (activeRoundIndex != -1) {
-                                manager.shiftDatabase.updateLastScanEntry(
+                                android.util.Log.d(TAG, "InputFormat: Updating SCAN entry with inputValue='$dialogInputText'")
+                                val success = manager.shiftDatabase.updateLastScanEntry(
                                     roundId = activeRoundIndex,
                                     actionType = "INPUT",
                                     inputValue = dialogInputText
+                                    // inputTitle не передаётся - он будет взят из чекпоинта
                                 )
+                                android.util.Log.d(TAG, "InputFormat: updateLastScanEntry success=$success")
+                                
+                                // Дополнительно: проверяем, что запись действительно обновлена
+                                val updatedLogs = manager.shiftDatabase.loadLogsByRound(activeRoundIndex)
+                                val inputEntry = updatedLogs.asReversed().find { it.actionType == "INPUT" }
+                                android.util.Log.d(TAG, "InputFormat: Verified INPUT entry - actionType=${inputEntry?.actionType}, inputValue='${inputEntry?.inputValue}'")
                             }
 
                             showInputDialog = null
@@ -913,6 +930,18 @@ fun OhrannikCabinetScreen(
     
     // 5. Диалог ошибки последовательности в строгом режиме - большой красный X
     showSequenceErrorScreen?.let { result ->
+        // Определяем тип ошибки на основе сообщения
+        val errorMessage = result.message
+        val isForeignCheckpoint = errorMessage.contains("Чужеродная метка", ignoreCase = true)
+        val isOutsideRoute = errorMessage.contains("не найден в текущем маршруте", ignoreCase = true)
+        val titleText = if (isForeignCheckpoint) {
+            "Чужеродная метка"
+        } else if (isOutsideRoute) {
+            "Чекпоинт вне маршрута"
+        } else {
+            "Точка вне очереди"
+        }
+        
         AlertDialog(
             onDismissRequest = { showSequenceErrorScreen = null },
             title = null,
@@ -943,20 +972,20 @@ fun OhrannikCabinetScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Точка вне очереди",
+                            text = titleText,
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
                         )
                         
                         Text(
-                            text = result.message,
+                            text = errorMessage,
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         
-                        // Если есть ожидаемый чекпоинт - показываем его
-                        if (result.expectedCheckpointId != null) {
+                        // Если есть ожидаемый чекпоинт - показываем его (только для нарушения очереди)
+                        if (!isForeignCheckpoint && !isOutsideRoute && result.expectedCheckpointId != null) {
                             Text(
                                 text = "Ожидался чекпоинт: ${result.expectedCheckpointId}",
                                 fontSize = 12.sp,

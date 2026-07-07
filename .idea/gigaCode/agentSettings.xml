@@ -39,6 +39,33 @@
         <Execute>
           <option name="pattern" value=".\gradlew assembleDebug" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /C:\&quot;shiftDatabase.addLogEntry\&quot; &quot;C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\OhrannikCabinetScreen.kt&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /C:&quot;shiftDatabase.addLogEntry&quot; &quot;C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\MainActivity.kt&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Get-Content &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot; | Select-String -Pattern &quot;checkpoint&quot; | Select-Object -Last 30" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Get-Content &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot; | Select-String -Pattern &quot;OhrannikCabinetScreen|nextCheckpointName|CheckpointPassed|updateLastScanEntry&quot; | Select-Object -Last 50" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Get-Content &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot; | Select-String -Pattern &quot;семь&quot; | Select-Object -Last 50" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Get-Content &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot; | Select-String &quot;семь&quot; | Select-Object -Last 50" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Get-Content &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot; | Findstr /I &quot;семь&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /I &quot;семь&quot; &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="findstr &quot;CP-007&quot; &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot;" />
+        </Execute>
       </list>
     </option>
   </component>
