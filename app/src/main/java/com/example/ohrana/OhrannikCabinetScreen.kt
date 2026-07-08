@@ -245,7 +245,7 @@ fun OhrannikCabinetScreen(
             val checkpoint = manager.getCheckpointByNfcId(scannedNfcId)
             
             if (checkpoint != null) {
-                // Если включен строгий контроль последовательности - проверяем顺序
+                // Если включен строгий контроль последовательности - проверяем порядок
                 if (manager.isStrictSequenceEnabled()) {
                     val activeRoundIndex = manager.getActiveRoundIndex()
                     val currentCheckpointIndex = manager.getCurrentCheckpointIndex()
@@ -255,10 +255,23 @@ fun OhrannikCabinetScreen(
                     val isSequenceCorrect = (checkpoint.name == expectedCheckpointName)
                     
                     if (!isSequenceCorrect) {
-                        // Нарушение последовательности
+                        // Нарушение последовательности - определяем тип
                         val activeShiftId = manager.prefs.getString("active_shift_id", null)
                         val activeEmployeeName = manager.getActiveShiftEmployeeName()
                         
+                        // Загружаем маршруты для определения типа нарушения
+                        val routeId = manager.getActiveRoundRouteId()
+                        val route = routeId?.let { manager.getRouteById(it) }
+                        val routeCheckpoints = route?.checkpointIds ?: manager.getAllCheckpointIds()
+                        val isCheckpointInRoute = routeCheckpoints.contains(checkpoint.id)
+                        
+                        // Определяем тип ошибки
+                        val sequenceErrorType = when {
+                            !isCheckpointInRoute -> SequenceErrorType.OUTSIDE_ROUTE
+                            else -> SequenceErrorType.OUT_OF_SEQUENCE
+                        }
+                        
+                        // Сохраняем факт сканирования для аудита с правильным типом ошибки
                         activeShiftId?.let { shiftId ->
                             if (activeRoundIndex != -1) {
                                 manager.shiftDatabase.addLogEntry(
@@ -271,7 +284,7 @@ fun OhrannikCabinetScreen(
                                     isSequenceCorrect = false,
                                     scanType = "NFC",
                                     actionType = "SCAN",
-                                    sequenceErrorExpected = expectedCheckpointName ?: ""
+                                    sequenceErrorType = sequenceErrorType
                                 )
                             }
                         }
@@ -283,10 +296,11 @@ fun OhrannikCabinetScreen(
                                     employeeName = activeEmployeeName,
                                     roundId = activeRoundIndex,
                                     shiftId = shiftId,
-                                    expectedCheckpointId = "",
+                                    expectedCheckpointId = if (sequenceErrorType == SequenceErrorType.OUTSIDE_ROUTE) "" else expectedCheckpointName ?: "",
                                     expectedCheckpointName = expectedCheckpointName ?: "",
                                     actualCheckpointId = checkpoint.id,
                                     actualCheckpointName = checkpoint.name,
+                                    sequenceErrorType = sequenceErrorType,
                                     isNfc = true
                                 )
                             }
@@ -295,7 +309,11 @@ fun OhrannikCabinetScreen(
                         // Показываем диалог с красным X вместо обычного диалога
                         showSequenceErrorScreen = QrResult.SequenceError(
                             expectedCheckpointId = expectedCheckpointName,
-                            message = "ТОчка вне очереди"
+                            message = if (!isCheckpointInRoute) {
+                                "Чекпоинт '${checkpoint.name}' не найден в текущем маршруте обхода."
+                            } else {
+                                "ТОчка вне очереди"
+                            }
                         )
                         
                         nfcScanResult = null

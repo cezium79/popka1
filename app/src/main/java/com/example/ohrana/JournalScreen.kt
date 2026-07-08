@@ -245,15 +245,15 @@ fun JournalScreen(
                         ) {
                             Box(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Дата",
+                                    text = "Время",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Box(modifier = Modifier.weight(1f)) {
+                            Box(modifier = Modifier.weight(1.2f)) {
                                 Text(
-                                    text = "Время",
+                                    text = "Сотрудник",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -307,7 +307,19 @@ fun JournalScreen(
                         // Определяем наличие нарушения для этой записи
                         // Просто проверяем isSequenceCorrect - если false, значит нарушение
                         val hasViolation = !log.isSequenceCorrect
-                        val violationNote = if (hasViolation) "Вне очереди" else "-"
+                        // Получаем тип нарушения
+                        val errorType = log.sequenceErrorType
+                        android.util.Log.d("JournalScreen", "Log entry: checkpoint=${log.checkpointName}, actionType=${log.actionType}, isSequenceCorrect=${log.isSequenceCorrect}, sequenceErrorType=${errorType.name}, answer='${log.answer}', inputValue='${log.inputValue}'")
+                        val violationNote = if (hasViolation) {
+                            when (errorType) {
+                                SequenceErrorType.FOREIGN_CHECKPOINT -> "Чужая метка"
+                                SequenceErrorType.OUTSIDE_ROUTE -> "Вне маршрута"
+                                SequenceErrorType.OUT_OF_SEQUENCE -> "Вне очереди"
+                                SequenceErrorType.NONE -> "-"
+                            }
+                        } else {
+                            "-"
+                        }
                         
                         Row(
                             modifier = Modifier
@@ -318,14 +330,14 @@ fun JournalScreen(
                         ) {
                             Box(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = log.timestamp.take(10),
+                                    text = log.timestamp.substring(11),
                                     fontSize = 11.sp,
                                     color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Box(modifier = Modifier.weight(1f)) {
+                            Box(modifier = Modifier.weight(1.2f)) {
                                 Text(
-                                    text = log.timestamp.substring(11),
+                                    text = log.employeeName ?: "-",
                                     fontSize = 11.sp,
                                     color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                                 )
@@ -358,10 +370,13 @@ fun JournalScreen(
                                 // Столбец 5: Ответ/Данные
                                 // Для нарушений не отображаем вопросы/ответы, но показываем действие
                                 android.util.Log.d("JournalScreen", "Rendering log: checkpoint=${log.checkpointName}, actionType=${log.actionType}, inputValue='${log.inputValue}', answer='${log.answer}'")
-                                android.util.Log.d("JournalScreen", "  checkpointId=${log.checkpointId}, shiftId=${log.shiftId}, roundId=${log.roundId}")
+                                android.util.Log.d("JournalScreen", "  checkpointId=${log.checkpointId}, shiftId=${log.shiftId}, roundId=${log.roundId}, isSequenceCorrect=${log.isSequenceCorrect}, sequenceErrorType=${log.sequenceErrorType.name}")
                                 val answerOrData = when {
+                                    hasViolation -> when {
+                                        log.actionType == "PHOTO" -> "Фото снято"
+                                        else -> "-"  // Для нарушений остальных типов - дефис
+                                    }
                                     log.actionType == "CHECKPOINT" -> "Точка пройдена"
-                                    hasViolation -> "-"  // Для нарушений остальных типов - дефис
                                     log.actionType == "QUESTION" -> log.answer ?: "-"
                                     log.actionType == "INPUT" -> log.inputValue ?: "-"
                                     log.actionType == "PHOTO" -> "Фото снято"

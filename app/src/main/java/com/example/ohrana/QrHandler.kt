@@ -6,6 +6,7 @@ import java.util.Date
 import java.util.Locale
 import com.example.ohrana.CheckpointAction
 import com.example.ohrana.Checkpoint
+import com.example.ohrana.SequenceErrorType
 
 // 1. Все возможные исходы сканирования (добавлены новые типы)
 sealed class QrResult {
@@ -129,6 +130,28 @@ object QrHandler {
             
             if (checkpointFromDatabase == null) {
                 // Чекпоинт не найден в базе данных - ЧУЖЕРОДНАЯ МЕТКА
+                // Сохраняем факт сканирования для аудита
+                val activeRoundIndex = prefsManager.getActiveRoundIndex()
+                val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+                val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+                
+                activeShiftId?.let { shiftId ->
+                    if (activeRoundIndex != -1) {
+                        prefsManager.shiftDatabase.addLogEntry(
+                            checkpointName = "Неизвестный QR",
+                            checkpointId = checkpointId,
+                            employeeName = activeEmployeeName,
+                            roundId = activeRoundIndex,
+                            routeName = "Маршрут обхода",
+                            sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                            isSequenceCorrect = false,
+                            scanType = "QR",
+                            actionType = "SCAN",
+                            sequenceErrorType = SequenceErrorType.FOREIGN_CHECKPOINT
+                        )
+                    }
+                }
+                
                 return QrResult.SequenceError(
                     null,
                     "Чужеродная метка: QR-код не найден в базе данных чекпоинтов."
@@ -211,7 +234,7 @@ object QrHandler {
                                 isSequenceCorrect = false,
                                 scanType = "QR",
                                 actionType = "SCAN",
-                                sequenceErrorExpected = "ВНЕ МАРШРУТА"
+                                sequenceErrorType = SequenceErrorType.OUTSIDE_ROUTE
                             )
                         }
                     }
@@ -239,7 +262,7 @@ object QrHandler {
                             isSequenceCorrect = false,
                             scanType = "QR",
                             actionType = "SCAN",
-                            sequenceErrorExpected = expectedId ?: ""
+                            sequenceErrorType = SequenceErrorType.OUT_OF_SEQUENCE
                         )
                     }
                 }
@@ -255,6 +278,7 @@ object QrHandler {
                             expectedCheckpointName = "Чекпоинт #${expectedId ?: ""}",
                             actualCheckpointId = checkpointId,
                             actualCheckpointName = name,
+                            sequenceErrorType = SequenceErrorType.OUT_OF_SEQUENCE,
                             isNfc = false
                         )
                     }
@@ -512,15 +536,30 @@ object QrHandler {
         }
         
         if (!isValid) {
+            // Для всех нарушений используем одни и те же переменные
+            val activeRoundIndex = prefsManager.getActiveRoundIndex()
+            val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+            val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+            
             // Если чекпоинт не в маршруте - это "ВНЕ МАРШРУТА"
             if (!isCheckpointInRoute) {
-                // Записываем нарушение последовательности в базу данных
-                val activeRoundIndex = prefsManager.getActiveRoundIndex()
-                val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
-                val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
-                
+                // Сохраняем факт сканирования (для аудита)
                 activeShiftId?.let { shiftId ->
                     if (activeRoundIndex != -1) {
+                        prefsManager.shiftDatabase.addLogEntry(
+                            checkpointName = name,
+                            checkpointId = checkpointId,
+                            employeeName = activeEmployeeName,
+                            roundId = activeRoundIndex,
+                            routeName = "Маршрут обхода",
+                            sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                            isSequenceCorrect = false,
+                            scanType = "NFC",
+                            actionType = "SCAN",
+                            sequenceErrorType = SequenceErrorType.OUTSIDE_ROUTE
+                        )
+                        
+                        // Записываем нарушение последовательности в базу данных
                         prefsManager.shiftDatabase.addSequenceViolation(
                             employeeName = activeEmployeeName,
                             roundId = activeRoundIndex,
@@ -529,6 +568,7 @@ object QrHandler {
                             expectedCheckpointName = "ВНЕ МАРШРУТА",
                             actualCheckpointId = checkpointId,
                             actualCheckpointName = name,
+                            sequenceErrorType = SequenceErrorType.OUTSIDE_ROUTE,
                             isNfc = true
                         )
                     }
@@ -540,13 +580,22 @@ object QrHandler {
                 )
             }
             
-            // Записываем нарушение последовательности в базу данных
-            val activeRoundIndex = prefsManager.getActiveRoundIndex()
-            val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
-            val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
-            
+            // Для нарушения последовательности используем уже объявленные переменные
             activeShiftId?.let { shiftId ->
                 if (activeRoundIndex != -1) {
+                    prefsManager.shiftDatabase.addLogEntry(
+                        checkpointName = name,
+                        checkpointId = checkpointId,
+                        employeeName = activeEmployeeName,
+                        roundId = activeRoundIndex,
+                        routeName = "Маршрут обхода",
+                        sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                        isSequenceCorrect = false,
+                        scanType = "NFC",
+                        actionType = "SCAN",
+                        sequenceErrorType = SequenceErrorType.OUT_OF_SEQUENCE
+                    )
+                    
                     prefsManager.shiftDatabase.addSequenceViolation(
                         employeeName = activeEmployeeName,
                         roundId = activeRoundIndex,
@@ -555,6 +604,7 @@ object QrHandler {
                         expectedCheckpointName = "Чекпоинт #${expectedId ?: ""}",
                         actualCheckpointId = checkpointId,
                         actualCheckpointName = name,
+                        sequenceErrorType = SequenceErrorType.OUT_OF_SEQUENCE,
                         isNfc = true
                     )
                 }

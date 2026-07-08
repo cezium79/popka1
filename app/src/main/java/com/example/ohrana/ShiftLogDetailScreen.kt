@@ -394,15 +394,21 @@ fun ShiftLogDetailScreen(
                                                 )
                                             }
                                             
-                                            if (log.sequenceErrorExpected != null) {
+                                            if (log.sequenceErrorType != SequenceErrorType.NONE) {
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .padding(start = 24.dp, end = 8.dp, bottom = 4.dp),
                                                     horizontalArrangement = Arrangement.Start
                                                 ) {
+                                                    val errorTypeName = when (log.sequenceErrorType) {
+                                                        SequenceErrorType.FOREIGN_CHECKPOINT -> "Чужая метка"
+                                                        SequenceErrorType.OUTSIDE_ROUTE -> "Вне маршрута"
+                                                        SequenceErrorType.OUT_OF_SEQUENCE -> "Вне очереди"
+                                                        SequenceErrorType.NONE -> ""
+                                                    }
                                                     Text(
-                                                        text = "Ожидался: ${log.sequenceErrorExpected}",
+                                                        text = "${if (log.actionType == "CHECKPOINT") "Нарушение:" else "Ожидался:"} $errorTypeName",
                                                         fontSize = 11.sp,
                                                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
                                                     )
@@ -886,10 +892,16 @@ fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftL
                     }
                     
                     // Если нарушение последовательности - добавляем строку
-                    if (!log.isSequenceCorrect && log.sequenceErrorExpected != null) {
+                    if (!log.isSequenceCorrect && log.sequenceErrorType != SequenceErrorType.NONE) {
+                        val errorTypeName = when (log.sequenceErrorType) {
+                            SequenceErrorType.FOREIGN_CHECKPOINT -> "Чужая метка"
+                            SequenceErrorType.OUTSIDE_ROUTE -> "Вне маршрута"
+                            SequenceErrorType.OUT_OF_SEQUENCE -> "Вне очереди"
+                            SequenceErrorType.NONE -> ""
+                        }
                         paint.color = errorColor
                         paint.typeface = android.graphics.Typeface.DEFAULT
-                        canvas.drawText("Ожидался: ${log.sequenceErrorExpected}", 35f, yPos, paint)
+                        canvas.drawText("${if (log.actionType == "CHECKPOINT") "Нарушение:" else "Ожидался:"} $errorTypeName", 35f, yPos, paint)
                         yPos += 12f
                     }
                 }

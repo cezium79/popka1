@@ -2,8 +2,11 @@ package com.example.ohrana
 
 import android.content.Context
 import android.util.Log
+import android.graphics.BitmapFactory
+import android.util.Base64
 import java.io.File
 import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -572,7 +575,7 @@ class CloudStorageManager(private val context: Context) {
                 log.photoPath?.let { logObj.put("photo_path", it) }
                 log.latitude?.let { logObj.put("latitude", it) }
                 log.longitude?.let { logObj.put("longitude", it) }
-                log.sequenceErrorExpected?.let { logObj.put("sequence_error_expected", it) }
+                log.sequenceErrorType?.let { logObj.put("sequence_error_type", it.name) }
                 logsArray.put(logObj)
             }
             reportJson.put("logs", logsArray)
@@ -622,7 +625,7 @@ class CloudStorageManager(private val context: Context) {
      * Возвращает путь к созданному файлу
      */
     fun generateHtmlReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
-        try {
+        return try {
             val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
             if (shift == null) {
                 Log.e(TAG, "Shift not found: $shiftId")
@@ -645,6 +648,22 @@ class CloudStorageManager(private val context: Context) {
                 }
             }
             
+            // === СПИСОК ОХРАННИКОВ ===
+            val guards = shift.guardList
+            val guardsNames = if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
+            
+            // === СТАТИСТИКА ПО ОБХОДАМ ===
+            val completedRounds = rounds.filter { it.isCompleted }
+            
+            // === СТАТИСТИКА ПО ЧЕКПОИНТАМ ===
+            val validCheckpoints = logs.filter { it.isSequenceCorrect }
+            
+            // === СТАТИСТИКА ПО НАРУШЕНИЯМ ===
+            val totalViolations = logs.count { !it.isSequenceCorrect }
+            
+            // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
+            val sortedLogs = logs.sortedBy { it.timestamp }
+            
             // HTML заголовок
             html.append("""
                 <!DOCTYPE html>
@@ -658,25 +677,38 @@ class CloudStorageManager(private val context: Context) {
                         .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
                         .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
                         .header h1 { margin: 0 0 10px 0; font-size: 24px; }
-                        .header-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+                        .header-info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
                         .info-item { background: rgba(255,255,255,0.2); padding: 10px; border-radius: 4px; }
-                        .info-item label { font-size: 12px; opacity: 0.8; }
-                        .info-item value { font-size: 14px; font-weight: bold; }
+                        .info-item label { font-size: 11px; opacity: 0.9; display: block; }
+                        .info-item value { font-size: 13px; font-weight: bold; }
                         .section { margin-bottom: 20px; }
                         .section h2 { background: #e0e0e0; padding: 10px; border-radius: 4px; color: #333; }
                         .round-card { background: #fafafa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
-                        .round-card h3 { margin: 0 0 10px 0; color: #667eea; }
-                        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-                        .stat-item { text-align: center; padding: 10px; background: #f5f5f5; border-radius: 4px; }
-                        .stat-value { font-size: 24px; font-weight: bold; color: #333; }
+                        .round-card h3 { margin: 0 0 10px 0; color: #667eea; font-size: 16px; }
+                        .round-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+                        .round-info-item { background: #fff; padding: 8px; border-radius: 4px; border: 1px solid #eee; text-align: center; }
+                        .round-info-item label { font-size: 11px; color: #666; }
+                        .round-info-item value { font-size: 14px; font-weight: bold; color: #333; }
+                        .guards-list { background: #fff3cd; padding: 8px; border-radius: 4px; margin: 10px 0; font-size: 13px; }
+                        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px; }
+                        .stat-item { text-align: center; padding: 12px; background: #f5f5f5; border-radius: 4px; }
+                        .stat-value { font-size: 28px; font-weight: bold; color: #333; }
+                        .stat-value.violations { color: #f44336; }
+                        .stat-value.success { color: #4caf50; }
                         .stat-label { font-size: 12px; color: #666; }
-                        .logs-table { width: 100%; border-collapse: collapse; }
+                        .logs-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
                         .logs-table th, .logs-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-                        .logs-table th { background: #667eea; color: white; }
-                        .logs-table tr:hover { background: #f5f5f5; }
+                        .logs-table th { background: #667eea; color: white; font-size: 12px; }
+                        .logs-table tr:hover { background: #f9f9f9; }
                         .violation { color: #f44336; font-weight: bold; }
                         .success { color: #4caf50; }
-                        .footer { margin-top: 20px; text-align: center; color: #666; font-size: 12px; }
+                        .photo-item { margin: 10px 0; }
+                        .photo-item img { max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #ddd; }
+                        .photo-info { font-size: 12px; color: #666; margin-top: 5px; }
+                        .action-details { background: #f9f9f9; padding: 8px; border-radius: 4px; margin: 5px 0; font-size: 12px; }
+                        .action-details span { display: block; margin: 2px 0; }
+                        .action-details label { font-weight: bold; color: #667eea; }
+                        .footer { margin-top: 20px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px; }
                     </style>
                 </head>
                 <body>
@@ -685,38 +717,46 @@ class CloudStorageManager(private val context: Context) {
                             <h1>ОТЧЕТ О СМЕНЕ</h1>
                             <div class="header-info">
                                 <div class="info-item">
-                                    <label>Дата</label>
+                                    <label>Смена №${shiftNumber}</label>
                                     <value>${shift.startTime.substring(0, 10)}</value>
                                 </div>
                                 <div class="info-item">
-                                    <label>Сотрудник</label>
-                                    <value>${shift.employeeName}</value>
+                                    <label>Охранники</label>
+                                    <value style="font-size: 11px;">$guardsNames</value>
                                 </div>
                                 <div class="info-item">
                                     <label>Время начала</label>
                                     <value>${shift.startTime.substring(11)}</value>
+                                </div>
+                                <div class="info-item">
+                                    <label>Время окончания</label>
+                                    <value>${shift.endTime?.substring(11) ?: "-"}</value>
                                 </div>
                             </div>
                         </div>
             """.trimIndent())
             
             // Статистика
-            val totalViolations = rounds.sumOf { it.sequenceViolations }
+            // completedRounds, validCheckpoints, totalViolations, sortedLogs уже определены выше
             html.append("""
                 <div class="section">
                     <h2>📊 Статистика смены</h2>
                     <div class="stats-grid">
                         <div class="stat-item">
-                            <div class="stat-value">${rounds.size}</div>
-                            <div class="stat-label">Обходов</div>
+                            <div class="stat-value success">${completedRounds.size}</div>
+                            <div class="stat-label">Обходов (пройдено)</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value">${logs.size}</div>
-                            <div class="stat-label">Чекпоинтов</div>
+                            <div class="stat-value success">${validCheckpoints.size}</div>
+                            <div class="stat-label">Чекпоинтов (без нарушений)</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value" style="color: ${if (totalViolations > 0) "#f44336" else "#4caf50"}">$totalViolations</div>
+                            <div class="stat-value violations">$totalViolations</div>
                             <div class="stat-label">Нарушений</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${rounds.size}</div>
+                            <div class="stat-label">Всего обходов</div>
                         </div>
                     </div>
                 </div>
@@ -745,13 +785,20 @@ class CloudStorageManager(private val context: Context) {
                 """.trimIndent())
                 
                 val roundLogs = logs.filter { it.roundId == round.id }
-                if (roundLogs.isNotEmpty()) {
+                // Сортируем логи по времени
+                val sortedRoundLogs = roundLogs.sortedBy { it.timestamp }
+                
+                // Получаем охранников, участвовавших в этом обходе
+                val roundGuards = sortedRoundLogs.map { it.employeeName }.distinct()
+                
+                if (sortedRoundLogs.isNotEmpty()) {
                     html.append("""
                         <table class="logs-table">
                             <thead>
                                 <tr>
                                     <th>Чекпоинт</th>
                                     <th>Время</th>
+                                    <th>Охранник</th>
                                     <th>Статус</th>
                                     <th>Действие</th>
                                 </tr>
@@ -759,7 +806,7 @@ class CloudStorageManager(private val context: Context) {
                             <tbody>
                     """.trimIndent())
                     
-                    roundLogs.forEach { log ->
+                    sortedRoundLogs.forEach { log ->
                         val statusClass = if (log.isSequenceCorrect) "success" else "violation"
                         val statusIcon = if (log.isSequenceCorrect) "✓" else "⚠️"
                         val statusText = when (log.actionType) {
@@ -770,12 +817,24 @@ class CloudStorageManager(private val context: Context) {
                             else -> log.actionType
                         }
                         
+                        // Формируем дополнительную информацию по действиям
+                        val actionDetails = buildString {
+                            log.questionText?.let { append("<span><label>Вопрос:</label> ${it}</span>") }
+                            log.answer?.let { append("<span><label>Ответ:</label> ${it}</span>") }
+                            log.inputTitle?.let { append("<span><label>Поле:</label> ${it}</span>") }
+                            log.inputValue?.let { append("<span><label>Ввод:</label> ${it}</span>") }
+                        }
+                        
                         html.append("""
                             <tr>
                                 <td>${log.checkpointName}</td>
                                 <td>${log.timestamp.substring(11)}</td>
+                                <td>${log.employeeName}</td>
                                 <td class="$statusClass">$statusIcon ${if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}</td>
-                                <td>$statusText</td>
+                                <td>
+                                    $statusText
+                                    ${if (actionDetails.isNotBlank()) "<div class=\"action-details\">$actionDetails</div>" else ""}
+                                </td>
                             </tr>
                         """.trimIndent())
                     }
@@ -788,6 +847,60 @@ class CloudStorageManager(private val context: Context) {
                 
                 html.append("""
                         </div>
+                    </div>
+                """.trimIndent())
+            }
+            
+            // Фотографии за смену
+            val photos = logs.filter { it.photoPath != null }
+            if (photos.isNotEmpty()) {
+                html.append("""
+                    <div class="section">
+                        <h2>📷 Фотографии</h2>
+                """.trimIndent())
+                
+                photos.forEach { photoLog ->
+                    // Получаем имя файла из пути
+                    val photoFileName = photoLog.photoPath?.substringAfterLast("/") ?: "photo.jpg"
+                    
+                    // Пытаемся загрузить фото и встроить его как base64
+                    val photoBase64 = try {
+                        val photoFile = File(photoLog.photoPath)
+                        if (photoFile.exists()) {
+                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                            if (bitmap != null) {
+                                val outputStream = ByteArrayOutputStream()
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
+                                val imageBytes = outputStream.toByteArray()
+                                Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                            } else {
+                                null
+                            }
+                        } else {
+                            null
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to load photo: ${photoLog.photoPath}", e)
+                        null
+                    }
+                    
+                    html.append("""
+                        <div class="photo-item">
+                            <div class="photo-info">
+                                <strong>Обход:</strong> ${photoLog.roundId}<br>
+                                <strong>Чекпоинт:</strong> ${photoLog.checkpointName}<br>
+                                <strong>Время:</strong> ${photoLog.timestamp.substring(11)}<br>
+                                <strong>Охранник:</strong> ${photoLog.employeeName}
+                            </div>
+                            ${if (photoBase64 != null) 
+                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото смены\">" 
+                            else 
+                                "<p>Фото недоступно</p>"}
+                        </div>
+                    """.trimIndent())
+                }
+                
+                html.append("""
                     </div>
                 """.trimIndent())
             }
@@ -958,6 +1071,70 @@ class CloudStorageManager(private val context: Context) {
     }
     
     /**
+     * Экспортирует HTML отчет и загружает в Яндекс.Диск без сохранения на телефоне
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @param uploadToDisk Флаг, нужно ли загружать в Яндекс.Диск
+     * @return Результат загрузки (URL на Диске или ошибка)
+     */
+    fun exportHtmlToDisk(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager,
+        uploadToDisk: Boolean = false
+    ): HtmlExportResult {
+        // Если не нужно загружать в Диск, просто генерируем и возвращаем путь
+        if (!uploadToDisk) {
+            val htmlPath = generateHtmlReport(shiftId, shiftDatabase)
+            return HtmlExportResult(htmlPath, Result.success(null))
+        }
+        
+        // Загружаем HTML напрямую в Яндекс.Диск без сохранения на телефоне
+        val diskResult = uploadHtmlToDiskDirect(shiftId, shiftDatabase)
+        
+        // Возвращаем null как путь (так как файл не сохраняется на телефоне)
+        return HtmlExportResult(null, diskResult)
+    }
+    
+    /**
+     * Экспортирует JSON отчет и загружает в Яндекс.Диск без сохранения на телефоне
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @param uploadToDisk Флаг, нужно ли загружать в Яндекс.Диск
+     * @return Результат загрузки (URL на Диске или ошибка)
+     */
+    fun exportJsonToDisk(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager,
+        uploadToDisk: Boolean = false
+    ): JsonExportResult {
+        // Если не нужно загружать в Диск, просто генерируем и возвращаем путь
+        if (!uploadToDisk) {
+            val jsonPath = generateJsonReport(shiftId, shiftDatabase)
+            return JsonExportResult(jsonPath, Result.success(null))
+        }
+        
+        // Для JSON пока используем старый метод с сохранением
+        // (можно добавить аналог uploadJsonToDiskDirect() позже)
+        val jsonPath = generateJsonReport(shiftId, shiftDatabase)
+        
+        if (jsonPath == null) {
+            Log.e(TAG, "exportJsonToDisk: Failed to generate JSON report for shift $shiftId")
+            return JsonExportResult(null, Result.failure(Exception("Ошибка генерации JSON")))
+        }
+        
+        var diskResult: Result<String?> = Result.success(null)
+        
+        if (uploadToDisk) {
+            val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+            val fileName = File(jsonPath).name
+            val diskPath = "$defaultDiskPath/$fileName"
+            diskResult = uploadFileToDisk(jsonPath, diskPath)
+        }
+        
+        return JsonExportResult(jsonPath, diskResult)
+    }
+    
+    /**
      * Результат экспорта отчета в PDF и загрузки в Диск
      */
     data class PdfExportResult(
@@ -971,6 +1148,56 @@ class CloudStorageManager(private val context: Context) {
         fun getDiskErrorMessage(): String {
             if (!diskResult.isSuccess) {
                 return "Ошибка загрузки PDF в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
+            }
+            return ""
+        }
+    }
+    
+    /**
+     * Результат экспорта HTML отчета и загрузки в Диск
+     */
+    data class HtmlExportResult(
+        val htmlPath: String?,
+        val diskResult: Result<String?>
+    ) {
+        fun isSuccess(): Boolean {
+            // Если htmlPath не сохранялся (null), проверяем только успешность загрузки в Диск
+            // Если htmlPath сохранялся (не null), проверяем и то и другое
+            return if (htmlPath == null) {
+                diskResult.isSuccess
+            } else {
+                diskResult.isSuccess
+            }
+        }
+        
+        fun getDiskErrorMessage(): String {
+            if (!diskResult.isSuccess) {
+                return "Ошибка загрузки HTML в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
+            }
+            return ""
+        }
+    }
+    
+    /**
+     * Результат экспорта JSON отчета и загрузки в Диск
+     */
+    data class JsonExportResult(
+        val jsonPath: String?,
+        val diskResult: Result<String?>
+    ) {
+        fun isSuccess(): Boolean {
+            // Если jsonPath не сохранялся (null), проверяем только успешность загрузки в Диск
+            // Если jsonPath сохранялся (не null), проверяем и то и другое
+            return if (jsonPath == null) {
+                diskResult.isSuccess
+            } else {
+                diskResult.isSuccess
+            }
+        }
+        
+        fun getDiskErrorMessage(): String {
+            if (!diskResult.isSuccess) {
+                return "Ошибка загрузки JSON в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
             }
             return ""
         }
@@ -1029,6 +1256,421 @@ class CloudStorageManager(private val context: Context) {
         }
         
         return reportsDir.listFiles()?.sortedArray()?.reversed() ?: emptyList()
+    }
+    
+    /**
+     * Генерирует HTML отчет в памяти и загружает его на Яндекс.Диск без сохранения на телефоне
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @return Результат загрузки (URL на Диске или ошибка)
+     */
+    fun uploadHtmlToDiskDirect(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager
+    ): Result<String> {
+        return try {
+            val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
+            if (shift == null) {
+                Log.e(TAG, "uploadHtmlToDiskDirect: Shift not found: $shiftId")
+                return Result.failure(Exception("Смена не найдена"))
+            }
+            
+            val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
+            val logs = shiftDatabase.loadLogsByShift(shiftId)
+            
+            val html = StringBuilder()
+            
+            // Извлекаем номер смены из ID (формат: NSDDMMYY_NNN)
+            val shiftNumber = run {
+                val pattern = java.util.regex.Pattern.compile("NS\\d{6}_(\\d{3})")
+                val matcher = pattern.matcher(shiftId)
+                if (matcher.find()) {
+                    matcher.group(1)?.toInt() ?: 0
+                } else {
+                    0
+                }
+            }
+            
+            // === СПИСОК ОХРАННИКОВ ===
+            val guards = shift.guardList
+            val guardsNames = if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
+            
+            // === СТАТИСТИКА ПО ОБХОДАМ ===
+            // Количество пройденных обходов (completed rounds)
+            val completedRounds = rounds.filter { it.isCompleted }
+            
+            // === СТАТИСТИКА ПО ЧЕКПОИНТАМ ===
+            // Всего чекпоинтов (без нарушений)
+            val validCheckpoints = logs.filter { it.isSequenceCorrect }
+            
+            // === СТАТИСТИКА ПО НАРУШЕНИЯМ ===
+            // Всего нарушений (sequence violations from logs)
+            val totalViolations = logs.count { !it.isSequenceCorrect }
+            
+            // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
+            val sortedLogs = logs.sortedBy { it.timestamp }
+            
+            // HTML заголовок
+            html.append("""
+                <!DOCTYPE html>
+                <html lang="ru">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Отчет о смене</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+                        .header h1 { margin: 0 0 10px 0; font-size: 24px; }
+                        .header-info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+                        .info-item { background: rgba(255,255,255,0.2); padding: 10px; border-radius: 4px; }
+                        .info-item label { font-size: 11px; opacity: 0.9; display: block; }
+                        .info-item value { font-size: 13px; font-weight: bold; }
+                        .section { margin-bottom: 20px; }
+                        .section h2 { background: #e0e0e0; padding: 10px; border-radius: 4px; color: #333; }
+                        .round-card { background: #fafafa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+                        .round-card h3 { margin: 0 0 10px 0; color: #667eea; font-size: 16px; }
+                        .round-info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+                        .round-info-item { background: #fff; padding: 8px; border-radius: 4px; border: 1px solid #eee; text-align: center; }
+                        .round-info-item label { font-size: 11px; color: #666; }
+                        .round-info-item value { font-size: 14px; font-weight: bold; color: #333; }
+                        .guards-list { background: #fff3cd; padding: 8px; border-radius: 4px; margin: 10px 0; font-size: 13px; }
+                        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px; }
+                        .stat-item { text-align: center; padding: 12px; background: #f5f5f5; border-radius: 4px; }
+                        .stat-value { font-size: 28px; font-weight: bold; color: #333; }
+                        .stat-value.violations { color: #f44336; }
+                        .stat-value.success { color: #4caf50; }
+                        .stat-label { font-size: 12px; color: #666; }
+                        .logs-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        .logs-table th, .logs-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+                        .logs-table th { background: #667eea; color: white; font-size: 12px; }
+                        .logs-table tr:hover { background: #f9f9f9; }
+                        .violation { color: #f44336; font-weight: bold; }
+                        .success { color: #4caf50; }
+                        .photo-item { margin: 10px 0; }
+                        .photo-item img { max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #ddd; }
+                        .photo-info { font-size: 12px; color: #666; margin-top: 5px; }
+                        .action-details { background: #f9f9f9; padding: 8px; border-radius: 4px; margin: 5px 0; font-size: 12px; }
+                        .action-details span { display: block; margin: 2px 0; }
+                        .action-details label { font-weight: bold; color: #667eea; }
+                        .footer { margin-top: 20px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <h1>ОТЧЕТ О СМЕНЕ</h1>
+                            <div class="header-info">
+                                <div class="info-item">
+                                    <label>Смена №${shiftNumber}</label>
+                                    <value>${shift.startTime.substring(0, 10)}</value>
+                                </div>
+                                <div class="info-item">
+                                    <label>Охранники</label>
+                                    <value style="font-size: 11px;">$guardsNames</value>
+                                </div>
+                                <div class="info-item">
+                                    <label>Время начала</label>
+                                    <value>${shift.startTime.substring(11)}</value>
+                                </div>
+                                <div class="info-item">
+                                    <label>Время окончания</label>
+                                    <value>${shift.endTime?.substring(11) ?: "-"}</value>
+                                </div>
+                            </div>
+                        </div>
+            """.trimIndent())
+            
+            // Статистика
+            // completedRounds, validCheckpoints, totalViolations, sortedLogs уже определены выше
+            html.append("""
+                <div class="section">
+                    <h2>📊 Статистика смены</h2>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value success">${completedRounds.size}</div>
+                            <div class="stat-label">Обходов (пройдено)</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value success">${validCheckpoints.size}</div>
+                            <div class="stat-label">Чекпоинтов (без нарушений)</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value violations">$totalViolations</div>
+                            <div class="stat-label">Нарушений</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${rounds.size}</div>
+                            <div class="stat-label">Всего обходов</div>
+                        </div>
+                    </div>
+                </div>
+            """.trimIndent())
+            
+            // Обходы и логи
+            rounds.forEach { round ->
+                html.append("""
+                    <div class="section">
+                        <div class="round-card">
+                            <h3>🔄 Обход №${round.id}</h3>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <div class="stat-value">${round.routeName ?: "-"}</div>
+                                    <div class="stat-label">Маршрут</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value">${getTimePart(round.startTime)} - ${getTimePart(round.endTime) ?: "-"}</div>
+                                    <div class="stat-label">Время</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value">${round.checkpointsPassed}/${round.checkpointsCount}</div>
+                                    <div class="stat-label">Чекпоинтов</div>
+                                </div>
+                            </div>
+                """.trimIndent())
+                
+                val roundLogs = logs.filter { it.roundId == round.id }
+                // Сортируем логи по времени
+                val sortedRoundLogs = roundLogs.sortedBy { it.timestamp }
+                
+                // Получаем охранников, участвовавших в этом обходе
+                val roundGuards = sortedRoundLogs.map { it.employeeName }.distinct()
+                
+                if (sortedRoundLogs.isNotEmpty()) {
+                    html.append("""
+                        <table class="logs-table">
+                            <thead>
+                                <tr>
+                                    <th>Чекпоинт</th>
+                                    <th>Время</th>
+                                    <th>Охранник</th>
+                                    <th>Статус</th>
+                                    <th>Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    """.trimIndent())
+                    
+                    sortedRoundLogs.forEach { log ->
+                        val statusClass = if (log.isSequenceCorrect) "success" else "violation"
+                        val statusIcon = if (log.isSequenceCorrect) "✓" else "⚠️"
+                        val statusText = when (log.actionType) {
+                            "CHECKPOINT" -> "Пройден"
+                            "QUESTION" -> "Вопрос"
+                            "INPUT" -> "Ввод"
+                            "PHOTO" -> "Фото"
+                            else -> log.actionType
+                        }
+                        
+                        // Формируем дополнительную информацию по действиям
+                        val actionDetails = buildString {
+                            log.questionText?.let { append("<span><label>Вопрос:</label> ${it}</span>") }
+                            log.answer?.let { append("<span><label>Ответ:</label> ${it}</span>") }
+                            log.inputTitle?.let { append("<span><label>Поле:</label> ${it}</span>") }
+                            log.inputValue?.let { append("<span><label>Ввод:</label> ${it}</span>") }
+                        }
+                        
+                        html.append("""
+                            <tr>
+                                <td>${log.checkpointName}</td>
+                                <td>${log.timestamp.substring(11)}</td>
+                                <td>${log.employeeName}</td>
+                                <td class="$statusClass">$statusIcon ${if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}</td>
+                                <td>
+                                    $statusText
+                                    ${if (actionDetails.isNotBlank()) "<div class=\"action-details\">$actionDetails</div>" else ""}
+                                </td>
+                            </tr>
+                        """.trimIndent())
+                    }
+                    
+                    html.append("""
+                            </tbody>
+                        </table>
+                    """.trimIndent())
+                }
+                
+                html.append("""
+                        </div>
+                    </div>
+                """.trimIndent())
+            }
+            
+            // Фотографии за смену
+            val photos = logs.filter { it.photoPath != null }
+            if (photos.isNotEmpty()) {
+                html.append("""
+                    <div class="section">
+                        <h2>📷 Фотографии</h2>
+                """.trimIndent())
+                
+                photos.forEach { photoLog ->
+                    // Получаем имя файла из пути
+                    val photoFileName = photoLog.photoPath?.substringAfterLast("/") ?: "photo.jpg"
+                    
+                    // Пытаемся загрузить фото и встроить его как base64
+                    val photoBase64 = try {
+                        val photoFile = File(photoLog.photoPath)
+                        if (photoFile.exists()) {
+                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                            if (bitmap != null) {
+                                val outputStream = ByteArrayOutputStream()
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
+                                val imageBytes = outputStream.toByteArray()
+                                Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                            } else {
+                                null
+                            }
+                        } else {
+                            null
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to load photo: ${photoLog.photoPath}", e)
+                        null
+                    }
+                    
+                    html.append("""
+                        <div class="photo-item">
+                            <div class="photo-info">
+                                <strong>Обход:</strong> ${photoLog.roundId}<br>
+                                <strong>Чекпоинт:</strong> ${photoLog.checkpointName}<br>
+                                <strong>Время:</strong> ${photoLog.timestamp.substring(11)}<br>
+                                <strong>Охранник:</strong> ${photoLog.employeeName}
+                            </div>
+                            ${if (photoBase64 != null) 
+                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото смены\">" 
+                            else 
+                                "<p>Фото недоступно</p>"}
+                        </div>
+                    """.trimIndent())
+                }
+                
+                html.append("""
+                    </div>
+                """.trimIndent())
+            }
+            
+            // Футер
+            html.append("""
+                        <div class="footer">
+                            Сгенерировано: ${dateFormat.format(Date())}<br>
+                            Ohrana Security System v1.0
+                        </div>
+                    </div>
+                </body>
+                </html>
+            """.trimIndent())
+            
+            // Получаем токен для загрузки
+            var token = getDiskToken()
+            if (token == null) {
+                token = getDefaultDiskToken()
+            }
+            if (token == null) {
+                Log.e(TAG, "uploadHtmlToDiskDirect: OAuth token is null")
+                return Result.failure(Exception("OAuth token not found"))
+            }
+            
+            // Создаем уникальное имя файла
+            val timestamp = System.currentTimeMillis()
+            val fileName = "shift_${shift.id}_report_${timestamp}.html"
+            val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+            val remotePath = "$defaultDiskPath/$fileName"
+            
+            Log.i(TAG, "uploadHtmlToDiskDirect: Uploading HTML directly to $remotePath")
+            
+            // Создаем родительские директории, если они не существуют
+            val parentPath = remotePath.substringBeforeLast("/")
+            if (parentPath != remotePath) {
+                Log.i(TAG, "uploadHtmlToDiskDirect: Creating parent directories for path: $parentPath")
+                
+                val pathParts = parentPath.split("/").filter { it.isNotEmpty() }
+                var currentPath = ""
+                
+                for (part in pathParts) {
+                    currentPath = if (currentPath.isEmpty()) part else "$currentPath/$part"
+                    
+                    if (!checkDirectoryExists(currentPath, token)) {
+                        Log.i(TAG, "uploadHtmlToDiskDirect: Creating directory: $currentPath")
+                        createSingleDirectory(currentPath, token)
+                    } else {
+                        Log.i(TAG, "uploadHtmlToDiskDirect: Directory already exists: $currentPath")
+                    }
+                }
+            }
+            
+            // Получаем ссылку для загрузки
+            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$remotePath&overwrite=true"
+            
+            Log.i(TAG, "uploadHtmlToDiskDirect: Getting upload link: $urlString")
+            
+            val url = URL(urlString)
+            val connection = url.openConnection() as HttpsURLConnection
+            
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Authorization", "OAuth $token")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.connectTimeout = 30000
+            connection.readTimeout = 30000
+            
+            val responseCode = connection.responseCode
+            
+            if (responseCode == 200) {
+                val responseJson = connection.inputStream.bufferedReader().use { it.readText() }
+                Log.i(TAG, "uploadHtmlToDiskDirect: Upload link obtained: $responseJson")
+                val json = org.json.JSONObject(responseJson)
+                val href = json.getString("href")
+                Log.i(TAG, "uploadHtmlToDiskDirect: Upload link href: $href")
+                
+                // Загружаем HTML напрямую в памяти (без сохранения на диск)
+                val uploadUrl = URL(href)
+                val uploadConnection = uploadUrl.openConnection() as HttpsURLConnection
+                
+                uploadConnection.requestMethod = "PUT"
+                uploadConnection.setRequestProperty("Authorization", "OAuth $token")
+                uploadConnection.setRequestProperty("Content-Type", "text/html; charset=UTF-8")
+                // Убираем установку Content-Length - используем chunked encoding
+                uploadConnection.setChunkedStreamingMode(8192)
+                uploadConnection.doOutput = true
+                uploadConnection.connectTimeout = 30000
+                uploadConnection.readTimeout = 30000
+                
+                // Загружаем HTML из памяти
+                uploadConnection.outputStream.use { outputStream ->
+                    val htmlBytes = html.toString().toByteArray(charset = Charsets.UTF_8)
+                    outputStream.write(htmlBytes)
+                }
+                
+                val uploadResponseCode = uploadConnection.responseCode
+                
+                Log.i(TAG, "uploadHtmlToDiskDirect: File upload responseCode=$uploadResponseCode")
+                
+                if (uploadResponseCode == 201 || uploadResponseCode == 200) {
+                    // Получаем public URL файла
+                    val publicUrlResult = getPublicUrlForDisk(remotePath)
+                    if (publicUrlResult.isSuccess) {
+                        Log.i(TAG, "uploadHtmlToDiskDirect: Upload successful to Yandex Disk")
+                        Result.success(publicUrlResult.getOrNull() ?: href)
+                    } else {
+                        Result.success(href)
+                    }
+                } else {
+                    val errorMessage = uploadConnection.errorStream?.bufferedReader()?.use { it.readText() }
+                    Log.e(TAG, "uploadHtmlToDiskDirect: File upload failed with code $uploadResponseCode: $errorMessage")
+                    Result.failure(Exception("Ошибка загрузки файла: $uploadResponseCode $errorMessage"))
+                }
+            } else {
+                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                Log.e(TAG, "uploadHtmlToDiskDirect: Failed to get upload link: $responseCode - $errorMessage")
+                Result.failure(Exception("Ошибка получения ссылки для загрузки: $responseCode"))
+            }
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "uploadHtmlToDiskDirect: Upload failed: $errorMsg", e)
+            Log.e(TAG, "uploadHtmlToDiskDirect: Stack trace:", e)
+            Result.failure(Exception("Ошибка загрузки HTML в Яндекс.Диск: $errorMsg"))
+        }
     }
     
     /**

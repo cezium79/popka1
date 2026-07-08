@@ -363,7 +363,7 @@ class ShiftDatabaseManager(private val context: Context) {
         photoPath: String? = null,
         latitude: Double? = null,
         longitude: Double? = null,
-        sequenceErrorExpected: String? = null
+        sequenceErrorType: SequenceErrorType = SequenceErrorType.NONE
     ): String {
         val logId = "log_${System.currentTimeMillis()}"
         val timestamp = dateFormat.format(Date())
@@ -394,7 +394,7 @@ class ShiftDatabaseManager(private val context: Context) {
             photoPath = photoPath,
             latitude = latitude,
             longitude = longitude,
-            sequenceErrorExpected = sequenceErrorExpected
+            sequenceErrorType = sequenceErrorType
         )
         
         saveLogEntry(entry)
@@ -412,6 +412,7 @@ class ShiftDatabaseManager(private val context: Context) {
         expectedCheckpointName: String,
         actualCheckpointId: String,
         actualCheckpointName: String,
+        sequenceErrorType: SequenceErrorType = SequenceErrorType.OUT_OF_SEQUENCE,  // Новый параметр
         isNfc: Boolean = false
     ): String {
         val violationId = "violation_${System.currentTimeMillis()}"
@@ -427,6 +428,7 @@ class ShiftDatabaseManager(private val context: Context) {
             expectedCheckpointName = expectedCheckpointName,
             actualCheckpointId = actualCheckpointId,
             actualCheckpointName = actualCheckpointName,
+            sequenceErrorType = sequenceErrorType,
             isNfc = isNfc
         )
         
@@ -438,7 +440,7 @@ class ShiftDatabaseManager(private val context: Context) {
      * Сохранить запись лога
      */
     private fun saveLogEntry(entry: ShiftLogEntry) {
-        android.util.Log.d("ShiftDatabaseManager", "saveLogEntry: checkpoint=${entry.checkpointName}, actionType=${entry.actionType}, inputTitle=${entry.inputTitle}, inputValue=${entry.inputValue}")
+        android.util.Log.d("ShiftDatabaseManager", "saveLogEntry START: checkpoint=${entry.checkpointName}, actionType=${entry.actionType}, isSequenceCorrect=${entry.isSequenceCorrect}, sequenceErrorType=${entry.sequenceErrorType.name}, inputTitle=${entry.inputTitle}, inputValue=${entry.inputValue}")
         val json = JSONObject().apply {
             put("id", entry.id)
             put("timestamp", entry.timestamp)
@@ -459,9 +461,11 @@ class ShiftDatabaseManager(private val context: Context) {
             entry.photoPath?.let { put("photoPath", it) }
             entry.latitude?.let { put("latitude", it) }
             entry.longitude?.let { put("longitude", it) }
-            entry.sequenceErrorExpected?.let { put("sequenceErrorExpected", it) }
+            put("sequenceErrorType", entry.sequenceErrorType.name)
+            android.util.Log.d("ShiftDatabaseManager", "saveLogEntry: Saved sequenceErrorType = ${entry.sequenceErrorType.name}")
         }
         
+        android.util.Log.d("ShiftDatabaseManager", "saveLogEntry: JSON = $json")
         prefs.edit().putString("log_${entry.id}", json.toString()).apply()
     }
 
@@ -479,6 +483,7 @@ class ShiftDatabaseManager(private val context: Context) {
             put("expectedCheckpointName", violation.expectedCheckpointName)
             put("actualCheckpointId", violation.actualCheckpointId)
             put("actualCheckpointName", violation.actualCheckpointName)
+            put("sequenceErrorType", violation.sequenceErrorType.name)
             put("isNfc", violation.isNfc)
         }
         
@@ -514,7 +519,14 @@ class ShiftDatabaseManager(private val context: Context) {
                         photoPath = if (json.has("photoPath")) json.getString("photoPath") else null,
                         latitude = json.optDouble("latitude", Double.NaN).takeIf { !it.isNaN() },
                         longitude = json.optDouble("longitude", Double.NaN).takeIf { !it.isNaN() },
-                        sequenceErrorExpected = if (json.has("sequenceErrorExpected")) json.getString("sequenceErrorExpected") else null
+                        sequenceErrorType = try {
+                            val seqErrorStr = json.getString("sequenceErrorType")
+                            android.util.Log.d("ShiftDatabaseManager", "loadAllLogs: checkpoint=${json.getString("checkpointName")}, sequenceErrorType from JSON = $seqErrorStr")
+                            SequenceErrorType.valueOf(seqErrorStr)
+                        } catch (e: Exception) {
+                            android.util.Log.e("ShiftDatabaseManager", "loadAllLogs: Error loading sequenceErrorType for checkpoint=${json.optString("checkpointName")}, error: ${e.message}")
+                            SequenceErrorType.NONE
+                        }
                     )
                 } catch (e: Exception) {
                     null
@@ -555,6 +567,11 @@ class ShiftDatabaseManager(private val context: Context) {
                         expectedCheckpointName = json.getString("expectedCheckpointName"),
                         actualCheckpointId = json.getString("actualCheckpointId"),
                         actualCheckpointName = json.getString("actualCheckpointName"),
+                        sequenceErrorType = try {
+                            SequenceErrorType.valueOf(json.getString("sequenceErrorType"))
+                        } catch (e: Exception) {
+                            SequenceErrorType.OUT_OF_SEQUENCE
+                        },
                         isNfc = json.optBoolean("isNfc", false)
                     )
                 } catch (e: Exception) {
@@ -581,7 +598,8 @@ class ShiftDatabaseManager(private val context: Context) {
     /**
      * Обновить последнюю запись SCAN на правильный тип действия
      * Возвращает true если запись найдена и обновлена
-     * Не обновляет записи с нарушениями последовательности (isSequenceCorrect == false)
+     * Обновляет только записи с правильной последовательностью (isSequenceCorrect == true)
+     * Записи с нарушениями (isSequenceCorrect == false) НЕ обновляются - они уже имеют правильный sequenceErrorType
      */
     fun updateLastScanEntry(
         roundId: Int,
@@ -596,18 +614,19 @@ class ShiftDatabaseManager(private val context: Context) {
         android.util.Log.d("ShiftDatabaseManager", "updateLastScanEntry START: roundId=$roundId, actionType=$actionType, totalLogs=${logs.size}")
         android.util.Log.d("ShiftDatabaseManager", "  - inputValue parameter: '$inputValue'")
         logs.forEach { log ->
-            android.util.Log.d("ShiftDatabaseManager", "  - Log: ${log.checkpointName}, actionType=${log.actionType}, isSequenceCorrect=${log.isSequenceCorrect}, inputTitle=${log.inputTitle}, inputValue=${log.inputValue}")
+            android.util.Log.d("ShiftDatabaseManager", "  - Log: ${log.checkpointName}, actionType=${log.actionType}, isSequenceCorrect=${log.isSequenceCorrect}, sequenceErrorType=${log.sequenceErrorType}, inputTitle=${log.inputTitle}, inputValue=${log.inputValue}")
         }
         
-        // Ищем последнюю запись, которая имеет тип SCAN (еще не обновлена)
-        // Пропускаем записи с нарушениями последовательности
+        // Ищем последнюю запись, которая имеет тип SCAN и ПРАВИЛЬНУЮ последовательность
+        // ВАЖНО: Пропускаем записи с нарушениями (isSequenceCorrect == false),
+        // так как они уже имеют правильный sequenceErrorType и не должны быть переопределены
         val lastScanEntry = logs.asReversed().find { 
             it.actionType == "SCAN" && it.isSequenceCorrect
         }
         
         android.util.Log.d("ShiftDatabaseManager", "updateLastScanEntry: roundId=$roundId, actionType=$actionType, found=${lastScanEntry != null}")
         lastScanEntry?.let { android.util.Log.d("ShiftDatabaseManager", "  - Updating log: ${it.checkpointName} (${it.checkpointId})") }
-        lastScanEntry?.let { android.util.Log.d("ShiftDatabaseManager", "  - Original inputTitle: '${it.inputTitle}', inputValue: '${it.inputValue}'") }
+        lastScanEntry?.let { android.util.Log.d("ShiftDatabaseManager", "  - Original inputTitle: '${it.inputTitle}', inputValue: '${it.inputValue}', sequenceErrorType=${it.sequenceErrorType}") }
         
         lastScanEntry?.let { entry ->
             // Получаем questionText и inputTitle из чекпоинта по checkpointId
@@ -636,7 +655,7 @@ class ShiftDatabaseManager(private val context: Context) {
             return true
         }
         
-        android.util.Log.d("ShiftDatabaseManager", "  - No SCAN entry found to update (or it's a sequence violation)")
+        android.util.Log.d("ShiftDatabaseManager", "  - No SCAN entry with isSequenceCorrect=true found to update")
         return false
     }
 

@@ -1,6 +1,44 @@
 # История изменений
 
-## Версия 1.6 (Текущая) - 07.07.2026
+## Версия 1.7 (Текущая) - 08.07.2026
+### Добавлено:
+- Реализована трехуровневая система обнаружения нарушений по идентификации:
+  1. FOREIGN_CHECKPOINT (Чужеродная метка) - QR/NFC не найден в базе
+  2. OUTSIDE_ROUTE (Вне маршрута) - чекпоинт существует, но не в текущем маршруте
+  3. OUT_OF_SEQUENCE (Вне очереди) - чекпоинт в маршруте, но не следующий
+- Добавлен enum `SequenceErrorType` для хранения типа нарушения
+- Обновлена модель `ShiftLogEntry` с полем `sequenceErrorType`
+- Обновлен `ShiftDatabaseManager` для сохранения/загрузки `sequenceErrorType`
+- Обновлен `QrHandler` для правильной передачи типов нарушений
+- JournalScreen теперь показывает тип нарушения в столбце "Примечание":
+  - "Чужая метка" для FOREIGN_CHECKPOINT
+  - "Вне маршрута" для OUTSIDE_ROUTE
+  - "Вне очереди" для OUT_OF_SEQUENCE
+- Добавлен столбец "Сотрудник" в JournalScreen (после "Время")
+- Удалён столбец "Дата" из JournalScreen
+- Для CHECKPOINT нарушений показывается "-" вместо "Точка пройдена"
+- PHOTO нарушения показывают "Фото снято" (не "-")
+- questionText и inputTitle теперь берутся из базы чекпоинтов по checkpointId
+- Фото сохраняются в папку /Pictures/Ohrana/ с именем {checkpointId}_{timestamp}.jpg
+- Обновлен CloudStorageManager для экспорта sequenceErrorType в JSON
+- Обновлены ShiftLogDetailScreen и OhrannikCabinetScreen для работы с новым типом
+
+### Улучшено:
+- JournalScreen теперь отображает записи по очередности с типами нарушений
+- Фото чекпоинты показываются со всеми полями заполненными
+- Для нарушений показывается соответствующее сообщение
+- Логика updateLastScanEntry() пропускает обновление записей с isSequenceCorrect=false
+
+### Исправлено:
+- Вопросы и заголовки в журнале теперь корректно отображаются из базы чекпоинтов
+- PHOTO чекпоинты отображаются со значком фото и возможностью просмотра
+- Три типа нарушений показывают разные сообщения об ошибках
+- Ошибка компиляции в CloudStorageManager (sequenceErrorExpected → sequenceErrorType)
+- Ошибка компиляции в ShiftLogDetailScreen (sequenceErrorExpected → sequenceErrorType)
+- Ошибка компиляции в OhrannikCabinetScreen (sequenceErrorExpected → sequenceErrorType)
+- Дублирование объявления переменных в QrHandler.kt (parseNfcData)
+
+## Версия 1.6
 ### Добавлено:
 - Реализовано открытие фотофайлов при нажатии на значок глаза (👁️) в JournalScreen
 - Добавлен PhotoDialog для просмотра фотографий чекпоинтов

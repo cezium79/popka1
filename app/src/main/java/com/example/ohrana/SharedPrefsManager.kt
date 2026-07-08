@@ -297,13 +297,24 @@ class SharedPrefsManager(private val context: Context) {
     fun closeCurrentShift() {
         val endTime = dateFormat.format(Date()) // Генерирует время закрытия, например "27.06.2026 10:15:00"
         
+        // ГЕНЕРАЦИЯ ОТЧЕТА - JSON файл для хранения (без автоматической загрузки в Яндекс.Диск)
+        val activeShiftId = prefs.getString("active_shift_id", null)
+        activeShiftId?.let { shiftId ->
+            val cloudManager = CloudStorageManager(context)
+            val result = cloudManager.exportShiftReport(shiftId, shiftDatabase)
+            if (result != null) {
+                Log.d("SharedPrefsManager", "Отчеты сохранены локально в: $result")
+            } else {
+                Log.e("SharedPrefsManager", "Ошибка генерации отчета")
+            }
+        }
+        
         // Очищаем shiftLogs при закрытии смены
         QrHandler.clearShiftLogs()
         // Сбрасываем прогресс маршрута при закрытии смены
         resetRouteProgress()
         
         // Получаем ID активной смены
-        val activeShiftId = prefs.getString("active_shift_id", null)
         activeShiftId?.let { shiftDatabase.closeShift(it) }
         // Удаляем ID активной смены
         prefs.edit().remove("active_shift_id").apply()

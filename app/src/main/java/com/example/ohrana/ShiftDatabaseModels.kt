@@ -45,7 +45,7 @@ data class ShiftLogEntry(
     val photoPath: String? = null,       // Путь к фото (если есть)
     val latitude: Double? = null,        // Широта (опционально)
     val longitude: Double? = null,       // Долгота (опционально)
-    val sequenceErrorExpected: String? = null  // Какой чекпоинт был ожидаем (при ошибке)
+    val sequenceErrorType: SequenceErrorType = SequenceErrorType.NONE  // Тип ошибки последовательности
 )
 
 /**
@@ -88,11 +88,12 @@ data class SequenceViolation(
     val timestamp: String,
     val employeeName: String,
     val roundId: Int,
-    val shiftId: String,                 // ID смены (для фильтрации)
+    val shiftId: String,
     val expectedCheckpointId: String,
     val expectedCheckpointName: String,
     val actualCheckpointId: String,
     val actualCheckpointName: String,
+    val sequenceErrorType: SequenceErrorType = SequenceErrorType.OUT_OF_SEQUENCE,
     val isNfc: Boolean = false
 )
 
@@ -143,4 +144,11 @@ enum class ScanType {
 
 enum class ActionType {
     CHECKPOINT, QUESTION, INPUT, PHOTO
+}
+
+enum class SequenceErrorType {
+    NONE,
+    FOREIGN_CHECKPOINT,    // Чужеродная метка
+    OUTSIDE_ROUTE,         // Вне маршрута
+    OUT_OF_SEQUENCE        // Вне очереди
 }

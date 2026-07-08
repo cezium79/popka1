@@ -243,6 +243,59 @@ fun ShiftLogsListScreen(
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
+                                // Кнопка загрузки HTML в Яндекс.Диск
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val cloudManager = CloudStorageManager(context)
+                                            val diskToken = cloudManager.getDiskToken()
+                                            
+                                            if (diskToken == null || diskToken.isEmpty()) {
+                                                // Token не найден, показываем диалог с предложением настроить Яндекс.Диск
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Настройте Яндекс.Диск в настройках",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                    Log.w(TAG, "Disk token not found for shift ${shift.id}, redirecting to cloud settings")
+                                                }
+                                            } else {
+                                                // Прямая загрузка HTML отчета в Яндекс.Диск (без сохранения на телефоне)
+                                                val reportResult = withContext(Dispatchers.IO) {
+                                                    cloudManager.exportHtmlToDisk(shift.id, shiftDatabase, uploadToDisk = true)
+                                                }
+                                                
+                                                withContext(Dispatchers.Main) {
+                                                    if (reportResult.isSuccess()) {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "HTML отчет загружен в Яндекс.Диск!",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                        Log.i(TAG, "HTML report uploaded directly to disk for shift ${shift.id}")
+                                                    } else {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Ошибка при загрузке HTML в Диск: ${reportResult.getDiskErrorMessage()}",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                        Log.e(TAG, "Failed to upload HTML report to disk for shift ${shift.id}: ${reportResult.getDiskErrorMessage()}")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.secondary
+                                    )
+                                ) {
+                                    Text("📤 Загрузить HTML в Яндекс.Диск", fontSize = 12.sp)
+                                }
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
                                 // Кнопка настроек облачных хранилищ
                                 OutlinedButton(
                                     onClick = onNavigateToCloudSettings,
