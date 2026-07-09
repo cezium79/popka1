@@ -17,9 +17,17 @@ import android.widget.Toast
 import java.net.URL
 import java.io.OutputStream
 import java.io.IOException
+import java.net.HttpURLConnection
 import javax.net.ssl.HttpsURLConnection
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
 import java.net.UnknownHostException
 import java.net.MalformedURLException
+import android.content.Intent
+import android.net.Uri
+import android.content.SharedPreferences
+import com.example.ohrana.SharedPrefsManager
+import com.example.ohrana.SharedPrefsManager.FileIoAction
 
 /**
  * Класс для работы с облачным хранилищем Yandex Cloud
@@ -40,6 +48,9 @@ class CloudStorageManager(private val context: Context) {
         private const val YANDEX_DISK_API_HOST = "https://cloud-api.yandex.ru"
         private const val YANDEX_DISK_API_V1_PATH = "/v1/disk/resources"
         
+        // File.io API endpoints
+        private const val FILE_IO_API_HOST = "https://file.io"
+        
         // Preference keys
         private const val YANDEX_CLOUD_TOKEN_KEY = "yandex_cloud_oauth_token"
         private const val YANDEX_CLOUD_BUCKET_KEY = "yandex_cloud_bucket_name"
@@ -49,9 +60,13 @@ class CloudStorageManager(private val context: Context) {
         private const val YANDEX_DISK_TOKEN_KEY = "yandex_disk_oauth_token"
         private const val YANDEX_DISK_PATH_KEY = "yandex_disk_path"
         
+        // File.io preference keys
+        private const val FILEIO_ENABLED_KEY = "fileio_enabled"
+        
         // Storage type constants
         const val STORAGE_TYPE_CLOUD = "cloud"
         const val STORAGE_TYPE_DISK = "disk"
+        const val STORAGE_TYPE_FILEIO = "fileio"
     }
     
     /**
@@ -1134,6 +1149,364 @@ class CloudStorageManager(private val context: Context) {
         return JsonExportResult(jsonPath, diskResult)
     }
     
+    // ==================================================
+    // 🔗 МЕТОДЫ ДЛЯ РАБОТЫ С FILE.IO
+    // ==================================================
+    
+    /**
+     * Результат экспорта HTML отчета и загрузки в File.io
+     */
+    data class FileIoExportResult(
+        val htmlPath: String?,
+        val fileIoResult: Result<String?>
+    ) {
+        fun isSuccess(): Boolean {
+            return fileIoResult.isSuccess
+        }
+        
+        fun getFileIoErrorMessage(): String {
+            if (!fileIoResult.isSuccess) {
+                return "Ошибка загрузки в File.io: ${fileIoResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
+            }
+            return ""
+        }
+        
+        fun getFileIoUrl(): String? {
+            return fileIoResult.getOrNull()
+        }
+    }
+    
+    /**
+     * Сохраняет HTML отчет во временный файл
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @return Path к сохраненному файлу или null
+     */
+    private fun saveHtmlToFile(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
+        return try {
+            val html = generateHtmlReport(shiftId, shiftDatabase)
+            
+            if (html == null) {
+                Log.e(TAG, "saveHtmlToFile: Failed to generate HTML report")
+                return null
+            }
+            
+            val fileName = "shift_report_${shiftId}.html"
+            val file = File(context.cacheDir, fileName)
+            
+            file.writeText(html, Charsets.UTF_8)
+            
+            Log.i(TAG, "saveHtmlToFile: HTML saved to ${file.absolutePath}, size: ${file.length()} bytes")
+            file.absolutePath
+            
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "saveHtmlToFile: Error: $errorMsg", e)
+            null
+        }
+    }
+    
+    /**
+     * Загружает HTML отчет в File.io через временный файл
+     * Использует OkHttp для работы с API
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @return Result с URL файла в File.io или сообщением об ошибке
+     */
+    fun uploadHtmlToFileIoWithFile(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager
+    ): Result<String> {
+        return try {
+            // 1. Сохраняем HTML во временный файл
+            val filePath = saveHtmlToFile(shiftId, shiftDatabase)
+            
+            if (filePath == null) {
+                Log.e(TAG, "uploadHtmlToFileIoWithFile: Failed to save HTML file")
+                return Result.failure(Exception("Ошибка сохранения HTML файла"))
+            }
+            
+            val file = File(filePath)
+            if (!file.exists()) {
+                Log.e(TAG, "uploadHtmlToFileIoWithFile: File does not exist: $filePath")
+                return Result.failure(Exception("Файл не найден"))
+            }
+            
+            Log.i(TAG, "uploadHtmlToFileIoWithFile: Uploading file to File.io...")
+            Log.i(TAG, "uploadHtmlToFileIoWithFile: API Host: $FILE_IO_API_HOST")
+            Log.i(TAG, "uploadHtmlToFileIoWithFile: File size: ${file.length()} bytes")
+            
+            // Используем OkHttp для загрузки
+            val client = okhttp3.OkHttpClient()
+            
+            // Создаем MultipartBody для отправки файла
+            // Используем application/octet-stream чтобы обойти XSS-фильтры file.io
+            val fileRequestBody = file.asRequestBody("application/octet-stream".toMediaType())
+            val requestBody = okhttp3.MultipartBody.Builder()
+                .setType(okhttp3.MultipartBody.FORM)
+                .addFormDataPart("file", "shift_report_${shiftId}.html", fileRequestBody)
+                .build()
+            
+            // Формируем POST-запрос
+            // Используем полный User-Agent как у браузера, иначе Cloudflare/WAF выставит 403
+            val request = okhttp3.Request.Builder()
+                .url(FILE_IO_API_HOST)
+                .post(requestBody)
+                .addHeader("Accept", "application/json")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .build()
+            
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                // Сначала считываем response body один раз!
+                val responseBody = response.body?.string() ?: ""
+                
+                // Логируем полный ответ для отладки
+                Log.i(TAG, "uploadHtmlToFileIoWithFile: Response code: ${response.code}")
+                Log.i(TAG, "uploadHtmlToFileIoWithFile: Response headers: ${response.headers}")
+                Log.i(TAG, "uploadHtmlToFileIoWithFile: Response body: $responseBody")
+                
+                // Сначала проверяем успешность запроса ПЕРЕД парсингом JSON!
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "uploadHtmlToFileIoWithFile: Server error: ${response.code} ${response.message}")
+                    // Проверяем, не HTML ли нам вернулся вместо JSON
+                    if (responseBody.contains("<html>") || responseBody.contains("<!DOCTYPE")) {
+                        Log.e(TAG, "uploadHtmlToFileIoWithFile: Received HTML instead of JSON!")
+                    }
+                    return Result.failure(Exception("Ошибка сервера File.io: ${response.code} ${response.message}"))
+                }
+                
+                // Парсим JSON-ответ (только если код 200)
+                val json = org.json.JSONObject(responseBody)
+                val success = json.optBoolean("success", false)
+                
+                if (success) {
+                    val fileUrl = json.optString("link", "")
+                    Log.i(TAG, "uploadHtmlToFileIoWithFile: File URL: $fileUrl")
+                    
+                    // Удаляем временный файл
+                    if (file.exists()) {
+                        file.delete()
+                        Log.i(TAG, "uploadHtmlToFileIoWithFile: Temporary file deleted")
+                    }
+                    
+                    Result.success(fileUrl)
+                } else {
+                    val message = json.optString("message", "Неизвестная ошибка")
+                    Log.e(TAG, "uploadHtmlToFileIoWithFile: File.io error: $message")
+                    Result.failure(Exception("Ошибка File.io: $message"))
+                }
+            }
+            
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "uploadHtmlToFileIoWithFile: Error: $errorMsg", e)
+            Result.failure(Exception("Ошибка загрузки в File.io: $errorMsg"))
+        }
+    }
+    
+    /**
+     * Загружает HTML отчет в File.io без сохранения на телефоне
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @return Result с URL файла в File.io или сообщением об ошибке
+     */
+    fun uploadHtmlToFileIoDirect(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager
+    ): Result<String> {
+        return try {
+            val html = generateHtmlReport(shiftId, shiftDatabase)
+            
+            if (html == null) {
+                Log.e(TAG, "uploadHtmlToFileIoDirect: Failed to generate HTML report")
+                return Result.failure(Exception("Ошибка генерации HTML отчета"))
+            }
+            
+            Log.i(TAG, "uploadHtmlToFileIoDirect: HTML generated, uploading to File.io...")
+            Log.i(TAG, "uploadHtmlToFileIoDirect: API Host: $FILE_IO_API_HOST")
+            Log.i(TAG, "uploadHtmlToFileIoDirect: HTML size: ${html.length} bytes")
+            
+            val url = URL(FILE_IO_API_HOST)
+            val connection = url.openConnection() as HttpURLConnection
+            
+            // Используем multipart/form-data для загрузки файла (стандартный API File.io)
+            val boundary = "----FileBoundary${System.currentTimeMillis()}"
+            connection.requestMethod = "POST"
+            connection.setDoOutput(true)
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            connection.setRequestProperty("User-Agent", "Ohrana/1.0")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.connectTimeout = 30000
+            connection.readTimeout = 30000
+            
+            // Формируем multipart формат
+            val outputStream = connection.outputStream
+            val writer = java.io.OutputStreamWriter(outputStream, Charsets.UTF_8)
+            
+            // Добавляем файл
+            writer.write("--" + boundary + "\r\n")
+            writer.write("Content-Disposition: form-data; name=\"file\"; filename=\"shift_report_${shiftId}.html\"\r\n")
+            writer.write("Content-Type: text/html; charset=UTF-8\r\n\r\n")
+            writer.write(html)
+            writer.write("\r\n")
+            
+            // Завершаем boundary
+            writer.write("--" + boundary + "--\r\n")
+            writer.flush()
+            writer.close()
+            outputStream.close()
+            
+            val responseCode = connection.responseCode
+            val responseMessage = connection.responseMessage
+            
+            Log.i(TAG, "uploadHtmlToFileIoDirect: Response code: $responseCode $responseMessage")
+            Log.i(TAG, "uploadHtmlToFileIoDirect: Response headers: ${connection.headerFields}")
+            
+            if (responseCode == 200) {
+                val responseText = connection.inputStream.use { it.bufferedReader().use { reader -> reader.readText() } }
+                Log.i(TAG, "uploadHtmlToFileIoDirect: Response full (first 1000 chars): ${responseText.substring(0, Math.min(1000, responseText.length))}")
+                
+                // Проверяем, что ответ - это JSON, а не HTML
+                if (responseText.trim().startsWith("<")) {
+                    Log.e(TAG, "uploadHtmlToFileIoDirect: Received HTML instead of JSON, trying alternative approach")
+                    // Попробуем альтернативный подход - отправить как binary data
+                    return uploadHtmlToFileIoBinary(shiftId, shiftDatabase)
+                }
+                
+                val json = org.json.JSONObject(responseText)
+                val success = json.optBoolean("success", false)
+                
+                if (success) {
+                    val fileUrl = json.optString("link", "")
+                    Log.i(TAG, "uploadHtmlToFileIoDirect: File URL: $fileUrl")
+                    Result.success(fileUrl)
+                } else {
+                    val message = json.optString("message", "Неизвестная ошибка")
+                    Log.e(TAG, "uploadHtmlToFileIoDirect: File.io error: $message")
+                    Result.failure(Exception("Ошибка File.io: $message"))
+                }
+            } else {
+                val errorMessage = connection.errorStream?.use { it.bufferedReader().use { reader -> reader.readText() } }
+                Log.e(TAG, "uploadHtmlToFileIoDirect: Failed with code $responseCode: $errorMessage")
+                Result.failure(Exception("Ошибка загрузки в File.io: $responseCode"))
+            }
+            
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "uploadHtmlToFileIoDirect: Error: $errorMsg", e)
+            Result.failure(Exception("Ошибка загрузки в File.io: $errorMsg"))
+        }
+    }
+    
+    /**
+     * Альтернативный метод загрузки в File.io - как binary data
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @return Result с URL файла в File.io или сообщением об ошибке
+     */
+    private fun uploadHtmlToFileIoBinary(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager
+    ): Result<String> {
+        return try {
+            val html = generateHtmlReport(shiftId, shiftDatabase)
+            
+            if (html == null) {
+                Log.e(TAG, "uploadHtmlToFileIoBinary: Failed to generate HTML report")
+                return Result.failure(Exception("Ошибка генерации HTML отчета"))
+            }
+            
+            Log.i(TAG, "uploadHtmlToFileIoBinary: HTML generated, uploading to File.io as binary...")
+            Log.i(TAG, "uploadHtmlToFileIoBinary: API Host: $FILE_IO_API_HOST")
+            Log.i(TAG, "uploadHtmlToFileIoBinary: HTML size: ${html.length} bytes")
+            
+            val url = URL(FILE_IO_API_HOST)
+            val connection = url.openConnection() as HttpURLConnection
+            
+            connection.requestMethod = "POST"
+            connection.setDoOutput(true)
+            connection.setRequestProperty("Content-Type", "text/html; charset=UTF-8")
+            connection.setRequestProperty("User-Agent", "Ohrana/1.0")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.connectTimeout = 30000
+            connection.readTimeout = 30000
+            
+            // Отправляем HTML как binary data
+            val outputStream = connection.outputStream
+            outputStream.write(html.toByteArray(charset = Charsets.UTF_8))
+            outputStream.flush()
+            outputStream.close()
+            
+            val responseCode = connection.responseCode
+            val responseMessage = connection.responseMessage
+            
+            Log.i(TAG, "uploadHtmlToFileIoBinary: Response code: $responseCode $responseMessage")
+            Log.i(TAG, "uploadHtmlToFileIoBinary: Response headers: ${connection.headerFields}")
+            
+            if (responseCode == 200) {
+                val responseText = connection.inputStream.use { it.bufferedReader().use { reader -> reader.readText() } }
+                Log.i(TAG, "uploadHtmlToFileIoBinary: Response full (first 1000 chars): ${responseText.substring(0, Math.min(1000, responseText.length))}")
+                
+                val json = org.json.JSONObject(responseText)
+                val success = json.optBoolean("success", false)
+                
+                if (success) {
+                    val fileUrl = json.optString("link", "")
+                    Log.i(TAG, "uploadHtmlToFileIoBinary: File URL: $fileUrl")
+                    Result.success(fileUrl)
+                } else {
+                    val message = json.optString("message", "Неизвестная ошибка")
+                    Log.e(TAG, "uploadHtmlToFileIoBinary: File.io error: $message")
+                    Result.failure(Exception("Ошибка File.io: $message"))
+                }
+            } else {
+                val errorMessage = connection.errorStream?.use { it.bufferedReader().use { reader -> reader.readText() } }
+                Log.e(TAG, "uploadHtmlToFileIoBinary: Failed with code $responseCode: $errorMessage")
+                Result.failure(Exception("Ошибка загрузки в File.io: $responseCode"))
+            }
+            
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "uploadHtmlToFileIoBinary: Error: $errorMsg", e)
+            Result.failure(Exception("Ошибка загрузки в File.io: $errorMsg"))
+        }
+    }
+    
+    /**
+     * Экспортирует HTML отчет и загружает в File.io
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @return FileIoExportResult с URL или ошибкой
+     */
+    fun exportHtmlToFileIo(
+        shiftId: String,
+        shiftDatabase: ShiftDatabaseManager
+    ): FileIoExportResult {
+        Log.i(TAG, "exportHtmlToFileIo: Starting File.io upload for shift $shiftId")
+        val fileIoResult = uploadHtmlToFileIoDirect(shiftId, shiftDatabase)
+        if (fileIoResult.isSuccess) {
+            Log.i(TAG, "exportHtmlToFileIo: File.io upload successful, URL: ${fileIoResult.getOrNull()}")
+        } else {
+            Log.e(TAG, "exportHtmlToFileIo: File.io upload failed: ${fileIoResult.exceptionOrNull()?.message}")
+        }
+        return FileIoExportResult(null, fileIoResult)
+    }
+    
+    /**
+     * Включает/отключает использование File.io
+     */
+    fun setFileIoEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(FILEIO_ENABLED_KEY, enabled).apply()
+    }
+    
+    /**
+     * Проверяет, включен ли File.io
+     */
+    fun isFileIoEnabled(): Boolean {
+        return prefs.getBoolean(FILEIO_ENABLED_KEY, false)
+    }
+    
     /**
      * Результат экспорта отчета в PDF и загрузки в Диск
      */
@@ -1175,6 +1548,10 @@ class CloudStorageManager(private val context: Context) {
                 return "Ошибка загрузки HTML в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
             }
             return ""
+        }
+        
+        fun getDownloadUrl(): String? {
+            return diskResult.getOrNull()
         }
     }
     
@@ -1692,6 +2069,185 @@ class CloudStorageManager(private val context: Context) {
             if (file.lastModified() < cutoffDate) {
                 file.delete()
                 Log.i(TAG, "Deleted old report: ${file.name}")
+            }
+        }
+    }
+    
+    // ==================================================
+    // 🚀 МЕТОДЫ ДЛЯ ВЫПОЛНЕНИЯ ДЕЙСТВИЙ С ССЫЛКОЙ FILE.IO
+    // ==================================================
+    
+    /**
+     * Выполняет действие с ссылкой File.io в зависимости от настроек пользователя
+     * @param url Ссылка на отчет в File.io
+     * @param shiftId ID смены
+     * @param context Контекст Android
+     */
+    fun executeFileIoAction(url: String, shiftId: String, context: Context) {
+        val prefs = SharedPrefsManager(context)
+        val action = prefs.getFileIoAction()
+        
+        Log.i(TAG, "executeFileIoAction: Action=$action, URL=$url")
+        
+        when (action) {
+            FileIoAction.SAVE_TO_DEVICE -> {
+                // Сохраняем URL в память телефона (в SharedPreferences)
+                prefs.saveFileIoUrl(shiftId, url)
+                Log.i(TAG, "executeFileIoAction: URL saved to SharedPreferences for shift $shiftId")
+                Toast.makeText(
+                    context,
+                    "URL сохранен в памяти телефона",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            
+            FileIoAction.SEND_SMS -> {
+                // Отправка через SMS
+                val phone = prefs.getFileIoPhone()
+                if (phone.isEmpty()) {
+                    Toast.makeText(
+                        context,
+                        "Введите номер телефона в настройках File.io",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+                
+                try {
+                    val smsUri = android.net.Uri.parse("smsto:$phone")
+                    val intent = android.content.Intent(
+                        android.content.Intent.ACTION_SENDTO,
+                        smsUri
+                    )
+                    intent.putExtra("sms_body", "Отчет о смене: $url")
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                    Log.i(TAG, "executeFileIoAction: SMS intent started")
+                } catch (e: Exception) {
+                    Log.e(TAG, "executeFileIoAction: Failed to send SMS", e)
+                    Toast.makeText(
+                        context,
+                        "Ошибка отправки SMS: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            
+            FileIoAction.SEND_EMAIL -> {
+                // Отправка через почту (МАХ)
+                val email = prefs.getFileIoEmail()
+                if (email.isEmpty()) {
+                    Toast.makeText(
+                        context,
+                        "Введите email в настройках File.io",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+                
+                try {
+                    // Сохраняем URL в файл в папке Ohrana/Reports
+                    val reportsDir = File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                        "Ohrana/Reports"
+                    )
+                    if (!reportsDir.exists()) {
+                        reportsDir.mkdirs()
+                    }
+                    val urlFile = File(reportsDir, "last_fileio_url_${shiftId}.txt")
+                    urlFile.writeText(url)
+                    Log.i(TAG, "executeFileIoAction: URL saved to $urlFile")
+                    
+                    // Создаем email intent без диалога выбора (использует настроенный клиент)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND)
+                    intent.type = "text/html"
+                    intent.putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(email))
+                    intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "Отчет о смене")
+                    intent.putExtra(
+                        android.content.Intent.EXTRA_TEXT,
+                        "<a href='$url'>Отчет о смене</a>"
+                    )
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    
+                    // Пытаемся запустить напрямую (без createChooser для автоматической отправки)
+                    try {
+                        context.startActivity(intent)
+                        Log.i(TAG, "executeFileIoAction: Email sent to $email")
+                        Toast.makeText(
+                            context,
+                            "Отчет отправлен на $email",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } catch (e: Exception) {
+                        // Если не удалось без диалога, показываем диалог
+                        Log.w(TAG, "executeFileIoAction: Direct send failed, showing chooser", e)
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                intent,
+                                "Отправить отчет через"
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "executeFileIoAction: Failed to send email", e)
+                    Toast.makeText(
+                        context,
+                        "Ошибка отправки email: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            
+            FileIoAction.SEND_TELEGRAM -> {
+                // Отправка через Telegram
+                val username = prefs.getFileIoTelegram()
+                if (username.isEmpty()) {
+                    Toast.makeText(
+                        context,
+                        "Введите username Telegram в настройках File.io",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+                
+                try {
+                    // Проверяем, установлен ли Telegram
+                    val pm = context.packageManager
+                    val telegramPackage = "org.telegram.messenger"
+                    pm.getPackageInfo(telegramPackage, 0)
+                    
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                    intent.data = android.net.Uri.parse("https://t.me/$username")
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                    Log.i(TAG, "executeFileIoAction: Telegram app opened")
+                    
+                    Toast.makeText(
+                        context,
+                        "Откройте чат с @$username и отправьте сообщение",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } catch (e: Exception) {
+                    Log.e(TAG, "executeFileIoAction: Telegram not installed or error", e)
+                    Toast.makeText(
+                        context,
+                        "Telegram не установлен или ошибка: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            
+            FileIoAction.COPY_TO_CLIPBOARD -> {
+                // Копирование в буфер обмена
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("File.io URL", url)
+                clipboard.setPrimaryClip(clip)
+                Log.i(TAG, "executeFileIoAction: URL copied to clipboard")
+                Toast.makeText(
+                    context,
+                    "URL скопирован в буфер обмена",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

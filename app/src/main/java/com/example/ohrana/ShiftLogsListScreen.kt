@@ -27,6 +27,7 @@ import android.os.Environment
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import com.example.ohrana.SharedPrefsManager
 
 private const val TAG = "ShiftLogsListScreen"
 
@@ -268,12 +269,22 @@ fun ShiftLogsListScreen(
                                                 
                                                 withContext(Dispatchers.Main) {
                                                     if (reportResult.isSuccess()) {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "HTML отчет загружен в Яндекс.Диск!",
-                                                            Toast.LENGTH_LONG
-                                                        ).show()
-                                                        Log.i(TAG, "HTML report uploaded directly to disk for shift ${shift.id}")
+                                                        val downloadUrl = reportResult.getDownloadUrl()
+                                                        if (downloadUrl != null) {
+                                                            Toast.makeText(
+                                                                context,
+                                                                "HTML отчет загружен! Ссылка: $downloadUrl",
+                                                                Toast.LENGTH_LONG
+                                                            ).show()
+                                                            Log.i(TAG, "HTML report uploaded directly to disk for shift ${shift.id}, download URL: $downloadUrl")
+                                                        } else {
+                                                            Toast.makeText(
+                                                                context,
+                                                                "HTML отчет загружен в Яндекс.Диск!",
+                                                                Toast.LENGTH_LONG
+                                                            ).show()
+                                                            Log.i(TAG, "HTML report uploaded directly to disk for shift ${shift.id}")
+                                                        }
                                                     } else {
                                                         Toast.makeText(
                                                             context,
@@ -292,6 +303,72 @@ fun ShiftLogsListScreen(
                                     )
                                 ) {
                                     Text("📤 Загрузить HTML в Яндекс.Диск", fontSize = 12.sp)
+                                }
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Кнопка загрузки HTML в File.io
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val cloudManager = CloudStorageManager(context)
+                                            val fileIoEnabled = prefsManager.isFileIoEnabled()
+                                            
+                                            if (!fileIoEnabled) {
+                                                // File.io не настроен, показываем диалог с предложением настроить
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Настройте File.io в настройках",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                    Log.w(TAG, "File.io not enabled for shift ${shift.id}, redirecting to cloud settings")
+                                                }
+                                            } else {
+                                                // Загрузка HTML отчета в File.io через временный файл
+                                                val reportResult = withContext(Dispatchers.IO) {
+                                                    cloudManager.uploadHtmlToFileIoWithFile(shift.id, shiftDatabase)
+                                                }
+                                                
+                                                withContext(Dispatchers.Main) {
+                                                    if (reportResult.isSuccess) {
+                                                        val fileUrl = reportResult.getOrNull() ?: ""
+                                                        if (fileUrl.isNotEmpty()) {
+                                                            Toast.makeText(
+                                                                context,
+                                                                "HTML отчет загружен в File.io!\nURL: $fileUrl",
+                                                                Toast.LENGTH_LONG
+                                                            ).show()
+                                                            Log.i(TAG, "HTML report uploaded to File.io for shift ${shift.id}, URL: $fileUrl")
+                                                            
+                                                            // Выполняем действие с URL в зависимости от настроек
+                                                            cloudManager.executeFileIoAction(fileUrl, shift.id, context)
+                                                        } else {
+                                                            Toast.makeText(
+                                                                context,
+                                                                "HTML отчет загружен в File.io!",
+                                                                Toast.LENGTH_LONG
+                                                            ).show()
+                                                            Log.i(TAG, "HTML report uploaded to File.io for shift ${shift.id}")
+                                                        }
+                                                    } else {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Ошибка при загрузке в File.io: ${reportResult.exceptionOrNull()?.message}",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                        Log.e(TAG, "Failed to upload HTML report to File.io for shift ${shift.id}: ${reportResult.exceptionOrNull()?.message}")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.tertiary
+                                    )
+                                ) {
+                                    Text("📤 Загрузить HTML в File.io", fontSize = 12.sp)
                                 }
                                 
                                 Spacer(modifier = Modifier.height(8.dp))

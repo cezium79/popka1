@@ -13,6 +13,13 @@ import com.example.ohrana.RoundRecord
 import com.example.ohrana.SequenceViolation
 import com.example.ohrana.GuardMember
 import com.example.ohrana.CheckpointEntry
+import android.widget.Toast
+import android.content.Intent
+import android.net.Uri
+import com.example.ohrana.CloudStorageManager.FileIoExportResult
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 // Модель для отображения строки в журнале
 data class ShiftJournalRow(
@@ -306,6 +313,32 @@ class SharedPrefsManager(private val context: Context) {
                 Log.d("SharedPrefsManager", "Отчеты сохранены локально в: $result")
             } else {
                 Log.e("SharedPrefsManager", "Ошибка генерации отчета")
+            }
+            
+            // Если File.io включен, загружаем отчет туда тоже (в фоновом потоке)
+            if (isFileIoEnabled()) {
+                Log.d("SharedPrefsManager", "File.io enabled - uploading report")
+                // Выполняем загрузку в File.io и последующие действия в фоновом потоке
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    try {
+                        val fileIoResult = cloudManager.exportHtmlToFileIo(shiftId, shiftDatabase)
+                        if (fileIoResult.isSuccess()) {
+                            val url = fileIoResult.getFileIoUrl()
+                            if (url != null) {
+                                saveFileIoUrl(shiftId, url)
+                                Log.d("SharedPrefsManager", "File.io URL saved: $url")
+                                // Выполняем действие с ссылкой (SMS, email, Telegram и т.д.)
+                                cloudManager.executeFileIoAction(url, shiftId, context)
+                            }
+                        } else {
+                            Log.e("SharedPrefsManager", "File.io upload failed: ${fileIoResult.getFileIoErrorMessage()}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SharedPrefsManager", "File.io upload error: ${e.message}", e)
+                    }
+                }
+            } else {
+                Log.d("SharedPrefsManager", "File.io NOT enabled - skipping upload")
             }
         }
         
@@ -1515,5 +1548,119 @@ class SharedPrefsManager(private val context: Context) {
      */
     fun getAllRoutes(): List<Route> {
         return loadRoutes()
+    }
+    
+    // ==================================================
+    // 📁 МЕТОДЫ ДЛЯ РАБОТЫ С FILE.IO
+    // ==================================================
+    
+    /**
+     * Включает/отключает использование File.io
+     */
+    fun setFileIoEnabled(enabled: Boolean) {
+        Log.d("SharedPrefsManager", "setFileIoEnabled: enabled=$enabled")
+        prefs.edit().putBoolean("fileio_enabled", enabled).apply()
+    }
+    
+    /**
+     * Проверяет, включен ли File.io
+     */
+    fun isFileIoEnabled(): Boolean {
+        val result = prefs.getBoolean("fileio_enabled", false)
+        Log.d("SharedPrefsManager", "isFileIoEnabled: result=$result")
+        return result
+    }
+    
+    /**
+     * Сохраняет URL файла из File.io
+     */
+    fun saveFileIoUrl(shiftId: String, url: String) {
+        prefs.edit().putString("fileio_url_$shiftId", url).apply()
+    }
+    
+    /**
+     * Получает сохраненный URL файла из File.io
+     */
+    fun getFileIoUrl(shiftId: String): String? {
+        return prefs.getString("fileio_url_$shiftId", null)
+    }
+    
+    /**
+     * Очищает сохраненный URL файла из File.io
+     */
+    fun clearFileIoUrl(shiftId: String) {
+        prefs.edit().remove("fileio_url_$shiftId").apply()
+    }
+    
+    // ==================================================
+    // 📋 МЕТОДЫ ДЛЯ НАСТРОЕК ДЕЙСТВИЙ С ССЫЛКОЙ FILE.IO
+    // ==================================================
+    
+    /**
+     * Тип действия с ссылкой File.io
+     */
+    enum class FileIoAction(val value: String) {
+        SAVE_TO_DEVICE("save_to_device"),      // Сохранить в памяти телефона
+        SEND_SMS("send_sms"),                   // Отправить через SMS
+        SEND_EMAIL("send_email"),               // Отправить через почту (МАХ)
+        SEND_TELEGRAM("send_telegram"),         // Отправить через Telegram
+        COPY_TO_CLIPBOARD("copy_to_clipboard")  // Скопировать в буфер обмена
+    }
+    
+    /**
+     * Сохраняет выбор действия с ссылкой File.io
+     */
+    fun saveFileIoAction(action: FileIoAction) {
+        prefs.edit().putString("fileio_action", action.value).apply()
+    }
+    
+    /**
+     * Получает сохраненное действие с ссылкой File.io
+     */
+    fun getFileIoAction(): FileIoAction {
+        val value = prefs.getString("fileio_action", FileIoAction.SAVE_TO_DEVICE.value)
+        return FileIoAction.values().find { it.value == value } ?: FileIoAction.SAVE_TO_DEVICE
+    }
+    
+    /**
+     * Сохраняет номер телефона для отправки SMS
+     */
+    fun saveFileIoPhone(phone: String) {
+        prefs.edit().putString("fileio_phone", phone).apply()
+    }
+    
+    /**
+     * Получает сохраненный номер телефона
+     */
+    fun getFileIoPhone(): String {
+        return prefs.getString("fileio_phone", "") ?: ""
+    }
+    
+    /**
+     * Сохраняет email для отправки через почту
+     */
+    fun saveFileIoEmail(email: String) {
+        prefs.edit().putString("fileio_email", email).apply()
+    }
+    
+    /**
+     * Получает сохраненный email
+     */
+    fun getFileIoEmail(): String {
+        return prefs.getString("fileio_email", "") ?: ""
+    }
+    
+    /**
+     * Сохраняет username Telegram для отправки
+     */
+    fun saveFileIoTelegram(username: String) {
+        prefs.edit().putString("fileio_telegram", username).apply()
+    }
+    
+    /**
+     * Получает сохраненный username Telegram
+     */
+    fun getFileIoTelegram(): String {
+        return prefs.getString("fileio_telegram", "") ?: ""
     }
 }

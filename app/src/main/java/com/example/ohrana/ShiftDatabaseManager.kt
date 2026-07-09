@@ -520,8 +520,8 @@ class ShiftDatabaseManager(private val context: Context) {
                         latitude = json.optDouble("latitude", Double.NaN).takeIf { !it.isNaN() },
                         longitude = json.optDouble("longitude", Double.NaN).takeIf { !it.isNaN() },
                         sequenceErrorType = try {
-                            val seqErrorStr = json.getString("sequenceErrorType")
-                            android.util.Log.d("ShiftDatabaseManager", "loadAllLogs: checkpoint=${json.getString("checkpointName")}, sequenceErrorType from JSON = $seqErrorStr")
+                            val seqErrorStr = json.optString("sequenceErrorType", "NONE")
+                            android.util.Log.d("ShiftDatabaseManager", "loadAllLogs: checkpoint=${json.optString("checkpointName")}, sequenceErrorType from JSON = $seqErrorStr")
                             SequenceErrorType.valueOf(seqErrorStr)
                         } catch (e: Exception) {
                             android.util.Log.e("ShiftDatabaseManager", "loadAllLogs: Error loading sequenceErrorType for checkpoint=${json.optString("checkpointName")}, error: ${e.message}")
@@ -568,7 +568,7 @@ class ShiftDatabaseManager(private val context: Context) {
                         actualCheckpointId = json.getString("actualCheckpointId"),
                         actualCheckpointName = json.getString("actualCheckpointName"),
                         sequenceErrorType = try {
-                            SequenceErrorType.valueOf(json.getString("sequenceErrorType"))
+                            SequenceErrorType.valueOf(json.optString("sequenceErrorType", "OUT_OF_SEQUENCE"))
                         } catch (e: Exception) {
                             SequenceErrorType.OUT_OF_SEQUENCE
                         },

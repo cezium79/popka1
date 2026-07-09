@@ -38,6 +38,7 @@ android {
 
 dependencies {
     // BOM должен быть первым для корректного управления версиями
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(platform("androidx.compose:compose-bom:2024.02.02"))
     implementation("androidx.compose.runtime:runtime")
     implementation("androidx.compose.ui:ui")

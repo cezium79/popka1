@@ -21,6 +21,36 @@ Android-приложение на базе **Kotlin** и **Jetpack Compose**, п
 *   **💾 Локальное хранение:** Менеджер `SharedPrefsManager` для быстрого сохранения сессий и настроек пользователя.
 *   **📊 Журнал обходов:** Детальный журнал текущей смены с отображением типов нарушений.
 *   **👥 Групповая работа:** Поддержка нескольких охранников в одной смене.
+*   **🔗 File.io - Альтернативное облачное хранилище:** Анонимное временное хранение отчетов через File.io API без регистрации.
+
+---
+
+## 🌐 Облачное хранение
+
+Приложение поддерживает три типа облачного хранилища для загрузки отчетов:
+
+### 1. Yandex Cloud Storage
+- Используется OAuth token для доступа к бакетам
+- Подходит для долгосрочного хранения отчетов
+- Настройки доступны в `CloudSettingsScreen`
+
+### 2. Яндекс.Диск
+- Альтернативное облачное хранилище через Disk API
+- Поддержка публичных URL для скачивания
+- Настройки доступны в `CloudSettingsScreen`
+
+### 3. File.io (новое) 🔗
+- **Анонимное временное хранение** - не требует регистрации
+- **Срок хранения файлов:** 14 дней
+- **Использование:** Простой POST запрос с HTML отчетом
+- **API:** `https://file.io`
+- **Ответ:** JSON с полями `link` (URL скачивания) и `success` (статус)
+
+#### Настройка File.io:
+- В `CloudSettingsScreen` есть переключатель "Использовать File.io"
+- При включении отчеты автоматически загружаются в File.io
+- URL файла сохраняется в SharedPreferences для доступа
+- Методы: `isFileIoEnabled()`, `setFileIoEnabled()`, `exportHtmlToFileIo()`
 
 ---
 
@@ -44,6 +74,8 @@ app/src/main/
 │   ├── QrHandler.kt            # Модуль обработки QR-кодов и NFC
 │   ├── ShiftDatabaseManager.kt # Управление базой данных обходов
 │   ├── SharedPrefsManager.kt   # Управление SharedPreferences
+│   ├── CloudStorageManager.kt  # Управление облачными хранилищами (Yandex Cloud, Диск, File.io)
+│   ├── CloudSettingsScreen.kt  # Настройки облачных хранилищ
 │   ├── Checkpoint.kt           # Модель чекпоинта
 │   └── ...                     # Бизнес-логика и модели данных
 └── res/                        # Ресурсы приложения
@@ -96,6 +128,7 @@ app/src/main/
 *   **Камера:** CameraX для сканирования QR-кодов и съемки фото
 *   **ML Kit:** Google ML Kit для распознавания QR-кодов и текста
 *   **Тестирование:** JUnit (`ExampleUnitTest`) и Espresso/Compose UI Test (`ExampleInstrumentedTest`)
+*   **Облачные хранилища:** Yandex Cloud Storage API, Yandex Disk API, File.io API
 
 ---
 
@@ -149,7 +182,7 @@ adb shell am start -n com.example.ohrana/.JournalActivity
 ## ⚙️ Полезная информация для разработчиков
 
 ### Конфигурация
-*   **ADB:** `C:\Program Files\Genymobile\Genymotion\tools\adb.exe`
+*   **ADB:** `C:\\Program Files\\Genymobile\\Genymotion\\tools\\adb.exe`
 *   **Устройство:** `5VH9X19330G01139`
 *   **Путь к фото:** `/Pictures/Ohrana/`
 *   **Формат фото:** `{checkpointId}_{timestamp}.jpg`
@@ -162,6 +195,21 @@ adb shell am start -n com.example.ohrana/.JournalActivity
 *   **ShiftDatabaseManager** - управление базой данных обходов
 *   **SharedPrefsManager** - управление SharedPreferences
 *   **OhrannikCabinetScreen** - кабинет охранника
+*   **CloudStorageManager** - управление облачными хранилищами (Yandex Cloud, Диск, File.io)
+*   **CloudSettingsScreen** - настройки облачных хранилищ
+
+### Методы CloudStorageManager для File.io:
+*   `isFileIoEnabled(): Boolean` - проверяет, включен ли File.io
+*   `setFileIoEnabled(enabled: Boolean)` - включает/отключает File.io
+*   `exportHtmlToFileIo(shiftId: String, shiftDatabase: ShiftDatabaseManager): FileIoExportResult` - экспортирует и загружает HTML отчет
+*   `uploadHtmlToFileIoDirect(shiftId: String, shiftDatabase: ShiftDatabaseManager): Result<String>` - загружает HTML без сохранения на телефон
+
+### Методы SharedPrefsManager для File.io:
+*   `isFileIoEnabled(): Boolean` - проверяет, включен ли File.io
+*   `setFileIoEnabled(enabled: Boolean)` - включает/отключает File.io
+*   `saveFileIoUrl(shiftId: String, url: String)` - сохраняет URL файла
+*   `getFileIoUrl(shiftId: String): String?` - получает сохраненный URL
+*   `clearFileIoUrl(shiftId: String)` - очищает сохраненный URL
 
 ### Три уровня нарушений (версия 1.7):
 1. **FOREIGN_CHECKPOINT (Чужеродная метка)** - QR/NFC не найден в базе данных
@@ -184,28 +232,3 @@ adb shell am start -n com.example.ohrana/.JournalActivity
 ### Кэширование сборки:** В проекте активно используется `Configuration Cache`. В случае возникновения проблем с плагинами, интерактивные отчеты сборщика генерируются в папку `build/reports/configuration-cache/`.
 *   **Логи компилятора:** Внутренний кэш компилятора Kotlin и логи ошибок (при наличии) находятся в локальной директории `.kotlin/errors/`.
 *   **Игнорирование файлов:** Сборка, локальные настройки (`local.properties`) и кэш IDE (`.idea/`, `.gradle/`, `build/`) автоматически исключены из отслеживания Git.
-
-
-implementation - Implementation only dependencies for 'main' sources. (n)
-+--- androidx.compose.runtime:runtime (n)
-+--- androidx.compose.ui:ui (n)
-+--- androidx.compose:compose-bom:2024.02.02 (n)
-+--- androidx.activity:activity-compose:1.13.0 (n)
-+--- androidx.compose.material3:material3 (n)
-+--- androidx.compose.ui:ui (n)
-+--- androidx.compose.ui:ui-graphics (n)
-+--- androidx.compose.ui:ui-text:1.11.3 (n)
-+--- androidx.compose.ui:ui-tooling-preview (n)
-+--- androidx.core:core-ktx:1.15.0 (n)
-+--- androidx.glance:glance:1.1.1 (n)
-+--- androidx.lifecycle:lifecycle-runtime-ktx:2.8.7 (n)
-+--- androidx.compose.material:material-icons-core (n)
-+--- com.google.code.gson:gson:2.10.1 (n)
-+--- androidx.camera:camera-core:1.4.0 (n)
-+--- androidx.camera:camera-camera2:1.4.0 (n)
-+--- androidx.camera:camera-lifecycle:1.4.0 (n)
-+--- androidx.camera:camera-view:1.4.0 (n)
-+--- androidx.camera:camera-mlkit-vision:1.4.0 (n)
-+--- com.google.mlkit:barcode-scanning:17.3.0 (n)
-+--- com.google.mlkit:text-recognition:16.0.1 (n)
-\--- com.google.mlkit:barcode-scanning:17.2.0 (n)

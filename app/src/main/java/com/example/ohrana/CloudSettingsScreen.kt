@@ -11,9 +11,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Sms
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,7 +32,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import android.widget.Toast
+import android.content.Intent
+import android.net.Uri
+import com.example.ohrana.SharedPrefsManager
+import com.example.ohrana.CloudStorageManager
+import com.example.ohrana.SharedPrefsManager.FileIoAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,12 +98,16 @@ fun CloudSettingsScreen(
     // Состояние диалога добавления токена
     var showAddTokenDialog by remember { mutableStateOf(false) }
     
+    // Состояние диалога настроек File.io
+    var showFileIoSettings by remember { mutableStateOf(false) }
+    
+    // Состояние File.io
+    var fileIoEnabled by remember { mutableStateOf(cloudManager.isFileIoEnabled()) }
+    
     // Временные поля для добавления нового токена
     var newTokenName by remember { mutableStateOf("") }
     var newTokenValue by remember { mutableStateOf("") }
     var newTokenPath by remember { mutableStateOf("") }
-    
-    // Обновляем поля при изменении выбранного токена
     LaunchedEffect(selectedTokenName) {
         val selectedToken = tokens.find { it.name == selectedTokenName }
         if (selectedToken != null) {
@@ -431,6 +458,25 @@ fun CloudSettingsScreen(
                         .padding(bottom = 24.dp)
                 )
                 
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Кнопка настроек File.io
+                Text(
+                    text = "🔗 File.io - Анонимное временное хранение",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                OutlinedButton(
+                    onClick = { showFileIoSettings = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Настроить File.io", fontSize = 14.sp)
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
                 Button(
                     onClick = {
                         saveSettings(
@@ -464,6 +510,11 @@ fun CloudSettingsScreen(
                 
                 Spacer(modifier = Modifier.height(32.dp))
                 
+                // Диалог настроек File.io
+                if (showFileIoSettings) {
+                    FileIoSettingsScreen(onDismiss = { showFileIoSettings = false }, cloudManager = cloudManager)
+                }
+                
                 // Инструкция по получению OAuth token
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -490,6 +541,236 @@ fun CloudSettingsScreen(
                 }
             }
         }
+    }
+}
+
+// Диалог настроек File.io
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FileIoSettingsScreen(
+    onDismiss: () -> Unit,
+    cloudManager: CloudStorageManager
+) {
+    val context = LocalContext.current
+    val prefs = remember { SharedPrefsManager(context) }
+    
+    // Состояния для настроек File.io
+    var fileIoEnabled by remember { mutableStateOf(cloudManager.isFileIoEnabled()) }
+    var fileIoAction by remember { mutableStateOf(prefs.getFileIoAction()) }
+    var fileIoPhone by remember { mutableStateOf(prefs.getFileIoPhone()) }
+    var fileIoEmail by remember { mutableStateOf(prefs.getFileIoEmail()) }
+    var fileIoTelegram by remember { mutableStateOf(prefs.getFileIoTelegram()) }
+    
+    // Флаги раскрытия выпадающих меню
+    var showActionMenu by remember { mutableStateOf(false) }
+    
+    // Флаг показа подтверждения сохранения
+    var showSaveConfirmation by remember { mutableStateOf(false) }
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Заголовок
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🔗 Настройки File.io",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Закрыть"
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Описание
+                Text(
+                    text = "File.io - это сервис для анонимного временного хранения файлов. Файлы хранятся 14 дней и не требуют регистрации.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Переключатель включения
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Использовать File.io",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Автоматически загружать отчет при закрытии смены",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = fileIoEnabled,
+                        onCheckedChange = { isChecked ->
+                            fileIoEnabled = isChecked
+                            cloudManager.setFileIoEnabled(isChecked)
+                        }
+                    )
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Выбор действия с ссылкой
+                Text(
+                    text = "Действие с ссылкой:",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedButton(
+                    onClick = { showActionMenu = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(fileIoAction.name.replace("_", " ").uppercase())
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                }
+                
+                // Выпадающее меню выбора действия
+                DropdownMenu(
+                    expanded = showActionMenu,
+                    onDismissRequest = { showActionMenu = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    FileIoAction.values().forEach { action ->
+                        DropdownMenuItem(
+                            text = { Text(action.name.replace("_", " ").uppercase()) },
+                            onClick = {
+                                fileIoAction = action
+                                prefs.saveFileIoAction(action)
+                                showActionMenu = false
+                            },
+                            leadingIcon = {
+                                when (action) {
+                                    FileIoAction.SAVE_TO_DEVICE -> Icon(Icons.Default.Save, contentDescription = null)
+                                    FileIoAction.SEND_SMS -> Icon(Icons.Default.Sms, contentDescription = null)
+                                    FileIoAction.SEND_EMAIL -> Icon(Icons.Default.Email, contentDescription = null)
+                                    FileIoAction.SEND_TELEGRAM -> Icon(Icons.Default.Public, contentDescription = null)
+                                    FileIoAction.COPY_TO_CLIPBOARD -> Icon(Icons.Default.ContentCopy, contentDescription = null)
+                                }
+                            }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Поля ввода в зависимости от выбранного действия
+                when (fileIoAction) {
+                    FileIoAction.SEND_SMS -> {
+                        OutlinedTextField(
+                            value = fileIoPhone,
+                            onValueChange = { fileIoPhone = it },
+                            label = { Text("Номер телефона (для SMS)") },
+                            placeholder = { Text("напр., +79001234567") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    
+                    FileIoAction.SEND_EMAIL -> {
+                        OutlinedTextField(
+                            value = fileIoEmail,
+                            onValueChange = { fileIoEmail = it },
+                            label = { Text("Email получателя") },
+                            placeholder = { Text("напр., admin@example.com") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    
+                    FileIoAction.SEND_TELEGRAM -> {
+                        OutlinedTextField(
+                            value = fileIoTelegram,
+                            onValueChange = { fileIoTelegram = it },
+                            label = { Text("Username Telegram") },
+                            placeholder = { Text("напр., @username") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    
+                    else -> {
+                        // Для других действий поля не нужны
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Кнопки действий
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = onDismiss
+                    ) {
+                        Text("Отмена")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            // Сохраняем все настройки
+                            prefs.saveFileIoPhone(fileIoPhone)
+                            prefs.saveFileIoEmail(fileIoEmail)
+                            prefs.saveFileIoTelegram(fileIoTelegram)
+                            showSaveConfirmation = true
+                        }
+                    ) {
+                        Text("Сохранить")
+                    }
+                }
+            }
+        }
+    }
+    
+    // Диалог подтверждения сохранения
+    if (showSaveConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showSaveConfirmation = false },
+            title = { Text("Настройки сохранены") },
+            text = { Text("Настройки File.io успешно сохранены.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { showSaveConfirmation = false }
+                ) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
