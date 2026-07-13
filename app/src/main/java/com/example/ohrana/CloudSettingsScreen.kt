@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -28,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -49,7 +51,6 @@ import android.content.Intent
 import android.net.Uri
 import com.example.ohrana.SharedPrefsManager
 import com.example.ohrana.CloudStorageManager
-import com.example.ohrana.SharedPrefsManager.FileIoAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,16 +99,28 @@ fun CloudSettingsScreen(
     // Состояние диалога добавления токена
     var showAddTokenDialog by remember { mutableStateOf(false) }
     
-    // Состояние диалога настроек File.io
-    var showFileIoSettings by remember { mutableStateOf(false) }
-    
-    // Состояние File.io
-    var fileIoEnabled by remember { mutableStateOf(cloudManager.isFileIoEnabled()) }
-    
     // Временные поля для добавления нового токена
     var newTokenName by remember { mutableStateOf("") }
     var newTokenValue by remember { mutableStateOf("") }
     var newTokenPath by remember { mutableStateOf("") }
+    
+    // Состояние для действия со ссылкой (SMS, Email, Telegram)
+    val prefsManager = remember { SharedPrefsManager(context) }
+    var linkAction by remember { mutableStateOf(prefsManager.getSmsAction()) }
+    var smsPhone by remember { mutableStateOf(prefsManager.getSmsPhone()) }
+    var email by remember { mutableStateOf(prefsManager.getFileIoEmail() ?: "") }
+    var telegram by remember { mutableStateOf(prefsManager.getFileIoTelegram() ?: "") }
+    
+    // SMTP настройки
+    var smtpHost by remember { mutableStateOf(prefsManager.getSmtpHost() ?: "smtp.yandex.ru") }
+    var smtpPort by remember { mutableStateOf(prefsManager.getSmtpPort().toString()) }
+    var smtpUsername by remember { mutableStateOf(prefsManager.getSmtpUsername() ?: "") }
+    var smtpPassword by remember { mutableStateOf(prefsManager.getSmtpPassword() ?: "") }
+    var smtpRecipient by remember { mutableStateOf(prefsManager.getSmtpRecipient() ?: "") } // Email получателя для SMTP
+    
+    var showSmsDialog by remember { mutableStateOf(false) }
+    var showEmailDialog by remember { mutableStateOf(false) }
+    var showTelegramDialog by remember { mutableStateOf(false) }
     LaunchedEffect(selectedTokenName) {
         val selectedToken = tokens.find { it.name == selectedTokenName }
         if (selectedToken != null) {
@@ -117,13 +130,22 @@ fun CloudSettingsScreen(
     }
     
     // Загружаем текущие значения при инициализации
-    LaunchedEffect(cloudManager) {
+    LaunchedEffect(cloudManager, prefsManager) {
         oauthToken = cloudManager.getOAuthToken() ?: ""
         bucketName = cloudManager.getBucketName() ?: ""
         bucketPath = cloudManager.getBucketPath() ?: ""
+        diskToken = cloudManager.getDiskToken() ?: ""
+        diskPath = cloudManager.getDiskPath() ?: ""
+        linkAction = prefsManager.getSmsAction()
+        smsPhone = prefsManager.getSmsPhone() ?: ""
+        email = prefsManager.getFileIoEmail() ?: ""
+        telegram = prefsManager.getFileIoTelegram() ?: ""
+        smtpHost = prefsManager.getSmtpHost() ?: "smtp.yandex.ru"
+        smtpPort = prefsManager.getSmtpPort().toString()
+        smtpUsername = prefsManager.getSmtpUsername() ?: ""
+        smtpPassword = prefsManager.getSmtpPassword() ?: ""
+        smtpRecipient = prefsManager.getSmtpRecipient() ?: "" // Email получателя для SMTP
     }
-    
-    // Диалог выбора токена
     if (showTokenDialog) {
         Dialog(
             onDismissRequest = { showTokenDialog = false },
@@ -458,21 +480,208 @@ fun CloudSettingsScreen(
                         .padding(bottom = 24.dp)
                 )
                 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(32.dp))
                 
-                // Кнопка настроек File.io
+                // Выбор дизайна отчета
+                var showReportDesignMenu by remember { mutableStateOf(false) }
+                
                 Text(
-                    text = "🔗 File.io - Анонимное временное хранение",
+                    text = "Дизайн отчета в формате HTML:",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 
-                OutlinedButton(
-                    onClick = { showFileIoSettings = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Настроить File.io", fontSize = 14.sp)
+                Box {
+                    OutlinedButton(
+                        onClick = { showReportDesignMenu = true },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    ) {
+                        val currentDesign = prefsManager.getReportDesign()
+                        val designDescription = if (currentDesign == "minimal") "Минималистичный" else "Полный (по умолчанию)"
+                        Text(designDescription)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showReportDesignMenu,
+                        onDismissRequest = { showReportDesignMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Полный (по умолчанию)") },
+                            onClick = {
+                                prefsManager.saveReportDesign("full")
+                                showReportDesignMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Минималистичный") },
+                            onClick = {
+                                prefsManager.saveReportDesign("minimal")
+                                showReportDesignMenu = false
+                            }
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
+                // Выпадающее меню действия со ссылкой
+                var showLinkActionMenu by remember { mutableStateOf(false) }
+                
+                Text(
+                    text = "Действие со ссылкой после загрузки:",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                Box {
+                    OutlinedButton(
+                        onClick = { showLinkActionMenu = true },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    ) {
+                        Text(linkAction.description)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
+                    
+                    DropdownMenu(
+                        expanded = showLinkActionMenu,
+                        onDismissRequest = { showLinkActionMenu = false }
+                    ) {
+                        SharedPrefsManager.LinkAction.values().forEach { action ->
+                            DropdownMenuItem(
+                                text = { Text(action.description) },
+                                onClick = {
+                                    linkAction = action
+                                    showLinkActionMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                // Поля ввода в зависимости от выбранного действия
+                when (linkAction) {
+                    SharedPrefsManager.LinkAction.SMS -> {
+                        OutlinedTextField(
+                            value = smsPhone,
+                            onValueChange = { smsPhone = it },
+                            label = { Text("Номер телефона (SMS)") },
+                            placeholder = { Text("напр., +79001234567") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                        )
+                    }
+                    SharedPrefsManager.LinkAction.EMAIL -> {
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = { email = it },
+                            label = { Text("Email получателя") },
+                            placeholder = { Text("напр., example@email.com") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                        )
+                    }
+                    SharedPrefsManager.LinkAction.EMAIL_SMTP -> {
+                        // Поле для SMTP хоста
+                        OutlinedTextField(
+                            value = smtpHost,
+                            onValueChange = { smtpHost = it },
+                            label = { Text("SMTP хост") },
+                            placeholder = { Text("smtp.yandex.ru") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                        )
+                        
+                        // Поле для SMTP порта
+                        OutlinedTextField(
+                            value = smtpPort,
+                            onValueChange = { smtpPort = it },
+                            label = { Text("SMTP порт") },
+                            placeholder = { Text("465") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        
+                        // Поле для SMTP username (email)
+                        OutlinedTextField(
+                            value = smtpUsername,
+                            onValueChange = { smtpUsername = it },
+                            label = { Text("Email отправителя") },
+                            placeholder = { Text("ваш_email@yandex.ru") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                        )
+                        
+                        // Поле для SMTP пароля (пароль приложения)
+                        var showSmtpPassword by remember { mutableStateOf(false) }
+                        Column {
+                            OutlinedTextField(
+                                value = smtpPassword,
+                                onValueChange = { smtpPassword = it },
+                                label = { Text("Пароль приложения") },
+                                placeholder = { Text("введите пароль приложения Yandex") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                visualTransformation = if (showSmtpPassword) {
+                                    androidx.compose.ui.text.input.VisualTransformation.None
+                                } else {
+                                    PasswordVisualTransformation()
+                                },
+                                trailingIcon = {
+                                    Icon(
+                                        imageVector = if (showSmtpPassword) Icons.Default.Close else Icons.Default.Public,
+                                        contentDescription = if (showSmtpPassword) "Скрыть пароль" else "Показать пароль",
+                                        modifier = Modifier.clickable { showSmtpPassword = !showSmtpPassword }
+                                    )
+                                }
+                            )
+                            Text(
+                                text = "* Создайте пароль приложения в настройках безопасности Yandex (даже без 2FA)",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "SMTP username должен совпадать с Yandex email",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        
+                        // Поле для email получателя
+                        OutlinedTextField(
+                            value = smtpRecipient,
+                            onValueChange = { smtpRecipient = it },
+                            label = { Text("Email получателя") },
+                            placeholder = { Text("куда отправить отчет") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                        )
+                    }
+                    SharedPrefsManager.LinkAction.TELEGRAM -> {
+                        OutlinedTextField(
+                            value = telegram,
+                            onValueChange = { telegram = it },
+                            label = { Text("Username Telegram") },
+                            placeholder = { Text("напр., @username") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                        )
+                    }
+                    SharedPrefsManager.LinkAction.COPY -> {
+                        // Для копирования дополнительных полей не требуется
+                    }
+                    SharedPrefsManager.LinkAction.SAVE_TO_DEVICE -> {
+                        // Для сохранения на устройстве дополнительных полей не требуется
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(32.dp))
@@ -486,7 +695,16 @@ fun CloudSettingsScreen(
                             bucketName,
                             bucketPath,
                             diskToken,
-                            diskPath
+                            diskPath,
+                            linkAction,
+                            smsPhone,
+                            email,
+                            telegram,
+                            smtpHost,
+                            smtpPort,
+                            smtpUsername,
+                            smtpPassword,
+                            smtpRecipient // Добавлено: email получателя для SMTP
                         ) { status, color ->
                             saveStatus = status
                             saveStatusColor = color
@@ -509,11 +727,6 @@ fun CloudSettingsScreen(
                 }
                 
                 Spacer(modifier = Modifier.height(32.dp))
-                
-                // Диалог настроек File.io
-                if (showFileIoSettings) {
-                    FileIoSettingsScreen(onDismiss = { showFileIoSettings = false }, cloudManager = cloudManager)
-                }
                 
                 // Инструкция по получению OAuth token
                 Card(
@@ -544,236 +757,6 @@ fun CloudSettingsScreen(
     }
 }
 
-// Диалог настроек File.io
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun FileIoSettingsScreen(
-    onDismiss: () -> Unit,
-    cloudManager: CloudStorageManager
-) {
-    val context = LocalContext.current
-    val prefs = remember { SharedPrefsManager(context) }
-    
-    // Состояния для настроек File.io
-    var fileIoEnabled by remember { mutableStateOf(cloudManager.isFileIoEnabled()) }
-    var fileIoAction by remember { mutableStateOf(prefs.getFileIoAction()) }
-    var fileIoPhone by remember { mutableStateOf(prefs.getFileIoPhone()) }
-    var fileIoEmail by remember { mutableStateOf(prefs.getFileIoEmail()) }
-    var fileIoTelegram by remember { mutableStateOf(prefs.getFileIoTelegram()) }
-    
-    // Флаги раскрытия выпадающих меню
-    var showActionMenu by remember { mutableStateOf(false) }
-    
-    // Флаг показа подтверждения сохранения
-    var showSaveConfirmation by remember { mutableStateOf(false) }
-    
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Card(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                // Заголовок
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "🔗 Настройки File.io",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Закрыть"
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Описание
-                Text(
-                    text = "File.io - это сервис для анонимного временного хранения файлов. Файлы хранятся 14 дней и не требуют регистрации.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Переключатель включения
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Использовать File.io",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Автоматически загружать отчет при закрытии смены",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = fileIoEnabled,
-                        onCheckedChange = { isChecked ->
-                            fileIoEnabled = isChecked
-                            cloudManager.setFileIoEnabled(isChecked)
-                        }
-                    )
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Выбор действия с ссылкой
-                Text(
-                    text = "Действие с ссылкой:",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedButton(
-                    onClick = { showActionMenu = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(fileIoAction.name.replace("_", " ").uppercase())
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                }
-                
-                // Выпадающее меню выбора действия
-                DropdownMenu(
-                    expanded = showActionMenu,
-                    onDismissRequest = { showActionMenu = false },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    FileIoAction.values().forEach { action ->
-                        DropdownMenuItem(
-                            text = { Text(action.name.replace("_", " ").uppercase()) },
-                            onClick = {
-                                fileIoAction = action
-                                prefs.saveFileIoAction(action)
-                                showActionMenu = false
-                            },
-                            leadingIcon = {
-                                when (action) {
-                                    FileIoAction.SAVE_TO_DEVICE -> Icon(Icons.Default.Save, contentDescription = null)
-                                    FileIoAction.SEND_SMS -> Icon(Icons.Default.Sms, contentDescription = null)
-                                    FileIoAction.SEND_EMAIL -> Icon(Icons.Default.Email, contentDescription = null)
-                                    FileIoAction.SEND_TELEGRAM -> Icon(Icons.Default.Public, contentDescription = null)
-                                    FileIoAction.COPY_TO_CLIPBOARD -> Icon(Icons.Default.ContentCopy, contentDescription = null)
-                                }
-                            }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Поля ввода в зависимости от выбранного действия
-                when (fileIoAction) {
-                    FileIoAction.SEND_SMS -> {
-                        OutlinedTextField(
-                            value = fileIoPhone,
-                            onValueChange = { fileIoPhone = it },
-                            label = { Text("Номер телефона (для SMS)") },
-                            placeholder = { Text("напр., +79001234567") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                    
-                    FileIoAction.SEND_EMAIL -> {
-                        OutlinedTextField(
-                            value = fileIoEmail,
-                            onValueChange = { fileIoEmail = it },
-                            label = { Text("Email получателя") },
-                            placeholder = { Text("напр., admin@example.com") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                    
-                    FileIoAction.SEND_TELEGRAM -> {
-                        OutlinedTextField(
-                            value = fileIoTelegram,
-                            onValueChange = { fileIoTelegram = it },
-                            label = { Text("Username Telegram") },
-                            placeholder = { Text("напр., @username") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                    
-                    else -> {
-                        // Для других действий поля не нужны
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Кнопки действий
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        onClick = onDismiss
-                    ) {
-                        Text("Отмена")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            // Сохраняем все настройки
-                            prefs.saveFileIoPhone(fileIoPhone)
-                            prefs.saveFileIoEmail(fileIoEmail)
-                            prefs.saveFileIoTelegram(fileIoTelegram)
-                            showSaveConfirmation = true
-                        }
-                    ) {
-                        Text("Сохранить")
-                    }
-                }
-            }
-        }
-    }
-    
-    // Диалог подтверждения сохранения
-    if (showSaveConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showSaveConfirmation = false },
-            title = { Text("Настройки сохранены") },
-            text = { Text("Настройки File.io успешно сохранены.") },
-            confirmButton = {
-                TextButton(
-                    onClick = { showSaveConfirmation = false }
-                ) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-}
-
 private fun saveSettings(
     context: Context,
     cloudManager: CloudStorageManager,
@@ -782,8 +765,18 @@ private fun saveSettings(
     path: String,
     diskToken: String,
     diskPath: String,
+    linkAction: SharedPrefsManager.LinkAction,
+    smsPhone: String,
+    email: String,
+    telegram: String,
+    smtpHost: String,
+    smtpPort: String,
+    smtpUsername: String,
+    smtpPassword: String,
+    smtpRecipient: String, // Добавлено: email получателя для SMTP
     onResult: (String, Color) -> Unit
 ) {
+    val prefsManager = SharedPrefsManager(context)
     // Сохраняем настройки Yandex Cloud
     val cloudTokenSaved = cloudManager.saveOAuthToken(cloudToken)
     val bucketSaved = cloudManager.saveBucketName(bucket)
@@ -792,6 +785,24 @@ private fun saveSettings(
     // Сохраняем настройки Yandex Disk
     val diskTokenSaved = cloudManager.saveDiskToken(diskToken)
     val diskPathSaved = cloudManager.saveDiskPath(diskPath)
+    
+    // Сохраняем настройки действия со ссылкой
+    prefsManager.saveSmsAction(linkAction)
+    prefsManager.saveSmsPhone(smsPhone)
+    prefsManager.saveFileIoEmail(email)
+    prefsManager.saveFileIoTelegram(telegram)
+    
+    // Сохраняем SMTP настройки
+    prefsManager.saveSmtpHost(smtpHost)
+    prefsManager.saveSmtpPort(smtpPort.toIntOrNull() ?: 465)
+    prefsManager.saveSmtpUsername(smtpUsername)
+    prefsManager.saveSmtpPassword(smtpPassword)
+    
+    // Сохраняем email получателя для SMTP
+    prefsManager.saveSmtpRecipient(smtpRecipient)
+    
+    // Сохраняем дизайн отчета
+    // (дизайн уже сохраняется при выборе в UI)
     
     if (cloudTokenSaved && bucketSaved && pathSaved && diskTokenSaved && diskPathSaved) {
         onResult("Настройки сохранены успешно!", Color(76, 175, 80))

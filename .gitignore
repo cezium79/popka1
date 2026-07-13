@@ -13,3 +13,10 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Firebase Cloud Functions ( чувствительные данные)
+/functions/node_modules
+/functions/.env
+/functions/.env.local
+/functions/.firebase
+/functions/firebase-debug.log

@@ -28,6 +28,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import com.example.ohrana.SharedPrefsManager
+import com.example.ohrana.SharedPrefsManager.LinkAction
 
 private const val TAG = "ShiftLogsListScreen"
 
@@ -190,59 +191,8 @@ fun ShiftLogsListScreen(
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
-                                // Кнопка загрузки в Яндекс.Диск (PDF)
+                                // Область корутины для асинхронных операций
                                 val scope = rememberCoroutineScope()
-                                OutlinedButton(
-                                    onClick = {
-                                        scope.launch {
-                                            val cloudManager = CloudStorageManager(context)
-                                            val diskToken = cloudManager.getDiskToken()
-                                            
-                                            if (diskToken == null || diskToken.isEmpty()) {
-                                                // Token не найден, показываем диалог с предложением настроить Яндекс.Диск
-                                                withContext(Dispatchers.Main) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Настройте Яндекс.Диск в настройках",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
-                                                    Log.w(TAG, "Disk token not found for shift ${shift.id}, redirecting to cloud settings")
-                                                }
-                                            } else {
-                                                // Прямая загрузка PDF отчета в Яндекс.Диск
-                                                val reportResult = withContext(Dispatchers.IO) {
-                                                    cloudManager.exportShiftReportToPdfAndDisk(shift.id, shiftDatabase, uploadToDisk = true, context)
-                                                }
-                                                
-                                                withContext(Dispatchers.Main) {
-                                                    if (reportResult.isSuccess()) {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "PDF отчет загружен в Яндекс.Диск!",
-                                                            Toast.LENGTH_LONG
-                                                        ).show()
-                                                        Log.i(TAG, "PDF report uploaded to disk for shift ${shift.id}")
-                                                    } else {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Ошибка при загрузке PDF в Диск: ${reportResult.getDiskErrorMessage()}",
-                                                            Toast.LENGTH_LONG
-                                                        ).show()
-                                                        Log.e(TAG, "Failed to upload PDF report to disk for shift ${shift.id}: ${reportResult.getDiskErrorMessage()}")
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = MaterialTheme.colorScheme.secondary
-                                    )
-                                ) {
-                                    Text("📤 Загрузить PDF в Яндекс.Диск", fontSize = 12.sp)
-                                }
-                                
-                                Spacer(modifier = Modifier.height(8.dp))
                                 
                                 // Кнопка загрузки HTML в Яндекс.Диск
                                 OutlinedButton(
@@ -262,6 +212,9 @@ fun ShiftLogsListScreen(
                                                     Log.w(TAG, "Disk token not found for shift ${shift.id}, redirecting to cloud settings")
                                                 }
                                             } else {
+                                                // Получаем выбранное действие из настроек
+                                                val selectedAction = prefsManager.getSmsAction()
+                                                
                                                 // Прямая загрузка HTML отчета в Яндекс.Диск (без сохранения на телефоне)
                                                 val reportResult = withContext(Dispatchers.IO) {
                                                     cloudManager.exportHtmlToDisk(shift.id, shiftDatabase, uploadToDisk = true)
@@ -270,6 +223,8 @@ fun ShiftLogsListScreen(
                                                 withContext(Dispatchers.Main) {
                                                     if (reportResult.isSuccess()) {
                                                         val downloadUrl = reportResult.getDownloadUrl()
+                                                        Log.i(TAG, "HTML report upload result: isSuccess=true, downloadUrl=$downloadUrl")
+                                                        
                                                         if (downloadUrl != null) {
                                                             Toast.makeText(
                                                                 context,
@@ -277,6 +232,11 @@ fun ShiftLogsListScreen(
                                                                 Toast.LENGTH_LONG
                                                             ).show()
                                                             Log.i(TAG, "HTML report uploaded directly to disk for shift ${shift.id}, download URL: $downloadUrl")
+                                                            
+                                                            // Автоматически отправляем ссылку по выбранному каналу
+                                                            scope.launch {
+                                                                prefsManager.sendLinkWithAction(selectedAction, downloadUrl)
+                                                            }
                                                         } else {
                                                             Toast.makeText(
                                                                 context,
@@ -284,6 +244,10 @@ fun ShiftLogsListScreen(
                                                                 Toast.LENGTH_LONG
                                                             ).show()
                                                             Log.i(TAG, "HTML report uploaded directly to disk for shift ${shift.id}")
+                                                            Log.w(TAG, "downloadUrl is null - cannot send link via email/SMS/Telegram")
+                                                            
+                                                            // Автоматически отправляем ссылку по выбранному каналу (если URL не вернулся)
+                                                            // В этом случае можно предложить пользователю ввести URL вручную
                                                         }
                                                     } else {
                                                         Toast.makeText(
@@ -307,72 +271,7 @@ fun ShiftLogsListScreen(
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
-                                // Кнопка загрузки HTML в File.io
-                                OutlinedButton(
-                                    onClick = {
-                                        scope.launch {
-                                            val cloudManager = CloudStorageManager(context)
-                                            val fileIoEnabled = prefsManager.isFileIoEnabled()
-                                            
-                                            if (!fileIoEnabled) {
-                                                // File.io не настроен, показываем диалог с предложением настроить
-                                                withContext(Dispatchers.Main) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Настройте File.io в настройках",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
-                                                    Log.w(TAG, "File.io not enabled for shift ${shift.id}, redirecting to cloud settings")
-                                                }
-                                            } else {
-                                                // Загрузка HTML отчета в File.io через временный файл
-                                                val reportResult = withContext(Dispatchers.IO) {
-                                                    cloudManager.uploadHtmlToFileIoWithFile(shift.id, shiftDatabase)
-                                                }
-                                                
-                                                withContext(Dispatchers.Main) {
-                                                    if (reportResult.isSuccess) {
-                                                        val fileUrl = reportResult.getOrNull() ?: ""
-                                                        if (fileUrl.isNotEmpty()) {
-                                                            Toast.makeText(
-                                                                context,
-                                                                "HTML отчет загружен в File.io!\nURL: $fileUrl",
-                                                                Toast.LENGTH_LONG
-                                                            ).show()
-                                                            Log.i(TAG, "HTML report uploaded to File.io for shift ${shift.id}, URL: $fileUrl")
-                                                            
-                                                            // Выполняем действие с URL в зависимости от настроек
-                                                            cloudManager.executeFileIoAction(fileUrl, shift.id, context)
-                                                        } else {
-                                                            Toast.makeText(
-                                                                context,
-                                                                "HTML отчет загружен в File.io!",
-                                                                Toast.LENGTH_LONG
-                                                            ).show()
-                                                            Log.i(TAG, "HTML report uploaded to File.io for shift ${shift.id}")
-                                                        }
-                                                    } else {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Ошибка при загрузке в File.io: ${reportResult.exceptionOrNull()?.message}",
-                                                            Toast.LENGTH_LONG
-                                                        ).show()
-                                                        Log.e(TAG, "Failed to upload HTML report to File.io for shift ${shift.id}: ${reportResult.exceptionOrNull()?.message}")
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = MaterialTheme.colorScheme.tertiary
-                                    )
-                                ) {
-                                    Text("📤 Загрузить HTML в File.io", fontSize = 12.sp)
-                                }
-                                
-                                Spacer(modifier = Modifier.height(8.dp))
-                                
+
                                 // Кнопка настроек облачных хранилищ
                                 OutlinedButton(
                                     onClick = onNavigateToCloudSettings,

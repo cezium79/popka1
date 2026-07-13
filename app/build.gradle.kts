@@ -34,6 +34,12 @@ android {
         unitTests.isIncludeAndroidResources = false
     }
 
+    packaging {
+        resources {
+            excludes.add("META-INF/NOTICE.md")
+            excludes.add("META-INF/LICENSE.md")
+        }
+    }
 }
 
 dependencies {
@@ -60,6 +66,10 @@ dependencies {
     // Coroutines for background tasks
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    
+    // Jakarta Mail for SMTP email sending (используем только com.sun.mail, который включает API)
+    implementation("com.sun.mail:android-mail:1.6.7")
+    implementation("com.sun.mail:android-activation:1.6.7")
     
     // CameraX
     val cameraxVersion = "1.4.0"

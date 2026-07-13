@@ -17,144 +17,135 @@ import android.widget.Toast
 import java.net.URL
 import java.io.OutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import javax.net.ssl.HttpsURLConnection
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
-import java.net.UnknownHostException
-import java.net.MalformedURLException
 import android.content.Intent
 import android.net.Uri
 import android.content.SharedPreferences
 import com.example.ohrana.SharedPrefsManager
-import com.example.ohrana.SharedPrefsManager.FileIoAction
 
 /**
  * Класс для работы с облачным хранилищем Yandex Cloud
  * Пока реализует простую генерацию JSON-файлов отчетов
  */
 class CloudStorageManager(private val context: Context) {
-    
+
     private val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
     private val tokenManager = CloudTokenManager(context)
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
     private val jsonFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-    
+    private val client = okhttp3.OkHttpClient() // OkHttp client для повторного использования
+
     companion object {
         private const val TAG = "CloudStorageManager"
-        
+
         // Yandex Cloud API endpoints
         private const val YANDEX_CLOUD_STORAGE_HOST = "storage.yandexcloud.net"
         private const val YANDEX_DISK_API_HOST = "https://cloud-api.yandex.ru"
         private const val YANDEX_DISK_API_V1_PATH = "/v1/disk/resources"
-        
-        // File.io API endpoints
-        private const val FILE_IO_API_HOST = "https://file.io"
-        
+
         // Preference keys
         private const val YANDEX_CLOUD_TOKEN_KEY = "yandex_cloud_oauth_token"
         private const val YANDEX_CLOUD_BUCKET_KEY = "yandex_cloud_bucket_name"
         private const val YANDEX_CLOUD_PATH_KEY = "yandex_cloud_path"
-        
+
         // Yandex Disk keys
         private const val YANDEX_DISK_TOKEN_KEY = "yandex_disk_oauth_token"
         private const val YANDEX_DISK_PATH_KEY = "yandex_disk_path"
-        
-        // File.io preference keys
-        private const val FILEIO_ENABLED_KEY = "fileio_enabled"
-        
+
         // Storage type constants
         const val STORAGE_TYPE_CLOUD = "cloud"
         const val STORAGE_TYPE_DISK = "disk"
-        const val STORAGE_TYPE_FILEIO = "fileio"
     }
-    
+
     /**
      * Сохраняет OAuth token в SharedPreferences
      */
     fun saveOAuthToken(token: String): Boolean {
         return prefs.edit().putString(YANDEX_CLOUD_TOKEN_KEY, token).commit()
     }
-    
+
     /**
      * Получает сохраненный OAuth token
      */
     fun getOAuthToken(): String? {
         return prefs.getString(YANDEX_CLOUD_TOKEN_KEY, null)
     }
-    
+
     /**
      * Сохраняет имя бакета
      */
     fun saveBucketName(bucketName: String): Boolean {
         return prefs.edit().putString(YANDEX_CLOUD_BUCKET_KEY, bucketName).commit()
     }
-    
+
     /**
      * Получает имя бакета
      */
     fun getBucketName(): String? {
         return prefs.getString(YANDEX_CLOUD_BUCKET_KEY, null)
     }
-    
+
     /**
      * Сохраняет путь в бакете
      */
     fun saveBucketPath(path: String): Boolean {
         return prefs.edit().putString(YANDEX_CLOUD_PATH_KEY, path).commit()
     }
-    
+
     /**
      * Получает путь в бакете
      */
     fun getBucketPath(): String? {
         return prefs.getString(YANDEX_CLOUD_PATH_KEY, null)
     }
-    
+
     /**
      * Сохраняет OAuth token для Яндекс.Диска
      */
     fun saveDiskToken(token: String): Boolean {
         return prefs.edit().putString(YANDEX_DISK_TOKEN_KEY, token).commit()
     }
-    
+
     /**
      * Получает сохраненный OAuth token для Яндекс.Диска
      */
     fun getDiskToken(): String? {
         return prefs.getString(YANDEX_DISK_TOKEN_KEY, null)
     }
-    
+
     /**
      * Получает токен из CloudTokenManager (по умолчанию)
      */
     fun getDefaultDiskToken(): String? {
         return tokenManager.getDefaultToken()?.token
     }
-    
+
     /**
      * Получает путь из CloudTokenManager (по умолчанию)
      */
     fun getDefaultDiskPath(): String? {
         return tokenManager.getDefaultToken()?.path
     }
-    
+
     /**
      * Сохраняет путь в Яндекс.Диске
      */
     fun saveDiskPath(path: String): Boolean {
         return prefs.edit().putString(YANDEX_DISK_PATH_KEY, path).commit()
     }
-    
+
     /**
      * Получает путь в Яндекс.Диске
      */
     fun getDiskPath(): String? {
         return prefs.getString(YANDEX_DISK_PATH_KEY, null)
     }
-    
+
     /**
-     * Загружает файл в Yandex Cloud Storage через REST API
+     * Загружает файл в Yandex Cloud Storage через REST API (OkHttp)
      * @param filePath Путь к локальному файлу
      * @param remoteFileName Имя файла в облаке
      * @return Результат загрузки: успешный путь в облаке или сообщение об ошибке
@@ -162,72 +153,61 @@ class CloudStorageManager(private val context: Context) {
     fun uploadFileToCloud(filePath: String, remoteFileName: String): Result<String> {
         return try {
             val token = getOAuthToken() ?: return Result.failure(Exception("OAuth token not found"))
-            val bucket = getBucketName() ?: return Result.failure(Exception("Bucket name not configured"))
+            val bucket =
+                getBucketName() ?: return Result.failure(Exception("Bucket name not configured"))
             val path = getBucketPath() ?: ""
-            
+
             val file = File(filePath)
             if (!file.exists()) {
                 return Result.failure(Exception("File not found: $filePath"))
             }
-            
+
             // Формируем путь в бакете
             val fullRemotePath = if (path.isNotEmpty()) "$path/$remoteFileName" else remoteFileName
             val urlString = "https://storage.yandexcloud.net/$bucket/$fullRemotePath"
-            
+
             Log.i(TAG, "Uploading to: $urlString")
-            
-            // Открываем HTTPS соединение
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "PUT"
-            connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Content-Type", "application/octet-stream")
-            connection.setRequestProperty("Content-Length", file.length().toString())
-            connection.doOutput = true
-            connection.connectTimeout = 30000 // 30 секунд
-            connection.readTimeout = 30000 // 30 секунд
-            
-            // Загружаем файл
-            file.inputStream().use { inputStream ->
-                connection.outputStream.use { outputStream ->
-                    inputStream.copyTo(outputStream)
+            Log.i(TAG, "File size: ${file.length()} bytes")
+
+            // Используем OkHttp для загрузки (современный OkHttp API)
+            val mimeType = "application/octet-stream".toMediaType()
+            val fileRequestBody = okhttp3.RequestBody.create(mimeType, file.readBytes())
+
+            // Формируем PUT-запрос
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .put(fileRequestBody)
+                .addHeader("Authorization", "OAuth $token")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "uploadFileToCloud: Response code: ${response.code}")
+                Log.i(TAG, "uploadFileToCloud: Response: $responseBody")
+
+                if (response.isSuccessful) {
+                    Log.i(TAG, "Upload successful")
+                    Result.success("https://storage.yandexcloud.net/$bucket/$fullRemotePath")
+                } else {
+                    Log.e(TAG, "uploadFileToCloud: Upload failed with code ${response.code}")
+                    Result.failure(Exception("Upload failed: ${response.code} ${response.message}"))
                 }
             }
-            
-            val responseCode = connection.responseCode
-            
-            if (responseCode == 200) {
-                val responseMessage = connection.responseMessage
-                Log.i(TAG, "Upload successful: $responseMessage")
-                Result.success("https://storage.yandexcloud.net/$bucket/$fullRemotePath")
-            } else {
-                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.e(TAG, "Upload failed with code $responseCode: $errorMessage")
-                Result.failure(Exception("Upload failed: $responseCode ${connection.responseMessage}"))
-            }
-        } catch (e: UnknownHostException) {
-            Log.e(TAG, "Upload failed: No internet connection", e)
-            Result.failure(Exception("Нет подключения к интернету"))
-        } catch (e: MalformedURLException) {
-            Log.e(TAG, "Upload failed: Invalid URL", e)
-            Result.failure(Exception("Неверный URL"))
-        } catch (e: IOException) {
-            Log.e(TAG, "Upload failed: IO error", e)
-            Result.failure(Exception("Ошибка сети: ${e.message}"))
         } catch (e: Exception) {
-            Log.e(TAG, "Upload failed: ${e.message}", e)
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "uploadFileToCloud: Error: $errorMsg", e)
             Result.failure(Exception("Ошибка загрузки: ${e.message}"))
         }
     }
-    
+
     /**
      * Получает ссылку для загрузки файла в Яндекс.Диск
      * @param filePath Путь к файлу на диске (например, "reports/shift_001.json")
      * @return Ссылка для загрузки или null в случае ошибки
      */
     fun getUploadLinkForDisk(filePath: String): Result<String> {
-        var responseCode = -1
         return try {
             var token = getDiskToken()
             // Если токен не найден в SharedPreferences, используем токен из CloudTokenManager
@@ -238,51 +218,46 @@ class CloudStorageManager(private val context: Context) {
                 Log.e(TAG, "getUploadLinkForDisk: OAuth token is null")
                 return Result.failure(Exception("OAuth token not found"))
             }
-            
+
             Log.i(TAG, "getUploadLinkForDisk: token length=${token.length}, path=$filePath")
-            
-            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$filePath&overwrite=true"
-            
-            Log.i(TAG, "Getting upload link: $urlString")
-            
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
-            
-            responseCode = connection.responseCode
-            
-            Log.i(TAG, "getUploadLinkForDisk: responseCode=$responseCode")
-            
-            if (responseCode == 200) {
-                val responseJson = connection.inputStream.bufferedReader().use { it.readText() }
-                Log.i(TAG, "getUploadLinkForDisk: responseJson=$responseJson")
-                val json = JSONObject(responseJson)
-                val href = json.getString("href")
-                Log.i(TAG, "Upload link obtained: $href")
-                Result.success(href)
-            } else if (responseCode == 409) {
-                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.w(TAG, "getUploadLinkForDisk: File already exists (409), trying with overwrite=true")
-                Log.e(TAG, "Failed to get upload link: $responseCode - $errorMessage")
-                Result.failure(Exception("Файл уже существует: $responseCode"))
-            } else {
-                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.e(TAG, "Failed to get upload link: $responseCode - $errorMessage")
-                Result.failure(Exception("Ошибка получения ссылки: $responseCode"))
+
+            val urlString =
+                "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$filePath&overwrite=true"
+
+            Log.i(TAG, "getUploadLinkForDisk: Getting upload link: $urlString")
+
+            // Используем OkHttp для запроса (GET для получения ссылки)
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .get()
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "getUploadLinkForDisk: Response code: ${response.code}")
+                Log.i(TAG, "getUploadLinkForDisk: Response: $responseBody")
+
+                if (response.isSuccessful) {
+                    val json = JSONObject(responseBody)
+                    val href = json.getString("href")
+                    Log.i(TAG, "Upload link obtained: $href")
+                    Result.success(href)
+                } else {
+                    Log.e(TAG, "getUploadLinkForDisk: Failed to get upload link: ${response.code}")
+                    Result.failure(Exception("Ошибка получения ссылки: ${response.code}"))
+                }
             }
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Неизвестная ошибка"
-            Log.e(TAG, "Failed to get upload link: $errorMsg", e)
-            Log.e(TAG, "Stack trace:", e)
+            Log.e(TAG, "getUploadLinkForDisk: Error: $errorMsg", e)
             Result.failure(Exception("Ошибка получения ссылки: $errorMsg"))
         }
     }
-    
+
     /**
      * Загружает файл в Яндекс.Диск через получение ссылки для загрузки
      * Использует GET /upload endpoint для получения ссылки, затем PUT для загрузки
@@ -301,29 +276,32 @@ class CloudStorageManager(private val context: Context) {
                 Log.e(TAG, "uploadFileToDisk: OAuth token is null")
                 return Result.failure(Exception("OAuth token not found"))
             }
-            
-            Log.i(TAG, "uploadFileToDisk: token length=${token.length}, filePath=$filePath, remotePath=$remotePath")
-            
+
+            Log.i(
+                TAG,
+                "uploadFileToDisk: token length=${token.length}, filePath=$filePath, remotePath=$remotePath"
+            )
+
             val file = File(filePath)
             if (!file.exists()) {
                 Log.e(TAG, "uploadFileToDisk: File not found: $filePath")
                 return Result.failure(Exception("File not found: $filePath"))
             }
-            
+
             Log.i(TAG, "uploadFileToDisk: File size=${file.length()} bytes")
-            
+
             // Создаем родительские директории, если они не существуют
             val parentPath = remotePath.substringBeforeLast("/")
             if (parentPath != remotePath) {
                 Log.i(TAG, "uploadFileToDisk: Creating parent directories for path: $parentPath")
-                
+
                 // Получаем список всех директорий в пути
                 val pathParts = parentPath.split("/").filter { it.isNotEmpty() }
                 var currentPath = ""
-                
+
                 for (part in pathParts) {
                     currentPath = if (currentPath.isEmpty()) part else "$currentPath/$part"
-                    
+
                     // Проверяем, существует ли уже эта директория
                     if (!checkDirectoryExists(currentPath, token)) {
                         // Директория не существует, создаем ее через PUT запрос
@@ -334,70 +312,93 @@ class CloudStorageManager(private val context: Context) {
                     }
                 }
             }
-            
+
             // Получаем ссылку для загрузки
-            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$remotePath&overwrite=true"
-            
-            Log.i(TAG, "Getting upload link: $urlString")
-            
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
-            
-            val responseCode = connection.responseCode
-            
-            if (responseCode == 200) {
-                val responseJson = connection.inputStream.bufferedReader().use { it.readText() }
-                Log.i(TAG, "Upload link obtained: $responseJson")
-                val json = JSONObject(responseJson)
-                val href = json.getString("href")
-                Log.i(TAG, "Upload link href: $href")
-                
-                // Загружаем файл по полученной ссылке
-                val uploadUrl = URL(href)
-                val uploadConnection = uploadUrl.openConnection() as HttpsURLConnection
-                
-                uploadConnection.requestMethod = "PUT"
-                uploadConnection.setRequestProperty("Content-Type", "application/pdf")
-                uploadConnection.setRequestProperty("Content-Length", file.length().toString())
-                uploadConnection.doOutput = true
-                uploadConnection.connectTimeout = 30000
-                uploadConnection.readTimeout = 30000
-                
-                // Загружаем файл
-                file.inputStream().use { inputStream ->
-                    uploadConnection.outputStream.use { outputStream ->
-                        inputStream.copyTo(outputStream)
-                    }
-                }
-                
-                val uploadResponseCode = uploadConnection.responseCode
-                
-                Log.i(TAG, "File upload responseCode=$uploadResponseCode")
-                
-                if (uploadResponseCode == 201 || uploadResponseCode == 200) {
-                    // Получаем public URL файла
-                    val publicUrl = getPublicUrlForDisk(remotePath)
-                    if (publicUrl.isSuccess) {
-                        Log.i(TAG, "Upload successful to Yandex Disk")
-                        Result.success(publicUrl.getOrNull() ?: href)
-                    } else {
-                        Result.success(href)
+            val urlString =
+                "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$remotePath&overwrite=true"
+
+            Log.i(TAG, "uploadFileToDisk: Getting upload link: $urlString")
+
+            // Используем OkHttp для запроса (GET для получения ссылки)
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .get()
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "uploadFileToDisk: Response code: ${response.code}")
+
+                if (response.isSuccessful) {
+                    val json = JSONObject(responseBody)
+                    val href = json.getString("href")
+                    Log.i(TAG, "Upload link href: $href")
+
+                    // Загружаем файл по полученной ссылке
+                    val mimeType = "application/pdf".toMediaType()
+                    val uploadFileRequest = okhttp3.Request.Builder()
+                        .url(href)
+                        .put(okhttp3.RequestBody.create(mimeType, file.readBytes()))
+                        .build()
+
+                    client.newCall(uploadFileRequest).execute().use { uploadResponse ->
+                        val uploadResponseBody = uploadResponse.body?.string() ?: ""
+
+                        Log.i(
+                            TAG,
+                            "uploadFileToDisk: File upload response code: ${uploadResponse.code}"
+                        )
+
+                        if (uploadResponse.isSuccessful) {
+                            Log.i(TAG, "uploadFileToDisk: File uploaded successfully, now getting download URL")
+                            
+                            // Небольшая задержка для индексации файла
+                            Thread.sleep(1000)
+                            
+                            // Публикуем файл для получения публичного URL
+                            val publishResult = publishFileToDisk(remotePath)
+                            if (publishResult.isSuccess) {
+                                Log.i(TAG, "uploadFileToDisk: File published successfully")
+                                
+                                // Получаем public_url напрямую из результата публикации
+                                val publishedUrl = publishResult.getOrNull() ?: ""
+                                
+                                // Если ссылка не публичная (downloader.disk.yandex.ru), пробуем получить public_url через getPublicUrlForDisk
+                                if (publishedUrl.contains("downloader.disk.yandex.ru")) {
+                                    Log.w(TAG, "uploadFileToDisk: Got download link instead of public URL, trying to get public URL")
+                                    val publicUrlResult = getPublicUrlForDisk(remotePath)
+                                    if (publicUrlResult.isSuccess) {
+                                        val publicUrl = publicUrlResult.getOrNull() ?: ""
+                                        Log.i(TAG, "uploadFileToDisk: Public URL = '$publicUrl'")
+                                        Result.success(publicUrl)
+                                    } else {
+                                        Log.e(TAG, "uploadFileToDisk: Failed to get public URL")
+                                        Result.failure(Exception("Ошибка получения публичного URL: ${publicUrlResult.exceptionOrNull()?.message}"))
+                                    }
+                                } else {
+                                    Log.i(TAG, "uploadFileToDisk: Public URL = '$publishedUrl'")
+                                    Result.success(publishedUrl)
+                                }
+                            } else {
+                                Log.e(TAG, "uploadFileToDisk: Failed to publish file")
+                                Result.failure(Exception("Ошибка публикации файла: ${publishResult.exceptionOrNull()?.message}"))
+                            }
+                        } else {
+                            Log.e(
+                                TAG,
+                                "uploadFileToDisk: File upload failed: ${uploadResponse.code}"
+                            )
+                            Result.failure(Exception("Ошибка загрузки файла: ${uploadResponse.code}"))
+                        }
                     }
                 } else {
-                    val errorMessage = uploadConnection.errorStream?.bufferedReader()?.use { it.readText() }
-                    Log.e(TAG, "File upload failed with code $uploadResponseCode: $errorMessage")
-                    Result.failure(Exception("Ошибка загрузки файла: $uploadResponseCode $errorMessage"))
+                    Log.e(TAG, "uploadFileToDisk: Failed to get upload link: ${response.code}")
+                    Result.failure(Exception("Ошибка получения ссылки для загрузки: ${response.code}"))
                 }
-            } else {
-                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.e(TAG, "Failed to get upload link: $responseCode - $errorMessage")
-                Result.failure(Exception("Ошибка получения ссылки для загрузки: $responseCode"))
             }
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Неизвестная ошибка"
@@ -406,9 +407,9 @@ class CloudStorageManager(private val context: Context) {
             Result.failure(Exception("Ошибка загрузки в Яндекс.Диск: $errorMsg"))
         }
     }
-    
+
     /**
-     * Проверяет существование директории в Яндекс.Диске
+     * Проверяет существование директории в Яндекс.Диске (OkHttp)
      * @param path Путь к директории
      * @param token OAuth token
      * @return true если существует, false если нет
@@ -416,64 +417,74 @@ class CloudStorageManager(private val context: Context) {
     private fun checkDirectoryExists(path: String, token: String): Boolean {
         return try {
             val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}?path=$path"
-            
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
-            
-            val responseCode = connection.responseCode
-            
-            responseCode == 200
+
+            // Используем OkHttp для запроса
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .get()
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "checkDirectoryExists: Response code: ${response.code}, path: $path")
+
+                response.isSuccessful
+            }
         } catch (e: Exception) {
             Log.w(TAG, "checkDirectoryExists: Error checking $path - ${e.message}")
             false
         }
     }
-    
+
     /**
-     * Создает одну директорию в Яндекс.Диске
+     * Создает одну директорию в Яндекс.Диске (OkHttp)
      * @param path Путь к директории
      * @param token OAuth token
      */
     private fun createSingleDirectory(path: String, token: String) {
         try {
             val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}?path=$path&type=dir"
-            
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "PUT"
-            connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Content-Type", "application/octet-stream")
-            connection.setRequestProperty("Content-Length", "0")
-            connection.doOutput = true
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
-            
-            // Отправляем пустой запрос для создания директории
-            connection.outputStream.use {}
-            
-            val responseCode = connection.responseCode
-            
-            // 201 - создано, 200 - уже существует, 409 - конфликт (уже существует)
-            if (responseCode != 201 && responseCode != 200 && responseCode != 409) {
-                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.w(TAG, "createSingleDirectory: Failed to create $path - $responseCode: $errorMessage")
-            } else {
-                Log.i(TAG, "createSingleDirectory: Created or exists: $path (code: $responseCode)")
+
+            // Используем OkHttp для запроса (современный API с asRequestBody)
+            val emptyBody = "".toByteArray()
+            val mimeType = "application/octet-stream".toMediaType()
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .put(okhttp3.RequestBody.create(mimeType, emptyBody))
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Content-Type", "application/octet-stream")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "createSingleDirectory: Response code: ${response.code}, path: $path")
+
+                // 201 - создано, 200 - уже существует, 409 - конфликт (уже существует)
+                if (response.code != 201 && response.code != 200 && response.code != 409) {
+                    Log.w(
+                        TAG,
+                        "createSingleDirectory: Failed to create $path - code: ${response.code}"
+                    )
+                } else {
+                    Log.i(
+                        TAG,
+                        "createSingleDirectory: Created or exists: $path (code: ${response.code})"
+                    )
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "createSingleDirectory: Error creating $path - ${e.message}")
         }
     }
-    
+
     /**
-     * Получает публичный URL файла в Яндекс.Диске
+     * Получает публичный URL файла в Яндекс.Диске (OkHttp)
      * @param filePath Путь к файлу в диске
      * @return Публичный URL или null в случае ошибки
      */
@@ -487,35 +498,194 @@ class CloudStorageManager(private val context: Context) {
             if (token == null) {
                 return Result.failure(Exception("OAuth token not found"))
             }
-            
-            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}?path=$filePath&fields=public_url"
-            
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
-            
-            val responseCode = connection.responseCode
-            
-            if (responseCode == 200) {
-                val responseJson = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(responseJson)
-                val publicUrl = json.optString("public_url", "")
-                Result.success(publicUrl)
-            } else {
-                Result.failure(Exception("Failed to get public URL: $responseCode"))
+
+            val urlString =
+                "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}?path=$filePath&fields=public_url"
+
+            Log.i(TAG, "getPublicUrlForDisk: Getting public URL for path: $filePath")
+            Log.i(TAG, "getPublicUrlForDisk: URL: $urlString")
+
+            // Используем OkHttp для запроса
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .get()
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "getPublicUrlForDisk: Response code: ${response.code}")
+                Log.i(TAG, "getPublicUrlForDisk: Response body: $responseBody")
+
+                if (response.isSuccessful) {
+                    val json = JSONObject(responseBody)
+                    val publicUrl = json.optString("public_url", "")
+                    Log.i(TAG, "getPublicUrlForDisk: publicUrl from response = '$publicUrl'")
+                    Result.success(publicUrl)
+                } else {
+                    Log.e(TAG, "getPublicUrlForDisk: Failed to get public URL, response code: ${response.code}")
+                    Result.failure(Exception("Failed to get public URL: ${response.code}"))
+                }
             }
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Неизвестная ошибка"
-            Log.e(TAG, "Failed to get public URL: $errorMsg", e)
+            Log.e(TAG, "getPublicUrlForDisk: Error: $errorMsg", e)
             Result.failure(Exception("Ошибка получения публичного URL: $errorMsg"))
         }
     }
-    
+
+    /**
+     * Публикует файл в Яндекс.Диске для получения публичного URL (OkHttp)
+     * @param filePath Путь к файлу в диске
+     * @return Публичный URL или null в случае ошибки
+     */
+    private fun publishFileToDisk(filePath: String): Result<String> {
+        return try {
+            var token = getDiskToken()
+            // Если токен не найден в SharedPreferences, используем токен из CloudTokenManager
+            if (token == null) {
+                token = getDefaultDiskToken()
+            }
+            if (token == null) {
+                return Result.failure(Exception("OAuth token not found"))
+            }
+
+            val urlString =
+                "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/publish?path=$filePath"
+
+            Log.i(TAG, "publishFileToDisk: Publishing file: $urlString")
+
+            // Используем OkHttp для запроса (PUT для публикации, как указано в документации Яндекс.Диска)
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .put(okhttp3.RequestBody.create(null, ""))
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "publishFileToDisk: Response code: ${response.code}")
+                Log.i(TAG, "publishFileToDisk: Response body: $responseBody")
+
+                if (response.isSuccessful) {
+                    // Публикация успешна, возвращаем public_url из ответа
+                    val json = JSONObject(responseBody)
+                    val publicUrl = json.optString("public_url", "")
+                    Log.i(TAG, "publishFileToDisk: public_url from response = '$publicUrl'")
+                    if (publicUrl.isNotEmpty()) {
+                        Log.i(TAG, "publishFileToDisk: Public URL: $publicUrl")
+                        Result.success(publicUrl)
+                    } else {
+                        // Если public_url не вернулся, пробуем получить его через getPublicUrlForDisk
+                        Log.w(TAG, "publishFileToDisk: public_url is empty, trying to get it via getPublicUrlForDisk")
+                        val publicUrlResult = getPublicUrlForDisk(filePath)
+                        if (publicUrlResult.isSuccess) {
+                            val url = publicUrlResult.getOrNull() ?: ""
+                            Log.i(TAG, "publishFileToDisk: Got public URL via getPublicUrlForDisk: $url")
+                            Result.success(url)
+                        } else {
+                            Log.e(TAG, "publishFileToDisk: Failed to get public URL via getPublicUrlForDisk")
+                            Result.failure(Exception("Ошибка получения публичного URL: ${publicUrlResult.exceptionOrNull()?.message}"))
+                        }
+                    }
+                } else {
+                    Log.e(TAG, "publishFileToDisk: Failed to publish file, response code: ${response.code}")
+                    Result.failure(Exception("Ошибка публикации файла: ${response.code}"))
+                }
+            }
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "publishFileToDisk: Error: $errorMsg", e)
+            Result.failure(Exception("Ошибка публикации файла: $errorMsg"))
+        }
+    }
+
+    /**
+     * Получает прямую ссылку для скачивания файла из Яндекс.Диска
+     * @param filePath Путь к файлу в диске
+     * @return Прямая ссылка для скачивания или null в случае ошибки
+     */
+    private fun getDownloadLinkForDisk(filePath: String): Result<String> {
+        return try {
+            var token = getDiskToken()
+            // Если токен не найден в SharedPreferences, используем токен из CloudTokenManager
+            if (token == null) {
+                token = getDefaultDiskToken()
+            }
+            if (token == null) {
+                return Result.failure(Exception("OAuth token not found"))
+            }
+
+            val urlString =
+                "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/download?path=$filePath"
+
+            Log.i(TAG, "getDownloadLinkForDisk: Getting download link for path: $filePath")
+            Log.i(TAG, "getDownloadLinkForDisk: URL: $urlString")
+
+            // Используем OkHttp для запроса (GET для получения ссылки для скачивания)
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .get()
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "getDownloadLinkForDisk: Response code: ${response.code}")
+                Log.i(TAG, "getDownloadLinkForDisk: Response body: $responseBody")
+
+                if (response.isSuccessful) {
+                    val json = JSONObject(responseBody)
+                    val href = json.optString("href", "")
+                    Log.i(TAG, "getDownloadLinkForDisk: download href = '$href'")
+                    if (href.isNotEmpty()) {
+                        Result.success(href)
+                    } else {
+                        Result.failure(Exception("Не удалось получить ссылку для скачивания"))
+                    }
+                } else if (response.code == 302) {
+                    // Если получили редирект, берем ссылку из Location заголовка
+                    val location = response.header("Location", "") ?: ""
+                    Log.i(TAG, "getDownloadLinkForDisk: Received 302 redirect to: $location")
+                    if (location.isNotEmpty()) {
+                        Result.success(location)
+                    } else {
+                        Result.failure(Exception("Не удалось получить ссылку для скачивания (302 redirect)"))
+                    }
+                } else if (response.code == 405) {
+                    // Если /download не поддерживает GET, пробуем альтернативный метод
+                    Log.w(TAG, "getDownloadLinkForDisk: /download returned 405, trying alternative approach")
+                    
+                    // Получаем public URL через /download?fields=public_url
+                    val publicUrlResult = getPublicUrlForDisk(filePath)
+                    if (publicUrlResult.isSuccess) {
+                        val publicUrl = publicUrlResult.getOrNull() ?: ""
+                        Log.i(TAG, "getDownloadLinkForDisk: Using public_url as download link: $publicUrl")
+                        Result.success(publicUrl)
+                    } else {
+                        Result.failure(Exception("Не удалось получить ссылку для скачивания: ${publicUrlResult.exceptionOrNull()?.message}"))
+                    }
+                } else {
+                    Log.e(TAG, "getDownloadLinkForDisk: Failed to get download link, response code: ${response.code}")
+                    Result.failure(Exception("Ошибка получения ссылки для скачивания: ${response.code}"))
+                }
+            }
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            Log.e(TAG, "getDownloadLinkForDisk: Error: $errorMsg", e)
+            Result.failure(Exception("Ошибка получения ссылки для скачивания: $errorMsg"))
+        }
+    }
+
     /**
      * Извлекает время из даты в формате HH:mm:ss
      * @param dateTime Время в формате "dd.MM.yyyy HH:mm:ss" или null
@@ -529,7 +699,7 @@ class CloudStorageManager(private val context: Context) {
             "-"
         }
     }
-    
+
     /**
      * Генерирует JSON-файл отчета для смены
      * Возвращает путь к созданному файлу
@@ -541,21 +711,22 @@ class CloudStorageManager(private val context: Context) {
                 Log.e(TAG, "Shift not found: $shiftId")
                 return null
             }
-            
+
             val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
             val logs = shiftDatabase.loadLogsByShift(shiftId)
-            val violations = shiftDatabase.loadAllViolations().filter { it.roundId in rounds.map { it.id } }
-            
+            val violations =
+                shiftDatabase.loadAllViolations().filter { it.roundId in rounds.map { it.id } }
+
             // Создаем JSON объект
             val reportJson = JSONObject()
-            
+
             // Информация о смене
             reportJson.put("shift_id", shift.id)
             reportJson.put("employee_name", shift.employeeName)
             reportJson.put("start_time", shift.startTime)
             shift.endTime?.let { reportJson.put("end_time", it) }
             reportJson.put("strict_sequence_enabled", shift.strictSequenceEnabled)
-            
+
             // Обходы
             val roundsArray = JSONArray()
             rounds.forEach { round ->
@@ -571,7 +742,7 @@ class CloudStorageManager(private val context: Context) {
                 roundsArray.put(roundObj)
             }
             reportJson.put("rounds", roundsArray)
-            
+
             // Логи
             val logsArray = JSONArray()
             logs.forEach { log ->
@@ -594,7 +765,7 @@ class CloudStorageManager(private val context: Context) {
                 logsArray.put(logObj)
             }
             reportJson.put("logs", logsArray)
-            
+
             // Нарушения
             val violationsArray = JSONArray()
             violations.forEach { violation ->
@@ -609,49 +780,66 @@ class CloudStorageManager(private val context: Context) {
                 violationsArray.put(violationObj)
             }
             reportJson.put("violations", violationsArray)
-            
+
             // Сохраняем файл
             val fileName = "shift_report_${shift.id}_${jsonFormat.format(Date())}.json"
-            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val downloadDir =
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val ohranaDir = File(downloadDir, "Ohrana")
             val reportsDir = File(ohranaDir, "Reports")
-            
+
             if (!reportsDir.exists()) {
                 reportsDir.mkdirs()
             }
-            
+
             val outputFile = File(reportsDir, fileName)
             FileOutputStream(outputFile).use { fos ->
                 fos.write(reportJson.toString(4).toByteArray())
             }
-            
+
             Log.i(TAG, "Report saved to: ${outputFile.absolutePath}")
-            
+
             return outputFile.absolutePath
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error generating JSON report: ${e.message}", e)
             return null
         }
     }
-    
+
     /**
      * Генерирует HTML-файл отчета для смены (удобный для просмотра в браузере)
      * Возвращает путь к созданному файлу
      */
     fun generateHtmlReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
+        return generateHtmlReportWithDesign(shiftId, shiftDatabase, "full")
+    }
+    
+    /**
+     * Генерирует HTML-файл отчета для смены с указанным дизайном
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных смен
+     * @param design Дизайн отчета: "full" (полный) или "minimal" (минимальный)
+     * @return Путь к созданному файлу или null в случае ошибки
+     */
+    fun generateHtmlReportWithDesign(shiftId: String, shiftDatabase: ShiftDatabaseManager, design: String): String? {
+        // Если дизайн minimal, используем отдельный метод
+        if (design.equals("minimal", ignoreCase = true)) {
+            return generateMinimalHtmlReport(shiftId, shiftDatabase)
+        }
+        
         return try {
             val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
             if (shift == null) {
                 Log.e(TAG, "Shift not found: $shiftId")
                 return null
             }
-            
+
             val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
             val logs = shiftDatabase.loadLogsByShift(shiftId)
-            
+
             val html = StringBuilder()
-            
+
             // Извлекаем номер смены из ID (формат: NSDDMMYY_NNN)
             val shiftNumber = run {
                 val pattern = java.util.regex.Pattern.compile("NS\\d{6}_(\\d{3})")
@@ -662,25 +850,27 @@ class CloudStorageManager(private val context: Context) {
                     0
                 }
             }
-            
+
             // === СПИСОК ОХРАННИКОВ ===
             val guards = shift.guardList
-            val guardsNames = if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
-            
+            val guardsNames =
+                if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
+
             // === СТАТИСТИКА ПО ОБХОДАМ ===
             val completedRounds = rounds.filter { it.isCompleted }
-            
+
             // === СТАТИСТИКА ПО ЧЕКПОИНТАМ ===
             val validCheckpoints = logs.filter { it.isSequenceCorrect }
-            
+
             // === СТАТИСТИКА ПО НАРУШЕНИЯМ ===
             val totalViolations = logs.count { !it.isSequenceCorrect }
-            
+
             // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
             val sortedLogs = logs.sortedBy { it.timestamp }
-            
+
             // HTML заголовок
-            html.append("""
+            html.append(
+                """
                 <!DOCTYPE html>
                 <html lang="ru">
                 <head>
@@ -749,11 +939,13 @@ class CloudStorageManager(private val context: Context) {
                                 </div>
                             </div>
                         </div>
-            """.trimIndent())
-            
+            """.trimIndent()
+            )
+
             // Статистика
             // completedRounds, validCheckpoints, totalViolations, sortedLogs уже определены выше
-            html.append("""
+            html.append(
+                """
                 <div class="section">
                     <h2>📊 Статистика смены</h2>
                     <div class="stats-grid">
@@ -775,11 +967,13 @@ class CloudStorageManager(private val context: Context) {
                         </div>
                     </div>
                 </div>
-            """.trimIndent())
-            
+            """.trimIndent()
+            )
+
             // Обходы и логи
             rounds.forEach { round ->
-                html.append("""
+                html.append(
+                    """
                     <div class="section">
                         <div class="round-card">
                             <h3>🔄 Обход №${round.id}</h3>
@@ -789,7 +983,11 @@ class CloudStorageManager(private val context: Context) {
                                     <div class="stat-label">Маршрут</div>
                                 </div>
                                 <div class="stat-item">
-                                    <div class="stat-value">${getTimePart(round.startTime)} - ${getTimePart(round.endTime) ?: "-"}</div>
+                                    <div class="stat-value">${getTimePart(round.startTime)} - ${
+                        getTimePart(
+                            round.endTime
+                        ) ?: "-"
+                    }</div>
                                     <div class="stat-label">Время</div>
                                 </div>
                                 <div class="stat-item">
@@ -797,17 +995,19 @@ class CloudStorageManager(private val context: Context) {
                                     <div class="stat-label">Чекпоинтов</div>
                                 </div>
                             </div>
-                """.trimIndent())
-                
+                """.trimIndent()
+                )
+
                 val roundLogs = logs.filter { it.roundId == round.id }
                 // Сортируем логи по времени
                 val sortedRoundLogs = roundLogs.sortedBy { it.timestamp }
-                
+
                 // Получаем охранников, участвовавших в этом обходе
                 val roundGuards = sortedRoundLogs.map { it.employeeName }.distinct()
-                
+
                 if (sortedRoundLogs.isNotEmpty()) {
-                    html.append("""
+                    html.append(
+                        """
                         <table class="logs-table">
                             <thead>
                                 <tr>
@@ -819,8 +1019,9 @@ class CloudStorageManager(private val context: Context) {
                                 </tr>
                             </thead>
                             <tbody>
-                    """.trimIndent())
-                    
+                    """.trimIndent()
+                    )
+
                     sortedRoundLogs.forEach { log ->
                         val statusClass = if (log.isSequenceCorrect) "success" else "violation"
                         val statusIcon = if (log.isSequenceCorrect) "✓" else "⚠️"
@@ -831,7 +1032,7 @@ class CloudStorageManager(private val context: Context) {
                             "PHOTO" -> "Фото"
                             else -> log.actionType
                         }
-                        
+
                         // Формируем дополнительную информацию по действиям
                         val actionDetails = buildString {
                             log.questionText?.let { append("<span><label>Вопрос:</label> ${it}</span>") }
@@ -839,8 +1040,9 @@ class CloudStorageManager(private val context: Context) {
                             log.inputTitle?.let { append("<span><label>Поле:</label> ${it}</span>") }
                             log.inputValue?.let { append("<span><label>Ввод:</label> ${it}</span>") }
                         }
-                        
-                        html.append("""
+
+                        html.append(
+                            """
                             <tr>
                                 <td>${log.checkpointName}</td>
                                 <td>${log.timestamp.substring(11)}</td>
@@ -851,43 +1053,59 @@ class CloudStorageManager(private val context: Context) {
                                     ${if (actionDetails.isNotBlank()) "<div class=\"action-details\">$actionDetails</div>" else ""}
                                 </td>
                             </tr>
-                        """.trimIndent())
+                        """.trimIndent()
+                        )
                     }
-                    
-                    html.append("""
+
+                    html.append(
+                        """
                             </tbody>
                         </table>
-                    """.trimIndent())
+                    """.trimIndent()
+                    )
                 }
-                
-                html.append("""
+
+                html.append(
+                    """
                         </div>
                     </div>
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
-            
+
             // Фотографии за смену
             val photos = logs.filter { it.photoPath != null }
             if (photos.isNotEmpty()) {
-                html.append("""
+                html.append(
+                    """
                     <div class="section">
                         <h2>📷 Фотографии</h2>
-                """.trimIndent())
-                
+                """.trimIndent()
+                )
+
                 photos.forEach { photoLog ->
                     // Получаем имя файла из пути
                     val photoFileName = photoLog.photoPath?.substringAfterLast("/") ?: "photo.jpg"
-                    
+
                     // Пытаемся загрузить фото и встроить его как base64
                     val photoBase64 = try {
-                        val photoFile = File(photoLog.photoPath)
-                        if (photoFile.exists()) {
-                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
-                            if (bitmap != null) {
-                                val outputStream = ByteArrayOutputStream()
-                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
-                                val imageBytes = outputStream.toByteArray()
-                                Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                        val photoPath = photoLog.photoPath
+                        if (photoPath != null) {
+                            val photoFile = File(photoPath)
+                            if (photoFile.exists()) {
+                                val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                                if (bitmap != null) {
+                                    val outputStream = ByteArrayOutputStream()
+                                    bitmap.compress(
+                                        android.graphics.Bitmap.CompressFormat.JPEG,
+                                        80,
+                                        outputStream
+                                    )
+                                    val imageBytes = outputStream.toByteArray()
+                                    Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                                } else {
+                                    null
+                                }
                             } else {
                                 null
                             }
@@ -898,8 +1116,9 @@ class CloudStorageManager(private val context: Context) {
                         Log.e(TAG, "Failed to load photo: ${photoLog.photoPath}", e)
                         null
                     }
-                    
-                    html.append("""
+
+                    html.append(
+                        """
                         <div class="photo-item">
                             <div class="photo-info">
                                 <strong>Обход:</strong> ${photoLog.roundId}<br>
@@ -907,21 +1126,27 @@ class CloudStorageManager(private val context: Context) {
                                 <strong>Время:</strong> ${photoLog.timestamp.substring(11)}<br>
                                 <strong>Охранник:</strong> ${photoLog.employeeName}
                             </div>
-                            ${if (photoBase64 != null) 
-                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото смены\">" 
-                            else 
-                                "<p>Фото недоступно</p>"}
+                            ${
+                            if (photoBase64 != null)
+                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото смены\">"
+                            else
+                                "<p>Фото недоступно</p>"
+                        }
                         </div>
-                    """.trimIndent())
+                    """.trimIndent()
+                    )
                 }
-                
-                html.append("""
+
+                html.append(
+                    """
                     </div>
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
-            
+
             // Футер
-            html.append("""
+            html.append(
+                """
                         <div class="footer">
                             Сгенерировано: ${dateFormat.format(Date())}<br>
                             Ohrana Security System v1.0
@@ -929,27 +1154,29 @@ class CloudStorageManager(private val context: Context) {
                     </div>
                 </body>
                 </html>
-            """.trimIndent())
-            
+            """.trimIndent()
+            )
+
             // Сохраняем файл
             val fileName = "shift_report_${shift.id}_${jsonFormat.format(Date())}.html"
-            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val downloadDir =
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val ohranaDir = File(downloadDir, "Ohrana")
             val reportsDir = File(ohranaDir, "Reports")
-            
+
             if (!reportsDir.exists()) {
                 reportsDir.mkdirs()
             }
-            
+
             val outputFile = File(reportsDir, fileName)
             FileOutputStream(outputFile).use { fos ->
                 fos.write(html.toString().toByteArray())
             }
-            
+
             Log.i(TAG, "HTML report saved to: ${outputFile.absolutePath}")
-            
+
             return outputFile.absolutePath
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error generating HTML report: ${e.message}", e)
             return null
@@ -957,17 +1184,176 @@ class CloudStorageManager(private val context: Context) {
     }
     
     /**
+     * Генерирует минималистичный HTML-файл отчета для смены
+     * Возвращает путь к созданному файлу
+     */
+    fun generateMinimalHtmlReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
+        return try {
+            val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
+            if (shift == null) {
+                Log.e(TAG, "Shift not found: $shiftId")
+                return null
+            }
+
+            val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
+            val logs = shiftDatabase.loadLogsByShift(shiftId)
+
+            val html = StringBuilder()
+
+            // Извлекаем номер смены из ID
+            val shiftNumber = run {
+                val pattern = java.util.regex.Pattern.compile("NS\\d{6}_(\\d{3})")
+                val matcher = pattern.matcher(shiftId)
+                if (matcher.find()) {
+                    matcher.group(1)?.toInt() ?: 0
+                } else {
+                    0
+                }
+            }
+
+            val guards = shift.guardList
+            val guardsNames = if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
+            val completedRounds = rounds.filter { it.isCompleted }
+            val validCheckpoints = logs.filter { it.isSequenceCorrect }
+            val totalViolations = logs.count { !it.isSequenceCorrect }
+            val sortedLogs = logs.sortedBy { it.timestamp }
+
+            // Минималистичный HTML
+            html.append(
+                """
+                <!DOCTYPE html>
+                <html lang="ru">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Отчет о смене</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 15px; border-radius: 4px; }
+                        .header { background: #2196F3; color: white; padding: 15px; border-radius: 4px; margin-bottom: 15px; }
+                        .header h1 { margin: 0; font-size: 20px; }
+                        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+                        .info-label { font-weight: bold; color: #666; }
+                        .info-value { color: #333; }
+                        .round { background: #f9f9f9; padding: 12px; margin-bottom: 12px; border-radius: 4px; border-left: 4px solid #2196F3; }
+                        .round h3 { margin: 0 0 8px 0; font-size: 16px; color: #2196F3; }
+                        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0; }
+                        .stat { text-align: center; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+                        .stat-value { font-size: 24px; font-weight: bold; }
+                        .stat-value.violations { color: #f44336; }
+                        .stat-value.success { color: #4caf50; }
+                        .stat-label { font-size: 11px; color: #666; margin-top: 4px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; font-size: 13px; }
+                        th { background: #2196F3; color: white; }
+                        .violation { color: #f44336; }
+                        .footer { margin-top: 20px; text-align: center; color: #999; font-size: 11px; border-top: 1px solid #eee; padding-top: 10px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <h1>ОТЧЕТ О СМЕНЕ</h1>
+                        </div>
+                        <div class="info-row"><span class="info-label">Смена №${shiftNumber}</span><span class="info-value">${shift.startTime.substring(0, 10)}</span></div>
+                        <div class="info-row"><span class="info-label">Охранники</span><span class="info-value">$guardsNames</span></div>
+                        <div class="info-row"><span class="info-label">Начало</span><span class="info-value">${shift.startTime.substring(11)}</span></div>
+                        <div class="info-row"><span class="info-label">Окончание</span><span class="info-value">${shift.endTime?.substring(11) ?: "-"}</span></div>
+                        
+                        <div class="stats">
+                            <div class="stat"><div class="stat-value success">${completedRounds.size}</div><div class="stat-label">Обходов</div></div>
+                            <div class="stat"><div class="stat-value success">${validCheckpoints.size}</div><div class="stat-label">Чекпоинтов</div></div>
+                            <div class="stat"><div class="stat-value violations">$totalViolations</div><div class="stat-label">Нарушений</div></div>
+                            <div class="stat"><div class="stat-value">${rounds.size}</div><div class="stat-label">Всего</div></div>
+                        </div>
+            """.trimIndent()
+            )
+
+            rounds.forEach { round ->
+                val roundLogs = logs.filter { it.roundId == round.id }
+                html.append(
+                    """
+                    <div class="round">
+                        <h3>Обход №${round.id} - ${round.routeName ?: "-"}</h3>
+                        <table>
+                            <tr><th>Чекпоинт</th><th>Время</th><th>Охранник</th><th>Статус</th></tr>
+                """.trimIndent()
+                )
+                
+                sortedLogs.forEach { log ->
+                    if (log.roundId == round.id) {
+                        val statusClass = if (log.isSequenceCorrect) "" else " class=\"violation\""
+                        val statusText = if (log.isSequenceCorrect) "OK" else "⚠️"
+                        html.append(
+                            """
+                            <tr$statusClass>
+                                <td>${log.checkpointName}</td>
+                                <td>${log.timestamp.substring(11)}</td>
+                                <td>${log.employeeName}</td>
+                                <td>$statusText</td>
+                            </tr>
+                            """.trimIndent()
+                        )
+                    }
+                }
+                
+                html.append(
+                    """
+                        </table>
+                    </div>
+                    """.trimIndent()
+                )
+            }
+
+            html.append(
+                """
+                        <div class="footer">
+                            Сгенерировано: ${dateFormat.format(Date())}<br>
+                            Ohrana Security System v1.0
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """.trimIndent()
+            )
+
+            // Сохраняем файл
+            val fileName = "shift_report_${shift.id}_${jsonFormat.format(Date())}_minimal.html"
+            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val ohranaDir = File(downloadDir, "Ohrana")
+            val reportsDir = File(ohranaDir, "Reports")
+
+            if (!reportsDir.exists()) {
+                reportsDir.mkdirs()
+            }
+
+            val outputFile = File(reportsDir, fileName)
+            FileOutputStream(outputFile).use { fos ->
+                fos.write(html.toString().toByteArray())
+            }
+
+            Log.i(TAG, "Minimal HTML report saved to: ${outputFile.absolutePath}")
+
+            return outputFile.absolutePath
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating minimal HTML report: ${e.message}", e)
+            return null
+        }
+    }
+
+    /**
      * Экспортирует отчет в оба формата (JSON и HTML)
      * Возвращает путь к HTML файлу (для просмотра)
      */
     fun exportShiftReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
         // Сначала генерируем JSON
         generateJsonReport(shiftId, shiftDatabase)
-        
+
         // Потом HTML (для просмотра)
         return generateHtmlReport(shiftId, shiftDatabase)
     }
-    
+
     /**
      * Экспортирует отчет в оба формата и загружает в облако
      * @param shiftId ID смены
@@ -984,38 +1370,45 @@ class CloudStorageManager(private val context: Context) {
     ): ExportResult {
         // Генерируем JSON
         val jsonPath = generateJsonReport(shiftId, shiftDatabase)
-        
+
         // Генерируем HTML
         val htmlPath = generateHtmlReport(shiftId, shiftDatabase)
-        
+
         var jsonUploadResult: Result<String?> = Result.success(null)
         var htmlUploadResult: Result<String?> = Result.success(null)
         var jsonDiskResult: Result<String?> = Result.success(null)
         var htmlDiskResult: Result<String?> = Result.success(null)
-        
+
         if (uploadToCloud && jsonPath != null) {
             jsonUploadResult = uploadFileToCloud(jsonPath, "shift_${shiftId}_report.json")
         }
-        
+
         if (uploadToCloud && htmlPath != null) {
             htmlUploadResult = uploadFileToCloud(htmlPath, "shift_${shiftId}_report.html")
         }
-        
+
         if (uploadToDisk && jsonPath != null) {
             val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
             val diskPath = "$defaultDiskPath/shift_${shiftId}_report.json"
             jsonDiskResult = uploadFileToDisk(jsonPath, diskPath)
         }
-        
+
         if (uploadToDisk && htmlPath != null) {
             val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
             val diskPath = "$defaultDiskPath/shift_${shiftId}_report.html"
             htmlDiskResult = uploadFileToDisk(htmlPath, diskPath)
         }
-        
-        return ExportResult(jsonPath, htmlPath, jsonUploadResult, htmlUploadResult, jsonDiskResult, htmlDiskResult)
+
+        return ExportResult(
+            jsonPath,
+            htmlPath,
+            jsonUploadResult,
+            htmlUploadResult,
+            jsonDiskResult,
+            htmlDiskResult
+        )
     }
-    
+
     /**
      * Экспортирует отчет в PDF и загружает в Яндекс.Диск
      * @param shiftId ID смены
@@ -1036,28 +1429,35 @@ class CloudStorageManager(private val context: Context) {
             Log.e(TAG, "exportShiftReportToPdfAndDisk: Shift not found: $shiftId")
             return PdfExportResult(null, Result.failure(Exception("Смена не найдена")))
         }
-        
+
         val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
         val logs = shiftDatabase.loadLogsByShift(shiftId)
-        
+
         // Создаем временный файл для PDF
-        val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        val downloadDir =
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
         val ohranaDir = java.io.File(downloadDir, "Ohrana")
         val pdfDir = java.io.File(ohranaDir, "PDF")
-        
+
         if (!pdfDir.exists()) {
             pdfDir.mkdirs()
         }
-        
-        val fileName = "shift_report_${shift.id}_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())}.pdf"
+
+        val fileName = "shift_report_${shift.id}_${
+            java.text.SimpleDateFormat(
+                "yyyyMMdd_HHmmss",
+                java.util.Locale.US
+            ).format(java.util.Date())
+        }.pdf"
         val pdfPath = java.io.File(pdfDir, fileName).absolutePath
-        
+
         // Сохраняем PDF в файл
         var pdfGenerated = false
         var pdfErrorMessage: String? = null
         try {
             // Экспортируем в PDF с указанным путем сохранения (без предпросмотра)
-            val generatedPath = exportToPdf(shift, rounds, logs, context, pdfPath, showPreview = false)
+            val generatedPath =
+                exportToPdf(shift, rounds, logs, context, pdfPath, showPreview = false)
             if (generatedPath != null) {
                 pdfGenerated = true
             } else {
@@ -1068,23 +1468,23 @@ class CloudStorageManager(private val context: Context) {
             Log.e(TAG, "exportShiftReportToPdfAndDisk: Error generating PDF: ${e.message}", e)
             pdfErrorMessage = "Ошибка генерации PDF: ${e.message}"
         }
-        
+
         var diskResult: Result<String?> = Result.success(null)
-        
+
         if (uploadToDisk && pdfGenerated) {
             val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
             val diskPath = "$defaultDiskPath/PDF/$fileName"
             diskResult = uploadFileToDisk(pdfPath, diskPath)
         }
-        
+
         // Возвращаем результат и сообщение об ошибке (если есть)
         if (!pdfGenerated && pdfErrorMessage != null) {
             return PdfExportResult(null, Result.failure(Exception(pdfErrorMessage)))
         }
-        
+
         return PdfExportResult(pdfPath, diskResult)
     }
-    
+
     /**
      * Экспортирует HTML отчет и загружает в Яндекс.Диск без сохранения на телефоне
      * @param shiftId ID смены
@@ -1097,19 +1497,29 @@ class CloudStorageManager(private val context: Context) {
         shiftDatabase: ShiftDatabaseManager,
         uploadToDisk: Boolean = false
     ): HtmlExportResult {
+        Log.i(TAG, "exportHtmlToDisk: shiftId=$shiftId, uploadToDisk=$uploadToDisk")
+        
         // Если не нужно загружать в Диск, просто генерируем и возвращаем путь
         if (!uploadToDisk) {
             val htmlPath = generateHtmlReport(shiftId, shiftDatabase)
+            Log.i(TAG, "exportHtmlToDisk: Not uploading to disk, htmlPath=$htmlPath")
             return HtmlExportResult(htmlPath, Result.success(null))
         }
-        
+
         // Загружаем HTML напрямую в Яндекс.Диск без сохранения на телефоне
         val diskResult = uploadHtmlToDiskDirect(shiftId, shiftDatabase)
         
+        Log.i(TAG, "exportHtmlToDisk: diskResult=$diskResult")
+        Log.i(TAG, "exportHtmlToDisk: isSuccess=${diskResult.isSuccess}")
+        if (diskResult.isSuccess) {
+            val url = diskResult.getOrNull()
+            Log.i(TAG, "exportHtmlToDisk: downloadUrl=$url")
+        }
+
         // Возвращаем null как путь (так как файл не сохраняется на телефоне)
         return HtmlExportResult(null, diskResult)
     }
-    
+
     /**
      * Экспортирует JSON отчет и загружает в Яндекс.Диск без сохранения на телефоне
      * @param shiftId ID смены
@@ -1127,386 +1537,124 @@ class CloudStorageManager(private val context: Context) {
             val jsonPath = generateJsonReport(shiftId, shiftDatabase)
             return JsonExportResult(jsonPath, Result.success(null))
         }
-        
+
         // Для JSON пока используем старый метод с сохранением
         // (можно добавить аналог uploadJsonToDiskDirect() позже)
         val jsonPath = generateJsonReport(shiftId, shiftDatabase)
-        
+
         if (jsonPath == null) {
             Log.e(TAG, "exportJsonToDisk: Failed to generate JSON report for shift $shiftId")
             return JsonExportResult(null, Result.failure(Exception("Ошибка генерации JSON")))
         }
-        
+
         var diskResult: Result<String?> = Result.success(null)
-        
+
         if (uploadToDisk) {
             val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
             val fileName = File(jsonPath).name
             val diskPath = "$defaultDiskPath/$fileName"
             diskResult = uploadFileToDisk(jsonPath, diskPath)
         }
-        
+
         return JsonExportResult(jsonPath, diskResult)
     }
-    
-    // ==================================================
-    // 🔗 МЕТОДЫ ДЛЯ РАБОТЫ С FILE.IO
-    // ==================================================
-    
     /**
-     * Результат экспорта HTML отчета и загрузки в File.io
+     * Получает список всех сгенерированных отчетов
      */
-    data class FileIoExportResult(
-        val htmlPath: String?,
-        val fileIoResult: Result<String?>
-    ) {
-        fun isSuccess(): Boolean {
-            return fileIoResult.isSuccess
-        }
-        
-        fun getFileIoErrorMessage(): String {
-            if (!fileIoResult.isSuccess) {
-                return "Ошибка загрузки в File.io: ${fileIoResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
-            }
-            return ""
-        }
-        
-        fun getFileIoUrl(): String? {
-            return fileIoResult.getOrNull()
-        }
-    }
-    
+
     /**
-     * Сохраняет HTML отчет во временный файл
-     * @param shiftId ID смены
-     * @param shiftDatabase Менеджер базы данных смен
-     * @return Path к сохраненному файлу или null
-     */
-    private fun saveHtmlToFile(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
-        return try {
-            val html = generateHtmlReport(shiftId, shiftDatabase)
-            
-            if (html == null) {
-                Log.e(TAG, "saveHtmlToFile: Failed to generate HTML report")
-                return null
-            }
-            
-            val fileName = "shift_report_${shiftId}.html"
-            val file = File(context.cacheDir, fileName)
-            
-            file.writeText(html, Charsets.UTF_8)
-            
-            Log.i(TAG, "saveHtmlToFile: HTML saved to ${file.absolutePath}, size: ${file.length()} bytes")
-            file.absolutePath
-            
-        } catch (e: Exception) {
-            val errorMsg = e.message ?: "Неизвестная ошибка"
-            Log.e(TAG, "saveHtmlToFile: Error: $errorMsg", e)
-            null
-        }
-    }
-    
-    /**
-     * Загружает HTML отчет в File.io через временный файл
+     * Загружает HTML отчет в DropMeFiles без сохранения на телефоне
      * Использует OkHttp для работы с API
      * @param shiftId ID смены
      * @param shiftDatabase Менеджер базы данных смен
-     * @return Result с URL файла в File.io или сообщением об ошибке
+     * @return Result с URL файла в DropMeFiles или сообщением об ошибке
      */
-    fun uploadHtmlToFileIoWithFile(
+    fun uploadHtmlToDropMeDirect(
         shiftId: String,
         shiftDatabase: ShiftDatabaseManager
     ): Result<String> {
         return try {
-            // 1. Сохраняем HTML во временный файл
-            val filePath = saveHtmlToFile(shiftId, shiftDatabase)
-            
-            if (filePath == null) {
-                Log.e(TAG, "uploadHtmlToFileIoWithFile: Failed to save HTML file")
-                return Result.failure(Exception("Ошибка сохранения HTML файла"))
+            val html = generateHtmlReport(shiftId, shiftDatabase)
+
+            if (html == null) {
+                Log.e(TAG, "uploadHtmlToDropMeDirect: Failed to generate HTML report")
+                return Result.failure(Exception("Ошибка генерации HTML отчета"))
             }
-            
-            val file = File(filePath)
-            if (!file.exists()) {
-                Log.e(TAG, "uploadHtmlToFileIoWithFile: File does not exist: $filePath")
-                return Result.failure(Exception("Файл не найден"))
-            }
-            
-            Log.i(TAG, "uploadHtmlToFileIoWithFile: Uploading file to File.io...")
-            Log.i(TAG, "uploadHtmlToFileIoWithFile: API Host: $FILE_IO_API_HOST")
-            Log.i(TAG, "uploadHtmlToFileIoWithFile: File size: ${file.length()} bytes")
-            
+
+            Log.i(TAG, "uploadHtmlToDropMeDirect: HTML generated, uploading to DropMeFiles...")
+            Log.i(TAG, "uploadHtmlToDropMeDirect: HTML size: ${html.length} bytes")
+
             // Используем OkHttp для загрузки
             val client = okhttp3.OkHttpClient()
-            
-            // Создаем MultipartBody для отправки файла
-            // Используем application/octet-stream чтобы обойти XSS-фильтры file.io
-            val fileRequestBody = file.asRequestBody("application/octet-stream".toMediaType())
+
+            // Создаем MultipartBody для отправки файла (files[] для DropMeFiles, современный OkHttp API)
+            val fileRequestBody = okhttp3.RequestBody.create(
+                "text/html; charset=UTF-8".toMediaType(),
+                html.toByteArray(Charsets.UTF_8)
+            )
             val requestBody = okhttp3.MultipartBody.Builder()
                 .setType(okhttp3.MultipartBody.FORM)
-                .addFormDataPart("file", "shift_report_${shiftId}.html", fileRequestBody)
+                .addFormDataPart("files[]", "shift_report_${shiftId}.html", fileRequestBody)
                 .build()
-            
-            // Формируем POST-запрос
-            // Используем полный User-Agent как у браузера, иначе Cloudflare/WAF выставит 403
+
+            // Формируем POST-запрос с заголовками для DropMeFiles
             val request = okhttp3.Request.Builder()
-                .url(FILE_IO_API_HOST)
+                .url("https://dropmefiles.com")
                 .post(requestBody)
+                .addHeader("Origin", "https://dropmefiles.com")
+                .addHeader("Referer", "https://dropmefiles.com/")
                 .addHeader("Accept", "application/json")
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .addHeader(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
                 .build()
-            
+
             // Выполняем запрос
             client.newCall(request).execute().use { response ->
-                // Сначала считываем response body один раз!
                 val responseBody = response.body?.string() ?: ""
-                
-                // Логируем полный ответ для отладки
-                Log.i(TAG, "uploadHtmlToFileIoWithFile: Response code: ${response.code}")
-                Log.i(TAG, "uploadHtmlToFileIoWithFile: Response headers: ${response.headers}")
-                Log.i(TAG, "uploadHtmlToFileIoWithFile: Response body: $responseBody")
-                
-                // Сначала проверяем успешность запроса ПЕРЕД парсингом JSON!
+
+                Log.i(TAG, "uploadHtmlToDropMeDirect: Response code: ${response.code}")
+                Log.i(TAG, "uploadHtmlToDropMeDirect: Response headers: ${response.headers}")
+                Log.i(TAG, "uploadHtmlToDropMeDirect: Response body: $responseBody")
+
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "uploadHtmlToFileIoWithFile: Server error: ${response.code} ${response.message}")
-                    // Проверяем, не HTML ли нам вернулся вместо JSON
+                    Log.e(
+                        TAG,
+                        "uploadHtmlToDropMeDirect: Server error: ${response.code} ${response.message}"
+                    )
                     if (responseBody.contains("<html>") || responseBody.contains("<!DOCTYPE")) {
-                        Log.e(TAG, "uploadHtmlToFileIoWithFile: Received HTML instead of JSON!")
+                        Log.e(TAG, "uploadHtmlToDropMeDirect: Received HTML instead of JSON!")
                     }
-                    return Result.failure(Exception("Ошибка сервера File.io: ${response.code} ${response.message}"))
+                    return Result.failure(Exception("Ошибка сервера DropMeFiles: ${response.code} ${response.message}"))
                 }
-                
-                // Парсим JSON-ответ (только если код 200)
+
+                // DropMeFiles возвращает JSON с массивом файлов
+                // Пример: {"files":[{"name":"file.html","link":"https://dropmefiles.com/xxx"}]}
                 val json = org.json.JSONObject(responseBody)
-                val success = json.optBoolean("success", false)
-                
-                if (success) {
-                    val fileUrl = json.optString("link", "")
-                    Log.i(TAG, "uploadHtmlToFileIoWithFile: File URL: $fileUrl")
-                    
-                    // Удаляем временный файл
-                    if (file.exists()) {
-                        file.delete()
-                        Log.i(TAG, "uploadHtmlToFileIoWithFile: Temporary file deleted")
+                val filesArray = json.optJSONArray("files")
+
+                if (filesArray != null && filesArray.length() > 0) {
+                    val firstFile = filesArray.optJSONObject(0)
+                    val link = firstFile?.optString("link") ?: ""
+                    if (link.isNotEmpty()) {
+                        Log.i(TAG, "uploadHtmlToDropMeDirect: File URL: $link")
+                        Result.success(link)
+                    } else {
+                        Result.failure(Exception("Не удалось получить ссылку из ответа"))
                     }
-                    
-                    Result.success(fileUrl)
                 } else {
-                    val message = json.optString("message", "Неизвестная ошибка")
-                    Log.e(TAG, "uploadHtmlToFileIoWithFile: File.io error: $message")
-                    Result.failure(Exception("Ошибка File.io: $message"))
+                    Result.failure(Exception("Ответ не содержит файлов: $responseBody"))
                 }
             }
-            
+
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Неизвестная ошибка"
-            Log.e(TAG, "uploadHtmlToFileIoWithFile: Error: $errorMsg", e)
-            Result.failure(Exception("Ошибка загрузки в File.io: $errorMsg"))
+            Log.e(TAG, "uploadHtmlToDropMeDirect: Error: $errorMsg", e)
+            Result.failure(Exception("Ошибка загрузки в DropMeFiles: $errorMsg"))
         }
     }
-    
-    /**
-     * Загружает HTML отчет в File.io без сохранения на телефоне
-     * @param shiftId ID смены
-     * @param shiftDatabase Менеджер базы данных смен
-     * @return Result с URL файла в File.io или сообщением об ошибке
-     */
-    fun uploadHtmlToFileIoDirect(
-        shiftId: String,
-        shiftDatabase: ShiftDatabaseManager
-    ): Result<String> {
-        return try {
-            val html = generateHtmlReport(shiftId, shiftDatabase)
-            
-            if (html == null) {
-                Log.e(TAG, "uploadHtmlToFileIoDirect: Failed to generate HTML report")
-                return Result.failure(Exception("Ошибка генерации HTML отчета"))
-            }
-            
-            Log.i(TAG, "uploadHtmlToFileIoDirect: HTML generated, uploading to File.io...")
-            Log.i(TAG, "uploadHtmlToFileIoDirect: API Host: $FILE_IO_API_HOST")
-            Log.i(TAG, "uploadHtmlToFileIoDirect: HTML size: ${html.length} bytes")
-            
-            val url = URL(FILE_IO_API_HOST)
-            val connection = url.openConnection() as HttpURLConnection
-            
-            // Используем multipart/form-data для загрузки файла (стандартный API File.io)
-            val boundary = "----FileBoundary${System.currentTimeMillis()}"
-            connection.requestMethod = "POST"
-            connection.setDoOutput(true)
-            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            connection.setRequestProperty("User-Agent", "Ohrana/1.0")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
-            
-            // Формируем multipart формат
-            val outputStream = connection.outputStream
-            val writer = java.io.OutputStreamWriter(outputStream, Charsets.UTF_8)
-            
-            // Добавляем файл
-            writer.write("--" + boundary + "\r\n")
-            writer.write("Content-Disposition: form-data; name=\"file\"; filename=\"shift_report_${shiftId}.html\"\r\n")
-            writer.write("Content-Type: text/html; charset=UTF-8\r\n\r\n")
-            writer.write(html)
-            writer.write("\r\n")
-            
-            // Завершаем boundary
-            writer.write("--" + boundary + "--\r\n")
-            writer.flush()
-            writer.close()
-            outputStream.close()
-            
-            val responseCode = connection.responseCode
-            val responseMessage = connection.responseMessage
-            
-            Log.i(TAG, "uploadHtmlToFileIoDirect: Response code: $responseCode $responseMessage")
-            Log.i(TAG, "uploadHtmlToFileIoDirect: Response headers: ${connection.headerFields}")
-            
-            if (responseCode == 200) {
-                val responseText = connection.inputStream.use { it.bufferedReader().use { reader -> reader.readText() } }
-                Log.i(TAG, "uploadHtmlToFileIoDirect: Response full (first 1000 chars): ${responseText.substring(0, Math.min(1000, responseText.length))}")
-                
-                // Проверяем, что ответ - это JSON, а не HTML
-                if (responseText.trim().startsWith("<")) {
-                    Log.e(TAG, "uploadHtmlToFileIoDirect: Received HTML instead of JSON, trying alternative approach")
-                    // Попробуем альтернативный подход - отправить как binary data
-                    return uploadHtmlToFileIoBinary(shiftId, shiftDatabase)
-                }
-                
-                val json = org.json.JSONObject(responseText)
-                val success = json.optBoolean("success", false)
-                
-                if (success) {
-                    val fileUrl = json.optString("link", "")
-                    Log.i(TAG, "uploadHtmlToFileIoDirect: File URL: $fileUrl")
-                    Result.success(fileUrl)
-                } else {
-                    val message = json.optString("message", "Неизвестная ошибка")
-                    Log.e(TAG, "uploadHtmlToFileIoDirect: File.io error: $message")
-                    Result.failure(Exception("Ошибка File.io: $message"))
-                }
-            } else {
-                val errorMessage = connection.errorStream?.use { it.bufferedReader().use { reader -> reader.readText() } }
-                Log.e(TAG, "uploadHtmlToFileIoDirect: Failed with code $responseCode: $errorMessage")
-                Result.failure(Exception("Ошибка загрузки в File.io: $responseCode"))
-            }
-            
-        } catch (e: Exception) {
-            val errorMsg = e.message ?: "Неизвестная ошибка"
-            Log.e(TAG, "uploadHtmlToFileIoDirect: Error: $errorMsg", e)
-            Result.failure(Exception("Ошибка загрузки в File.io: $errorMsg"))
-        }
-    }
-    
-    /**
-     * Альтернативный метод загрузки в File.io - как binary data
-     * @param shiftId ID смены
-     * @param shiftDatabase Менеджер базы данных смен
-     * @return Result с URL файла в File.io или сообщением об ошибке
-     */
-    private fun uploadHtmlToFileIoBinary(
-        shiftId: String,
-        shiftDatabase: ShiftDatabaseManager
-    ): Result<String> {
-        return try {
-            val html = generateHtmlReport(shiftId, shiftDatabase)
-            
-            if (html == null) {
-                Log.e(TAG, "uploadHtmlToFileIoBinary: Failed to generate HTML report")
-                return Result.failure(Exception("Ошибка генерации HTML отчета"))
-            }
-            
-            Log.i(TAG, "uploadHtmlToFileIoBinary: HTML generated, uploading to File.io as binary...")
-            Log.i(TAG, "uploadHtmlToFileIoBinary: API Host: $FILE_IO_API_HOST")
-            Log.i(TAG, "uploadHtmlToFileIoBinary: HTML size: ${html.length} bytes")
-            
-            val url = URL(FILE_IO_API_HOST)
-            val connection = url.openConnection() as HttpURLConnection
-            
-            connection.requestMethod = "POST"
-            connection.setDoOutput(true)
-            connection.setRequestProperty("Content-Type", "text/html; charset=UTF-8")
-            connection.setRequestProperty("User-Agent", "Ohrana/1.0")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
-            
-            // Отправляем HTML как binary data
-            val outputStream = connection.outputStream
-            outputStream.write(html.toByteArray(charset = Charsets.UTF_8))
-            outputStream.flush()
-            outputStream.close()
-            
-            val responseCode = connection.responseCode
-            val responseMessage = connection.responseMessage
-            
-            Log.i(TAG, "uploadHtmlToFileIoBinary: Response code: $responseCode $responseMessage")
-            Log.i(TAG, "uploadHtmlToFileIoBinary: Response headers: ${connection.headerFields}")
-            
-            if (responseCode == 200) {
-                val responseText = connection.inputStream.use { it.bufferedReader().use { reader -> reader.readText() } }
-                Log.i(TAG, "uploadHtmlToFileIoBinary: Response full (first 1000 chars): ${responseText.substring(0, Math.min(1000, responseText.length))}")
-                
-                val json = org.json.JSONObject(responseText)
-                val success = json.optBoolean("success", false)
-                
-                if (success) {
-                    val fileUrl = json.optString("link", "")
-                    Log.i(TAG, "uploadHtmlToFileIoBinary: File URL: $fileUrl")
-                    Result.success(fileUrl)
-                } else {
-                    val message = json.optString("message", "Неизвестная ошибка")
-                    Log.e(TAG, "uploadHtmlToFileIoBinary: File.io error: $message")
-                    Result.failure(Exception("Ошибка File.io: $message"))
-                }
-            } else {
-                val errorMessage = connection.errorStream?.use { it.bufferedReader().use { reader -> reader.readText() } }
-                Log.e(TAG, "uploadHtmlToFileIoBinary: Failed with code $responseCode: $errorMessage")
-                Result.failure(Exception("Ошибка загрузки в File.io: $responseCode"))
-            }
-            
-        } catch (e: Exception) {
-            val errorMsg = e.message ?: "Неизвестная ошибка"
-            Log.e(TAG, "uploadHtmlToFileIoBinary: Error: $errorMsg", e)
-            Result.failure(Exception("Ошибка загрузки в File.io: $errorMsg"))
-        }
-    }
-    
-    /**
-     * Экспортирует HTML отчет и загружает в File.io
-     * @param shiftId ID смены
-     * @param shiftDatabase Менеджер базы данных смен
-     * @return FileIoExportResult с URL или ошибкой
-     */
-    fun exportHtmlToFileIo(
-        shiftId: String,
-        shiftDatabase: ShiftDatabaseManager
-    ): FileIoExportResult {
-        Log.i(TAG, "exportHtmlToFileIo: Starting File.io upload for shift $shiftId")
-        val fileIoResult = uploadHtmlToFileIoDirect(shiftId, shiftDatabase)
-        if (fileIoResult.isSuccess) {
-            Log.i(TAG, "exportHtmlToFileIo: File.io upload successful, URL: ${fileIoResult.getOrNull()}")
-        } else {
-            Log.e(TAG, "exportHtmlToFileIo: File.io upload failed: ${fileIoResult.exceptionOrNull()?.message}")
-        }
-        return FileIoExportResult(null, fileIoResult)
-    }
-    
-    /**
-     * Включает/отключает использование File.io
-     */
-    fun setFileIoEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(FILEIO_ENABLED_KEY, enabled).apply()
-    }
-    
-    /**
-     * Проверяет, включен ли File.io
-     */
-    fun isFileIoEnabled(): Boolean {
-        return prefs.getBoolean(FILEIO_ENABLED_KEY, false)
-    }
-    
+
     /**
      * Результат экспорта отчета в PDF и загрузки в Диск
      */
@@ -1517,7 +1665,7 @@ class CloudStorageManager(private val context: Context) {
         fun isSuccess(): Boolean {
             return pdfPath != null && diskResult.isSuccess
         }
-        
+
         fun getDiskErrorMessage(): String {
             if (!diskResult.isSuccess) {
                 return "Ошибка загрузки PDF в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
@@ -1525,7 +1673,7 @@ class CloudStorageManager(private val context: Context) {
             return ""
         }
     }
-    
+
     /**
      * Результат экспорта HTML отчета и загрузки в Диск
      */
@@ -1542,19 +1690,19 @@ class CloudStorageManager(private val context: Context) {
                 diskResult.isSuccess
             }
         }
-        
+
         fun getDiskErrorMessage(): String {
             if (!diskResult.isSuccess) {
                 return "Ошибка загрузки HTML в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
             }
             return ""
         }
-        
+
         fun getDownloadUrl(): String? {
             return diskResult.getOrNull()
         }
     }
-    
+
     /**
      * Результат экспорта JSON отчета и загрузки в Диск
      */
@@ -1571,7 +1719,7 @@ class CloudStorageManager(private val context: Context) {
                 diskResult.isSuccess
             }
         }
-        
+
         fun getDiskErrorMessage(): String {
             if (!diskResult.isSuccess) {
                 return "Ошибка загрузки JSON в Диск: ${diskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}"
@@ -1579,7 +1727,7 @@ class CloudStorageManager(private val context: Context) {
             return ""
         }
     }
-    
+
     /**
      * Результат экспорта отчета
      */
@@ -1593,13 +1741,13 @@ class CloudStorageManager(private val context: Context) {
     ) {
         fun isSuccess(): Boolean {
             return jsonPath != null && htmlPath != null &&
-                   jsonUploadResult.isSuccess && htmlUploadResult.isSuccess
+                    jsonUploadResult.isSuccess && htmlUploadResult.isSuccess
         }
-        
+
         fun isDiskSuccess(): Boolean {
             return jsonDiskResult.isSuccess && htmlDiskResult.isSuccess
         }
-        
+
         fun getErrorMessage(): String {
             val errors = mutableListOf<String>()
             if (jsonPath == null) errors.add("Ошибка генерации JSON")
@@ -1610,7 +1758,7 @@ class CloudStorageManager(private val context: Context) {
             if (!htmlDiskResult.isSuccess) errors.add("Ошибка загрузки HTML в Диск: ${htmlDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
             return errors.joinToString("; ")
         }
-        
+
         fun getDiskErrorMessage(): String {
             val errors = mutableListOf<String>()
             if (!jsonDiskResult.isSuccess) errors.add("Ошибка загрузки JSON в Диск: ${jsonDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
@@ -1618,7 +1766,7 @@ class CloudStorageManager(private val context: Context) {
             return errors.joinToString("; ")
         }
     }
-    
+
     /**
      * Получает список всех сгенерированных отчетов
      */
@@ -1627,14 +1775,14 @@ class CloudStorageManager(private val context: Context) {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
             "Ohrana/Reports"
         )
-        
+
         if (!reportsDir.exists()) {
             return emptyList()
         }
-        
+
         return reportsDir.listFiles()?.sortedArray()?.reversed() ?: emptyList()
     }
-    
+
     /**
      * Генерирует HTML отчет в памяти и загружает его на Яндекс.Диск без сохранения на телефоне
      * @param shiftId ID смены
@@ -1651,12 +1799,12 @@ class CloudStorageManager(private val context: Context) {
                 Log.e(TAG, "uploadHtmlToDiskDirect: Shift not found: $shiftId")
                 return Result.failure(Exception("Смена не найдена"))
             }
-            
+
             val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
             val logs = shiftDatabase.loadLogsByShift(shiftId)
-            
+
             val html = StringBuilder()
-            
+
             // Извлекаем номер смены из ID (формат: NSDDMMYY_NNN)
             val shiftNumber = run {
                 val pattern = java.util.regex.Pattern.compile("NS\\d{6}_(\\d{3})")
@@ -1667,28 +1815,30 @@ class CloudStorageManager(private val context: Context) {
                     0
                 }
             }
-            
+
             // === СПИСОК ОХРАННИКОВ ===
             val guards = shift.guardList
-            val guardsNames = if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
-            
+            val guardsNames =
+                if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
+
             // === СТАТИСТИКА ПО ОБХОДАМ ===
             // Количество пройденных обходов (completed rounds)
             val completedRounds = rounds.filter { it.isCompleted }
-            
+
             // === СТАТИСТИКА ПО ЧЕКПОИНТАМ ===
             // Всего чекпоинтов (без нарушений)
             val validCheckpoints = logs.filter { it.isSequenceCorrect }
-            
+
             // === СТАТИСТИКА ПО НАРУШЕНИЯМ ===
             // Всего нарушений (sequence violations from logs)
             val totalViolations = logs.count { !it.isSequenceCorrect }
-            
+
             // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
             val sortedLogs = logs.sortedBy { it.timestamp }
-            
+
             // HTML заголовок
-            html.append("""
+            html.append(
+                """
                 <!DOCTYPE html>
                 <html lang="ru">
                 <head>
@@ -1757,11 +1907,13 @@ class CloudStorageManager(private val context: Context) {
                                 </div>
                             </div>
                         </div>
-            """.trimIndent())
-            
+            """.trimIndent()
+            )
+
             // Статистика
             // completedRounds, validCheckpoints, totalViolations, sortedLogs уже определены выше
-            html.append("""
+            html.append(
+                """
                 <div class="section">
                     <h2>📊 Статистика смены</h2>
                     <div class="stats-grid">
@@ -1783,11 +1935,13 @@ class CloudStorageManager(private val context: Context) {
                         </div>
                     </div>
                 </div>
-            """.trimIndent())
-            
+            """.trimIndent()
+            )
+
             // Обходы и логи
             rounds.forEach { round ->
-                html.append("""
+                html.append(
+                    """
                     <div class="section">
                         <div class="round-card">
                             <h3>🔄 Обход №${round.id}</h3>
@@ -1797,7 +1951,11 @@ class CloudStorageManager(private val context: Context) {
                                     <div class="stat-label">Маршрут</div>
                                 </div>
                                 <div class="stat-item">
-                                    <div class="stat-value">${getTimePart(round.startTime)} - ${getTimePart(round.endTime) ?: "-"}</div>
+                                    <div class="stat-value">${getTimePart(round.startTime)} - ${
+                        getTimePart(
+                            round.endTime
+                        ) ?: "-"
+                    }</div>
                                     <div class="stat-label">Время</div>
                                 </div>
                                 <div class="stat-item">
@@ -1805,17 +1963,19 @@ class CloudStorageManager(private val context: Context) {
                                     <div class="stat-label">Чекпоинтов</div>
                                 </div>
                             </div>
-                """.trimIndent())
-                
+                """.trimIndent()
+                )
+
                 val roundLogs = logs.filter { it.roundId == round.id }
                 // Сортируем логи по времени
                 val sortedRoundLogs = roundLogs.sortedBy { it.timestamp }
-                
+
                 // Получаем охранников, участвовавших в этом обходе
                 val roundGuards = sortedRoundLogs.map { it.employeeName }.distinct()
-                
+
                 if (sortedRoundLogs.isNotEmpty()) {
-                    html.append("""
+                    html.append(
+                        """
                         <table class="logs-table">
                             <thead>
                                 <tr>
@@ -1827,8 +1987,9 @@ class CloudStorageManager(private val context: Context) {
                                 </tr>
                             </thead>
                             <tbody>
-                    """.trimIndent())
-                    
+                    """.trimIndent()
+                    )
+
                     sortedRoundLogs.forEach { log ->
                         val statusClass = if (log.isSequenceCorrect) "success" else "violation"
                         val statusIcon = if (log.isSequenceCorrect) "✓" else "⚠️"
@@ -1839,7 +2000,7 @@ class CloudStorageManager(private val context: Context) {
                             "PHOTO" -> "Фото"
                             else -> log.actionType
                         }
-                        
+
                         // Формируем дополнительную информацию по действиям
                         val actionDetails = buildString {
                             log.questionText?.let { append("<span><label>Вопрос:</label> ${it}</span>") }
@@ -1847,8 +2008,9 @@ class CloudStorageManager(private val context: Context) {
                             log.inputTitle?.let { append("<span><label>Поле:</label> ${it}</span>") }
                             log.inputValue?.let { append("<span><label>Ввод:</label> ${it}</span>") }
                         }
-                        
-                        html.append("""
+
+                        html.append(
+                            """
                             <tr>
                                 <td>${log.checkpointName}</td>
                                 <td>${log.timestamp.substring(11)}</td>
@@ -1859,43 +2021,59 @@ class CloudStorageManager(private val context: Context) {
                                     ${if (actionDetails.isNotBlank()) "<div class=\"action-details\">$actionDetails</div>" else ""}
                                 </td>
                             </tr>
-                        """.trimIndent())
+                        """.trimIndent()
+                        )
                     }
-                    
-                    html.append("""
+
+                    html.append(
+                        """
                             </tbody>
                         </table>
-                    """.trimIndent())
+                    """.trimIndent()
+                    )
                 }
-                
-                html.append("""
+
+                html.append(
+                    """
                         </div>
                     </div>
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
-            
+
             // Фотографии за смену
             val photos = logs.filter { it.photoPath != null }
             if (photos.isNotEmpty()) {
-                html.append("""
+                html.append(
+                    """
                     <div class="section">
                         <h2>📷 Фотографии</h2>
-                """.trimIndent())
-                
+                """.trimIndent()
+                )
+
                 photos.forEach { photoLog ->
                     // Получаем имя файла из пути
                     val photoFileName = photoLog.photoPath?.substringAfterLast("/") ?: "photo.jpg"
-                    
+
                     // Пытаемся загрузить фото и встроить его как base64
                     val photoBase64 = try {
-                        val photoFile = File(photoLog.photoPath)
-                        if (photoFile.exists()) {
-                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
-                            if (bitmap != null) {
-                                val outputStream = ByteArrayOutputStream()
-                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
-                                val imageBytes = outputStream.toByteArray()
-                                Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                        val photoPath = photoLog.photoPath
+                        if (photoPath != null) {
+                            val photoFile = File(photoPath)
+                            if (photoFile.exists()) {
+                                val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                                if (bitmap != null) {
+                                    val outputStream = ByteArrayOutputStream()
+                                    bitmap.compress(
+                                        android.graphics.Bitmap.CompressFormat.JPEG,
+                                        80,
+                                        outputStream
+                                    )
+                                    val imageBytes = outputStream.toByteArray()
+                                    Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                                } else {
+                                    null
+                                }
                             } else {
                                 null
                             }
@@ -1906,8 +2084,9 @@ class CloudStorageManager(private val context: Context) {
                         Log.e(TAG, "Failed to load photo: ${photoLog.photoPath}", e)
                         null
                     }
-                    
-                    html.append("""
+
+                    html.append(
+                        """
                         <div class="photo-item">
                             <div class="photo-info">
                                 <strong>Обход:</strong> ${photoLog.roundId}<br>
@@ -1915,21 +2094,27 @@ class CloudStorageManager(private val context: Context) {
                                 <strong>Время:</strong> ${photoLog.timestamp.substring(11)}<br>
                                 <strong>Охранник:</strong> ${photoLog.employeeName}
                             </div>
-                            ${if (photoBase64 != null) 
-                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото смены\">" 
-                            else 
-                                "<p>Фото недоступно</p>"}
+                            ${
+                            if (photoBase64 != null)
+                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото смены\">"
+                            else
+                                "<p>Фото недоступно</p>"
+                        }
                         </div>
-                    """.trimIndent())
+                    """.trimIndent()
+                    )
                 }
-                
-                html.append("""
+
+                html.append(
+                    """
                     </div>
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
-            
+
             // Футер
-            html.append("""
+            html.append(
+                """
                         <div class="footer">
                             Сгенерировано: ${dateFormat.format(Date())}<br>
                             Ohrana Security System v1.0
@@ -1937,8 +2122,9 @@ class CloudStorageManager(private val context: Context) {
                     </div>
                 </body>
                 </html>
-            """.trimIndent())
-            
+            """.trimIndent()
+            )
+
             // Получаем токен для загрузки
             var token = getDiskToken()
             if (token == null) {
@@ -1948,26 +2134,29 @@ class CloudStorageManager(private val context: Context) {
                 Log.e(TAG, "uploadHtmlToDiskDirect: OAuth token is null")
                 return Result.failure(Exception("OAuth token not found"))
             }
-            
+
             // Создаем уникальное имя файла
             val timestamp = System.currentTimeMillis()
             val fileName = "shift_${shift.id}_report_${timestamp}.html"
             val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
             val remotePath = "$defaultDiskPath/$fileName"
-            
+
             Log.i(TAG, "uploadHtmlToDiskDirect: Uploading HTML directly to $remotePath")
-            
+
             // Создаем родительские директории, если они не существуют
             val parentPath = remotePath.substringBeforeLast("/")
             if (parentPath != remotePath) {
-                Log.i(TAG, "uploadHtmlToDiskDirect: Creating parent directories for path: $parentPath")
-                
+                Log.i(
+                    TAG,
+                    "uploadHtmlToDiskDirect: Creating parent directories for path: $parentPath"
+                )
+
                 val pathParts = parentPath.split("/").filter { it.isNotEmpty() }
                 var currentPath = ""
-                
+
                 for (part in pathParts) {
                     currentPath = if (currentPath.isEmpty()) part else "$currentPath/$part"
-                    
+
                     if (!checkDirectoryExists(currentPath, token)) {
                         Log.i(TAG, "uploadHtmlToDiskDirect: Creating directory: $currentPath")
                         createSingleDirectory(currentPath, token)
@@ -1976,71 +2165,99 @@ class CloudStorageManager(private val context: Context) {
                     }
                 }
             }
-            
+
             // Получаем ссылку для загрузки
-            val urlString = "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$remotePath&overwrite=true"
-            
+            val urlString =
+                "${YANDEX_DISK_API_HOST}${YANDEX_DISK_API_V1_PATH}/upload?path=$remotePath&overwrite=true"
+
             Log.i(TAG, "uploadHtmlToDiskDirect: Getting upload link: $urlString")
-            
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Authorization", "OAuth $token")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
-            
-            val responseCode = connection.responseCode
-            
-            if (responseCode == 200) {
-                val responseJson = connection.inputStream.bufferedReader().use { it.readText() }
-                Log.i(TAG, "uploadHtmlToDiskDirect: Upload link obtained: $responseJson")
-                val json = org.json.JSONObject(responseJson)
-                val href = json.getString("href")
-                Log.i(TAG, "uploadHtmlToDiskDirect: Upload link href: $href")
-                
-                // Загружаем HTML напрямую в памяти (без сохранения на диск)
-                val uploadUrl = URL(href)
-                val uploadConnection = uploadUrl.openConnection() as HttpsURLConnection
-                
-                uploadConnection.requestMethod = "PUT"
-                uploadConnection.setRequestProperty("Authorization", "OAuth $token")
-                uploadConnection.setRequestProperty("Content-Type", "text/html; charset=UTF-8")
-                // Убираем установку Content-Length - используем chunked encoding
-                uploadConnection.setChunkedStreamingMode(8192)
-                uploadConnection.doOutput = true
-                uploadConnection.connectTimeout = 30000
-                uploadConnection.readTimeout = 30000
-                
-                // Загружаем HTML из памяти
-                uploadConnection.outputStream.use { outputStream ->
-                    val htmlBytes = html.toString().toByteArray(charset = Charsets.UTF_8)
-                    outputStream.write(htmlBytes)
-                }
-                
-                val uploadResponseCode = uploadConnection.responseCode
-                
-                Log.i(TAG, "uploadHtmlToDiskDirect: File upload responseCode=$uploadResponseCode")
-                
-                if (uploadResponseCode == 201 || uploadResponseCode == 200) {
-                    // Получаем public URL файла
-                    val publicUrlResult = getPublicUrlForDisk(remotePath)
-                    if (publicUrlResult.isSuccess) {
-                        Log.i(TAG, "uploadHtmlToDiskDirect: Upload successful to Yandex Disk")
-                        Result.success(publicUrlResult.getOrNull() ?: href)
-                    } else {
-                        Result.success(href)
+
+            // Используем OkHttp для запроса (GET для получения ссылки)
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .get()
+                .addHeader("Authorization", "OAuth $token")
+                .addHeader("Accept", "application/json")
+                .build()
+
+            // Выполняем запрос
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string() ?: ""
+
+                Log.i(TAG, "uploadHtmlToDiskDirect: Response code: ${response.code}")
+
+                if (response.isSuccessful) {
+                    val json = JSONObject(responseBody)
+                    val href = json.getString("href")
+                    Log.i(TAG, "uploadHtmlToDiskDirect: Upload link href: $href")
+
+                    // Загружаем HTML напрямую в памяти (без сохранения на диск)
+                    val uploadFileRequestBody = okhttp3.RequestBody.create(
+                        "text/html; charset=UTF-8".toMediaType(),
+                        html.toString().toByteArray(Charsets.UTF_8)
+                    )
+                    val uploadRequest = okhttp3.Request.Builder()
+                        .url(href)
+                        .put(uploadFileRequestBody)
+                        .build()
+
+                    client.newCall(uploadRequest).execute().use { uploadResponse ->
+                        val uploadResponseBody = uploadResponse.body?.string() ?: ""
+
+                        Log.i(
+                            TAG,
+                            "uploadHtmlToDiskDirect: File upload response code: ${uploadResponse.code}"
+                        )
+
+                        if (uploadResponse.isSuccessful) {
+                            Log.i(TAG, "uploadHtmlToDiskDirect: File uploaded successfully, now getting public URL")
+                            
+                            // Небольшая задержка для индексации файла
+                            Thread.sleep(1000)
+                            
+                            // Публикуем файл для получения публичного URL
+                            val publishResult = publishFileToDisk(remotePath)
+                            if (publishResult.isSuccess) {
+                                Log.i(TAG, "uploadHtmlToDiskDirect: File published successfully")
+                                
+                                // Получаем public_url напрямую из результата публикации
+                                val publishedUrl = publishResult.getOrNull() ?: ""
+                                
+                                // Если ссылка не публичная (downloader.disk.yandex.ru), пробуем получить public_url через getPublicUrlForDisk
+                                if (publishedUrl.contains("downloader.disk.yandex.ru")) {
+                                    Log.w(TAG, "uploadHtmlToDiskDirect: Got download link instead of public URL, trying to get public URL")
+                                    val publicUrlResult = getPublicUrlForDisk(remotePath)
+                                    if (publicUrlResult.isSuccess) {
+                                        val publicUrl = publicUrlResult.getOrNull() ?: ""
+                                        Log.i(TAG, "uploadHtmlToDiskDirect: Public URL = '$publicUrl'")
+                                        Result.success(publicUrl)
+                                    } else {
+                                        Log.e(TAG, "uploadHtmlToDiskDirect: Failed to get public URL")
+                                        Result.failure(Exception("Ошибка получения публичного URL: ${publicUrlResult.exceptionOrNull()?.message}"))
+                                    }
+                                } else {
+                                    Log.i(TAG, "uploadHtmlToDiskDirect: Public URL = '$publishedUrl'")
+                                    Result.success(publishedUrl)
+                                }
+                            } else {
+                                Log.e(TAG, "uploadHtmlToDiskDirect: Failed to publish file")
+                                Result.failure(Exception("Ошибка публикации файла: ${publishResult.exceptionOrNull()?.message}"))
+                            }
+                        } else {
+                            Log.e(
+                                TAG,
+                                "uploadHtmlToDiskDirect: File upload failed: ${uploadResponse.code}"
+                            )
+                            Result.failure(Exception("Ошибка загрузки файла: ${uploadResponse.code}"))
+                        }
                     }
                 } else {
-                    val errorMessage = uploadConnection.errorStream?.bufferedReader()?.use { it.readText() }
-                    Log.e(TAG, "uploadHtmlToDiskDirect: File upload failed with code $uploadResponseCode: $errorMessage")
-                    Result.failure(Exception("Ошибка загрузки файла: $uploadResponseCode $errorMessage"))
+                    Log.e(
+                        TAG,
+                        "uploadHtmlToDiskDirect: Failed to get upload link: ${response.code}"
+                    )
+                    Result.failure(Exception("Ошибка получения ссылки для загрузки: ${response.code}"))
                 }
-            } else {
-                val errorMessage = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                Log.e(TAG, "uploadHtmlToDiskDirect: Failed to get upload link: $responseCode - $errorMessage")
-                Result.failure(Exception("Ошибка получения ссылки для загрузки: $responseCode"))
             }
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Неизвестная ошибка"
@@ -2049,22 +2266,21 @@ class CloudStorageManager(private val context: Context) {
             Result.failure(Exception("Ошибка загрузки HTML в Яндекс.Диск: $errorMsg"))
         }
     }
-    
+
     /**
      * Очищает старые отчеты (старше указанного количества дней)
      */
-    fun clearOldReports(days: Int) {
-        val reportsDir = File(
+    fun clearOldReports(days: Int) {        val reportsDir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
             "Ohrana/Reports"
         )
-        
+
         if (!reportsDir.exists()) {
             return
         }
-        
+
         val cutoffDate = System.currentTimeMillis() - (days * 24L * 60 * 60 * 1000)
-        
+
         reportsDir.listFiles()?.forEach { file ->
             if (file.lastModified() < cutoffDate) {
                 file.delete()
@@ -2072,183 +2288,5 @@ class CloudStorageManager(private val context: Context) {
             }
         }
     }
-    
-    // ==================================================
-    // 🚀 МЕТОДЫ ДЛЯ ВЫПОЛНЕНИЯ ДЕЙСТВИЙ С ССЫЛКОЙ FILE.IO
-    // ==================================================
-    
-    /**
-     * Выполняет действие с ссылкой File.io в зависимости от настроек пользователя
-     * @param url Ссылка на отчет в File.io
-     * @param shiftId ID смены
-     * @param context Контекст Android
-     */
-    fun executeFileIoAction(url: String, shiftId: String, context: Context) {
-        val prefs = SharedPrefsManager(context)
-        val action = prefs.getFileIoAction()
-        
-        Log.i(TAG, "executeFileIoAction: Action=$action, URL=$url")
-        
-        when (action) {
-            FileIoAction.SAVE_TO_DEVICE -> {
-                // Сохраняем URL в память телефона (в SharedPreferences)
-                prefs.saveFileIoUrl(shiftId, url)
-                Log.i(TAG, "executeFileIoAction: URL saved to SharedPreferences for shift $shiftId")
-                Toast.makeText(
-                    context,
-                    "URL сохранен в памяти телефона",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            
-            FileIoAction.SEND_SMS -> {
-                // Отправка через SMS
-                val phone = prefs.getFileIoPhone()
-                if (phone.isEmpty()) {
-                    Toast.makeText(
-                        context,
-                        "Введите номер телефона в настройках File.io",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return
-                }
-                
-                try {
-                    val smsUri = android.net.Uri.parse("smsto:$phone")
-                    val intent = android.content.Intent(
-                        android.content.Intent.ACTION_SENDTO,
-                        smsUri
-                    )
-                    intent.putExtra("sms_body", "Отчет о смене: $url")
-                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                    Log.i(TAG, "executeFileIoAction: SMS intent started")
-                } catch (e: Exception) {
-                    Log.e(TAG, "executeFileIoAction: Failed to send SMS", e)
-                    Toast.makeText(
-                        context,
-                        "Ошибка отправки SMS: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-            
-            FileIoAction.SEND_EMAIL -> {
-                // Отправка через почту (МАХ)
-                val email = prefs.getFileIoEmail()
-                if (email.isEmpty()) {
-                    Toast.makeText(
-                        context,
-                        "Введите email в настройках File.io",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return
-                }
-                
-                try {
-                    // Сохраняем URL в файл в папке Ohrana/Reports
-                    val reportsDir = File(
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                        "Ohrana/Reports"
-                    )
-                    if (!reportsDir.exists()) {
-                        reportsDir.mkdirs()
-                    }
-                    val urlFile = File(reportsDir, "last_fileio_url_${shiftId}.txt")
-                    urlFile.writeText(url)
-                    Log.i(TAG, "executeFileIoAction: URL saved to $urlFile")
-                    
-                    // Создаем email intent без диалога выбора (использует настроенный клиент)
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND)
-                    intent.type = "text/html"
-                    intent.putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(email))
-                    intent.putExtra(android.content.Intent.EXTRA_SUBJECT, "Отчет о смене")
-                    intent.putExtra(
-                        android.content.Intent.EXTRA_TEXT,
-                        "<a href='$url'>Отчет о смене</a>"
-                    )
-                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    
-                    // Пытаемся запустить напрямую (без createChooser для автоматической отправки)
-                    try {
-                        context.startActivity(intent)
-                        Log.i(TAG, "executeFileIoAction: Email sent to $email")
-                        Toast.makeText(
-                            context,
-                            "Отчет отправлен на $email",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    } catch (e: Exception) {
-                        // Если не удалось без диалога, показываем диалог
-                        Log.w(TAG, "executeFileIoAction: Direct send failed, showing chooser", e)
-                        context.startActivity(
-                            android.content.Intent.createChooser(
-                                intent,
-                                "Отправить отчет через"
-                            )
-                        )
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "executeFileIoAction: Failed to send email", e)
-                    Toast.makeText(
-                        context,
-                        "Ошибка отправки email: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-            
-            FileIoAction.SEND_TELEGRAM -> {
-                // Отправка через Telegram
-                val username = prefs.getFileIoTelegram()
-                if (username.isEmpty()) {
-                    Toast.makeText(
-                        context,
-                        "Введите username Telegram в настройках File.io",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return
-                }
-                
-                try {
-                    // Проверяем, установлен ли Telegram
-                    val pm = context.packageManager
-                    val telegramPackage = "org.telegram.messenger"
-                    pm.getPackageInfo(telegramPackage, 0)
-                    
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                    intent.data = android.net.Uri.parse("https://t.me/$username")
-                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                    Log.i(TAG, "executeFileIoAction: Telegram app opened")
-                    
-                    Toast.makeText(
-                        context,
-                        "Откройте чат с @$username и отправьте сообщение",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } catch (e: Exception) {
-                    Log.e(TAG, "executeFileIoAction: Telegram not installed or error", e)
-                    Toast.makeText(
-                        context,
-                        "Telegram не установлен или ошибка: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-            
-            FileIoAction.COPY_TO_CLIPBOARD -> {
-                // Копирование в буфер обмена
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip = android.content.ClipData.newPlainText("File.io URL", url)
-                clipboard.setPrimaryClip(clip)
-                Log.i(TAG, "executeFileIoAction: URL copied to clipboard")
-                Toast.makeText(
-                    context,
-                    "URL скопирован в буфер обмена",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
+
 }

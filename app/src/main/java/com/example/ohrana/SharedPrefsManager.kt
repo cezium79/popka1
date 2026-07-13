@@ -6,6 +6,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.nio.charset.StandardCharsets
 import com.example.ohrana.ShiftDatabaseManager
 import com.example.ohrana.ShiftLogEntry
 import com.example.ohrana.ShiftRecord
@@ -16,10 +17,14 @@ import com.example.ohrana.CheckpointEntry
 import android.widget.Toast
 import android.content.Intent
 import android.net.Uri
-import com.example.ohrana.CloudStorageManager.FileIoExportResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.net.MailTo
+import java.net.URLEncoder
+import android.content.ClipboardManager
+import android.content.ClipData
 
 // Модель для отображения строки в журнале
 data class ShiftJournalRow(
@@ -311,34 +316,11 @@ class SharedPrefsManager(private val context: Context) {
             val result = cloudManager.exportShiftReport(shiftId, shiftDatabase)
             if (result != null) {
                 Log.d("SharedPrefsManager", "Отчеты сохранены локально в: $result")
+                
+                // 🔔 ОТПРАВКА EMAIL С HTML ОТЧЕТОМ ПРИ ЗАКРЫТИИ СМЕНЫ
+                sendReportViaEmail(shiftId, cloudManager)
             } else {
                 Log.e("SharedPrefsManager", "Ошибка генерации отчета")
-            }
-            
-            // Если File.io включен, загружаем отчет туда тоже (в фоновом потоке)
-            if (isFileIoEnabled()) {
-                Log.d("SharedPrefsManager", "File.io enabled - uploading report")
-                // Выполняем загрузку в File.io и последующие действия в фоновом потоке
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    try {
-                        val fileIoResult = cloudManager.exportHtmlToFileIo(shiftId, shiftDatabase)
-                        if (fileIoResult.isSuccess()) {
-                            val url = fileIoResult.getFileIoUrl()
-                            if (url != null) {
-                                saveFileIoUrl(shiftId, url)
-                                Log.d("SharedPrefsManager", "File.io URL saved: $url")
-                                // Выполняем действие с ссылкой (SMS, email, Telegram и т.д.)
-                                cloudManager.executeFileIoAction(url, shiftId, context)
-                            }
-                        } else {
-                            Log.e("SharedPrefsManager", "File.io upload failed: ${fileIoResult.getFileIoErrorMessage()}")
-                        }
-                    } catch (e: Exception) {
-                        Log.e("SharedPrefsManager", "File.io upload error: ${e.message}", e)
-                    }
-                }
-            } else {
-                Log.d("SharedPrefsManager", "File.io NOT enabled - skipping upload")
             }
         }
         
@@ -368,6 +350,75 @@ class SharedPrefsManager(private val context: Context) {
             }
             
             apply()
+        }
+    }
+    
+    /**
+     * Отправляет отчет по email при закрытии смены
+     * @param shiftId ID смены
+     * @param cloudManager Менедгер облачного хранилища
+     */
+    fun sendReportViaEmail(shiftId: String, cloudManager: CloudStorageManager) {
+        val smtpUsername = getSmtpUsername()
+        val smtpRecipient = getSmtpRecipient()
+        
+        Log.d("SharedPrefsManager", "sendReportViaEmail: smtpUsername=$smtpUsername, smtpRecipient=$smtpRecipient")
+        
+        // Проверяем, настроен ли SMTP
+        if (smtpUsername.isEmpty() || getSmtpPassword().isEmpty()) {
+            Log.d("SharedPrefsManager", "sendReportViaEmail: SMTP не настроен")
+            return
+        }
+        
+        // Если email получателя не настроен, используем email отправителя
+        val recipient = if (smtpRecipient.isEmpty()) smtpUsername else smtpRecipient
+        
+        val emailManager = EmailManager(context)
+        
+        // Получаем дизайн отчета
+        val reportDesign = getReportDesign()
+        
+        // Генерируем HTML отчет с учетом выбранного дизайна
+        val htmlPath = cloudManager.generateHtmlReportWithDesign(shiftId, shiftDatabase, reportDesign)
+        
+        if (htmlPath == null) {
+            Log.e("SharedPrefsManager", "sendReportViaEmail: Failed to generate HTML report")
+            return
+        }
+        
+        // Читаем HTML файл
+        val htmlContent = try {
+            val file = java.io.File(htmlPath)
+            file.readText(charset = StandardCharsets.UTF_8)
+        } catch (e: Exception) {
+            Log.e("SharedPrefsManager", "sendReportViaEmail: Failed to read HTML file: ${e.message}", e)
+            return
+        }
+        
+        // Формируем тему и тело письма
+        val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
+        val subject = "Отчет Ohrana - Смена №${shiftId.substringAfterLast("_")} от ${shift?.startTime?.substring(0, 10) ?: "-"}"
+        val body = "Отчет о смене прилагается.\n\nСмена: $shiftId\nВремя начала: ${shift?.startTime ?: "-"}\nВремя окончания: ${shift?.endTime ?: "-"}"
+        
+        Log.d("SharedPrefsManager", "sendReportViaEmail: Sending email to $recipient")
+        
+        // Отправляем email с вложением
+        CoroutineScope(Dispatchers.Main).launch {
+            val success = withContext(Dispatchers.IO) {
+                emailManager.sendEmailWithAttachment(
+                    to = recipient,
+                    subject = subject,
+                    body = body,
+                    attachmentHtml = htmlContent,
+                    attachmentName = "shift_report_${shiftId}.html"
+                )
+            }
+            
+            if (success) {
+                Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $recipient")
+            } else {
+                Log.e("SharedPrefsManager", "Failed to send email via SMTP")
+            }
         }
     }
 
@@ -1551,89 +1602,49 @@ class SharedPrefsManager(private val context: Context) {
     }
     
     // ==================================================
-    // 📁 МЕТОДЫ ДЛЯ РАБОТЫ С FILE.IO
+    // 📱 МЕТОДЫ ДЛЯ НАСТРОЕК SMS
     // ==================================================
-    
-    /**
-     * Включает/отключает использование File.io
-     */
-    fun setFileIoEnabled(enabled: Boolean) {
-        Log.d("SharedPrefsManager", "setFileIoEnabled: enabled=$enabled")
-        prefs.edit().putBoolean("fileio_enabled", enabled).apply()
-    }
-    
-    /**
-     * Проверяет, включен ли File.io
-     */
-    fun isFileIoEnabled(): Boolean {
-        val result = prefs.getBoolean("fileio_enabled", false)
-        Log.d("SharedPrefsManager", "isFileIoEnabled: result=$result")
-        return result
-    }
-    
-    /**
-     * Сохраняет URL файла из File.io
-     */
-    fun saveFileIoUrl(shiftId: String, url: String) {
-        prefs.edit().putString("fileio_url_$shiftId", url).apply()
-    }
-    
-    /**
-     * Получает сохраненный URL файла из File.io
-     */
-    fun getFileIoUrl(shiftId: String): String? {
-        return prefs.getString("fileio_url_$shiftId", null)
-    }
-    
-    /**
-     * Очищает сохраненный URL файла из File.io
-     */
-    fun clearFileIoUrl(shiftId: String) {
-        prefs.edit().remove("fileio_url_$shiftId").apply()
-    }
-    
-    // ==================================================
-    // 📋 МЕТОДЫ ДЛЯ НАСТРОЕК ДЕЙСТВИЙ С ССЫЛКОЙ FILE.IO
-    // ==================================================
-    
-    /**
-     * Тип действия с ссылкой File.io
-     */
-    enum class FileIoAction(val value: String) {
-        SAVE_TO_DEVICE("save_to_device"),      // Сохранить в памяти телефона
-        SEND_SMS("send_sms"),                   // Отправить через SMS
-        SEND_EMAIL("send_email"),               // Отправить через почту (МАХ)
-        SEND_TELEGRAM("send_telegram"),         // Отправить через Telegram
-        COPY_TO_CLIPBOARD("copy_to_clipboard")  // Скопировать в буфер обмена
-    }
-    
-    /**
-     * Сохраняет выбор действия с ссылкой File.io
-     */
-    fun saveFileIoAction(action: FileIoAction) {
-        prefs.edit().putString("fileio_action", action.value).apply()
-    }
-    
-    /**
-     * Получает сохраненное действие с ссылкой File.io
-     */
-    fun getFileIoAction(): FileIoAction {
-        val value = prefs.getString("fileio_action", FileIoAction.SAVE_TO_DEVICE.value)
-        return FileIoAction.values().find { it.value == value } ?: FileIoAction.SAVE_TO_DEVICE
-    }
     
     /**
      * Сохраняет номер телефона для отправки SMS
      */
-    fun saveFileIoPhone(phone: String) {
-        prefs.edit().putString("fileio_phone", phone).apply()
+    fun saveSmsPhone(phone: String) {
+        prefs.edit().putString("sms_phone", phone).apply()
     }
     
     /**
-     * Получает сохраненный номер телефона
+     * Получает сохраненный номер телефона для SMS
      */
-    fun getFileIoPhone(): String {
-        return prefs.getString("fileio_phone", "") ?: ""
+    fun getSmsPhone(): String {
+        return prefs.getString("sms_phone", "") ?: ""
+    }
+    
+    /**
+     * Включает/отключает автоматическую отправку SMS после загрузки в Диск
+     */
+    fun setAutoSendSmsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_send_sms", enabled).apply()
+    }
+    
+    /**
+     * Проверяет, включена ли автоматическая отправка SMS
+     */
+    fun isAutoSendSmsEnabled(): Boolean {
+        return prefs.getBoolean("auto_send_sms", false)
+    }
+    
+    /**
+     * Сохраняет текст сообщения по умолчанию
+     */
+    fun saveSmsTemplate(template: String) {
+        prefs.edit().putString("sms_template", template).apply()
+    }
+    
+    /**
+     * Получает текст сообщения по умолчанию
+     */
+    fun getSmsTemplate(): String {
+        return prefs.getString("sms_template", "Отчет загружен в Яндекс.Диск: {url}") ?: "Отчет загружен в Яндекс.Диск: {url}"
     }
     
     /**
@@ -1662,5 +1673,345 @@ class SharedPrefsManager(private val context: Context) {
      */
     fun getFileIoTelegram(): String {
         return prefs.getString("fileio_telegram", "") ?: ""
+    }
+    
+    /**
+     * Сохраняет выбор действия со ссылкой
+     */
+    fun saveSmsAction(action: LinkAction) {
+        prefs.edit().putString("sms_action", action.value).apply()
+    }
+    
+    /**
+     * Получает сохраненное действие со ссылкой
+     */
+    fun getSmsAction(): LinkAction {
+        val value = prefs.getString("sms_action", LinkAction.SAVE_TO_DEVICE.value)
+        return LinkAction.values().find { it.value == value } ?: LinkAction.SAVE_TO_DEVICE
+    }
+    
+    /**
+     * Сохраняет email получателя для SMTP
+     */
+    fun saveSmtpRecipient(email: String) {
+        prefs.edit().putString("smtp_recipient", email).apply()
+    }
+    
+    /**
+     * Получает email получателя для SMTP
+     */
+    fun getSmtpRecipient(): String {
+        return prefs.getString("smtp_recipient", "") ?: ""
+    }
+    
+    /**
+     * Сохраняет SMTP хост
+     */
+    fun saveSmtpHost(host: String) {
+        prefs.edit().putString("smtp_host", host).apply()
+    }
+    
+    /**
+     * Получает SMTP хост
+     */
+    fun getSmtpHost(): String {
+        return prefs.getString("smtp_host", "smtp.yandex.ru") ?: "smtp.yandex.ru"
+    }
+    
+    /**
+     * Сохраняет SMTP порт
+     */
+    fun saveSmtpPort(port: Int) {
+        prefs.edit().putInt("smtp_port", port).apply()
+    }
+    
+    /**
+     * Получает SMTP порт
+     */
+    fun getSmtpPort(): Int {
+        return prefs.getInt("smtp_port", 465) // 465 для SSL
+    }
+    
+    /**
+     * Сохраняет SMTP username (email)
+     */
+    fun saveSmtpUsername(username: String) {
+        prefs.edit().putString("smtp_username", username).apply()
+    }
+    
+    /**
+     * Получает SMTP username
+     */
+    fun getSmtpUsername(): String {
+        return prefs.getString("smtp_username", "") ?: ""
+    }
+    
+    /**
+     * Сохраняет SMTP пароль
+     */
+    fun saveSmtpPassword(password: String) {
+        prefs.edit().putString("smtp_password", password).apply()
+    }
+    
+    /**
+     * Получает SMTP пароль
+     */
+    fun getSmtpPassword(): String {
+        return prefs.getString("smtp_password", "") ?: ""
+    }
+    
+    /**
+     * Проверяет, настроен ли SMTP
+     */
+    fun isSmtpConfigured(): Boolean {
+        val username = getSmtpUsername()
+        val password = getSmtpPassword()
+        return username.isNotEmpty() && password.isNotEmpty()
+    }
+    
+    /**
+     * Сохраняет дизайн отчета (full или minimal)
+     */
+    fun saveReportDesign(design: String) {
+        prefs.edit().putString("report_design", design).apply()
+    }
+    
+    /**
+     * Получает дизайн отчета
+     */
+    fun getReportDesign(): String {
+        return prefs.getString("report_design", "full") ?: "full"
+    }
+    
+    /**
+     * Тип действия со ссылкой
+     */
+    enum class LinkAction(val value: String, val description: String) {
+        SMS("sms", "📱 Отправить SMS"),
+        EMAIL("email", "📧 Открыть Email"),
+        EMAIL_SMTP("email_smtp", "📧 Отправить Email (автоматически)"),
+        TELEGRAM("telegram", "💬 Отправить Telegram"),
+        COPY("copy", "📋 Скопировать в буфер"),
+        SAVE_TO_DEVICE("save_device", "💾 Сохранить на устройстве")
+    }
+    
+    /**
+     * Отправляет SMS сообщение с ссылкой
+     * @param phone Номер телефона получателя
+     * @param message Текст сообщения (можно использовать {url} как плейсхолдер)
+     * @param url Ссылка для отправки
+     */
+    fun sendSms(phone: String, message: String, url: String) {
+        val context = this.context
+        val actualMessage = message.replace("{url}", url)
+        
+        try {
+            val smsUri = Uri.parse("smsto:$phone")
+            val intent = Intent(Intent.ACTION_SENDTO, smsUri).apply {
+                putExtra("sms_body", actualMessage)
+            }
+            context.startActivity(intent)
+            Toast.makeText(context, "Открыто приложение SMS", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("SharedPrefsManager", "Failed to send SMS: ${e.message}", e)
+            Toast.makeText(context, "Ошибка отправки SMS: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    /**
+     * Отправляет Email с ссылкой
+     * @param email Email получателя
+     * @param subject Тема письма
+     * @param body Тело письма (можно использовать {url} как плейсхолдер)
+     * @param url Ссылка для отправки
+     */
+    fun sendEmail(email: String, subject: String, body: String, url: String) {
+        val context = this.context
+        
+        Log.d("SharedPrefsManager", "sendEmail: email='$email', subject='$subject', body='$body', url='$url'")
+        
+        // Проверяем, что URL не пустой
+        if (url.isEmpty()) {
+            Log.e("SharedPrefsManager", "sendEmail: URL is empty")
+            Toast.makeText(context, "Ошибка: ссылка пустая", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        // Заменяем плейсхолдеры в теле письма и теме
+        val actualBody = body.replace("{url}", url)
+        val actualSubject = subject.replace("{url}", url)
+        
+        Log.d("SharedPrefsManager", "sendEmail: actualBody='$actualBody'")
+        Log.d("SharedPrefsManager", "sendEmail: actualSubject='$actualSubject'")
+        
+        try {
+            // Используем ACTION_SENDTO с mailto: URI
+            val emailUri = Uri.parse("mailto:$email")
+            val intent = Intent(Intent.ACTION_SENDTO, emailUri).apply {
+                // Используем putExtra для темы и тела письма (это более надежно для mailto)
+                putExtra(Intent.EXTRA_SUBJECT, actualSubject)
+                putExtra(Intent.EXTRA_TEXT, actualBody)
+            }
+            
+            Log.d("SharedPrefsManager", "sendEmail: Starting email intent with uri=$emailUri")
+            context.startActivity(intent)
+            Toast.makeText(context, "Открыто приложение Email", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("SharedPrefsManager", "Failed to send Email: ${e.message}", e)
+            Toast.makeText(context, "Ошибка отправки Email: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    /**
+     * Отправляет сообщение в Telegram
+     * @param username Username получателя (без @)
+     * @param message Текст сообщения (можно использовать {url} как плейсхолдер)
+     * @param url Ссылка для отправки
+     */
+    fun sendTelegram(username: String, message: String, url: String) {
+        val context = this.context
+        val actualMessage = message.replace("{url}", url)
+        
+        try {
+            // Пытаемся открыть через приложение Telegram
+            val telegramUrl = "https://t.me/$username?text=${URLEncoder.encode(actualMessage, StandardCharsets.UTF_8.name())}"
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse(telegramUrl)
+            }
+            context.startActivity(intent)
+            Toast.makeText(context, "Открыто приложение Telegram", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("SharedPrefsManager", "Failed to send Telegram: ${e.message}", e)
+            
+            // Fallback: открыть в браузере
+            try {
+                val browserUrl = "https://t.me/$username?text=${URLEncoder.encode(actualMessage, StandardCharsets.UTF_8.name())}"
+                val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse(browserUrl)
+                }
+                context.startActivity(browserIntent)
+            } catch (e2: Exception) {
+                Log.e("SharedPrefsManager", "Failed to open Telegram fallback: ${e2.message}", e2)
+                Toast.makeText(context, "Ошибка отправки Telegram: ${e2.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    /**
+     * Копирует ссылку в буфер обмена
+     */
+    fun copyToClipboard(url: String) {
+        val context = this.context
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("Ohrana Report Link", url)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "Ссылка скопирована в буфер обмена", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("SharedPrefsManager", "Failed to copy to clipboard: ${e.message}", e)
+            Toast.makeText(context, "Ошибка копирования: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    /**
+     * Отправляет ссылку по выбранному каналу
+     * @param action Тип действия
+     * @param url Ссылка для отправки
+     */
+    fun sendLinkWithAction(action: LinkAction, url: String) {
+        Log.d("SharedPrefsManager", "sendLinkWithAction: action=${action.value}, url='$url'")
+        
+        when (action) {
+            LinkAction.SMS -> {
+                val phone = getSmsPhone()
+                Log.d("SharedPrefsManager", "sendLinkWithAction: SMS phone='$phone'")
+                if (phone.isNotEmpty()) {
+                    val template = getSmsTemplate()
+                    Log.d("SharedPrefsManager", "sendLinkWithAction: SMS template='$template'")
+                    sendSms(phone, template, url)
+                } else {
+                    Toast.makeText(context, "Введите номер телефона в настройках", Toast.LENGTH_LONG).show()
+                }
+            }
+            LinkAction.EMAIL -> {
+                val email = getFileIoEmail()
+                Log.d("SharedPrefsManager", "sendLinkWithAction: EMAIL='$email'")
+                if (email.isNotEmpty()) {
+                    val subject = "Отчет Ohrana"
+                    val body = "Отчет загружен в Яндекс.Диск: {url}"
+                    Log.d("SharedPrefsManager", "sendLinkWithAction: EMAIL body='$body'")
+                    sendEmail(email, subject, body, url)
+                } else {
+                    Toast.makeText(context, "Введите email в настройках", Toast.LENGTH_LONG).show()
+                }
+            }
+            LinkAction.TELEGRAM -> {
+                val username = getFileIoTelegram()
+                Log.d("SharedPrefsManager", "sendLinkWithAction: TELEGRAM username='$username'")
+                if (username.isNotEmpty()) {
+                    val message = "Отчет загружен в Яндекс.Диск: {url}"
+                    Log.d("SharedPrefsManager", "sendLinkWithAction: TELEGRAM message='$message'")
+                    sendTelegram(username, message, url)
+                } else {
+                    Toast.makeText(context, "Введите username Telegram в настройках", Toast.LENGTH_LONG).show()
+                }
+            }
+            LinkAction.COPY -> {
+                Log.d("SharedPrefsManager", "sendLinkWithAction: COPY url='$url'")
+                copyToClipboard(url)
+            }
+            LinkAction.SAVE_TO_DEVICE -> {
+                // Просто сохраняем URL в память для последующего использования
+                Log.d("SharedPrefsManager", "Link saved to device: $url")
+                Toast.makeText(context, "Ссылка сохранена на устройстве", Toast.LENGTH_SHORT).show()
+            }
+            LinkAction.EMAIL_SMTP -> {
+                // Автоматическая отправка через SMTP (без открытия приложения почты)
+                val email = getSmtpRecipient() // Email получателя
+                sendLinkViaSmtp(email, url)
+            }
+        }
+    }
+    
+    /**
+     * Отправляет ссылку через SMTP без открытия приложения почты
+     * @param email Email получателя
+     * @param url Ссылка для отправки
+     */
+    fun sendLinkViaSmtp(email: String, url: String) {
+        val context = this.context
+        
+        // Проверяем, что email получателя не пустой
+        if (email.isEmpty()) {
+            Log.e("SharedPrefsManager", "sendLinkViaSmtp: email recipient is empty")
+            Toast.makeText(context, "Введите email получателя в настройках", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        val emailManager = EmailManager(context)
+        
+        if (!emailManager.isSmtpConfigured()) {
+            Log.e("SharedPrefsManager", "SMTP not configured")
+            Toast.makeText(context, "Настройте SMTP в настройках", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        val subject = "Отчет Ohrana"
+        val body = "Отчет загружен в Яндекс.Диск: $url"
+        
+        // Запускаем отправку в фоновом потоке
+        CoroutineScope(Dispatchers.Main).launch {
+            val success = withContext(Dispatchers.IO) {
+                emailManager.sendSimpleEmail(email, subject, body)
+            }
+            
+            if (success) {
+                Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $email")
+                Toast.makeText(context, "Письмо отправлено!", Toast.LENGTH_SHORT).show()
+            } else {
+                Log.e("SharedPrefsManager", "Failed to send email via SMTP")
+                Toast.makeText(context, "Ошибка отправки письма", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 }

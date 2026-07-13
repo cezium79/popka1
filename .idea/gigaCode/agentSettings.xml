@@ -67,6 +67,39 @@
         <Execute>
           <option name="pattern" value="findstr &quot;CP-007&quot; &quot;C:/Android/Ohrana-c7953c45/full_logs.txt&quot;" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="findstr /n &quot;RequestBody.create&quot; &quot;C:\Android\Ohrana-c7953c45\app\src\main\java\com\example\ohrana\CloudStorageManager.kt&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Select-String -Path &quot;C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/ShiftLogsListScreen.kt&quot; -Pattern &quot;exportHtmlToWormhole|WormholeManager&quot; | Select-Object -ExpandProperty LineNumber" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Select-String -Path &quot;C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/SharedPrefsManager.kt&quot; -Pattern &quot;FileIoAction|fileIo&quot; | Select-Object -First 20" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Select-String -Path &quot;C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/SharedPrefsManager.kt&quot; -Pattern &quot;executeFileIoAction&quot; | Select-Object -First 5" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Select-String -Path &quot;C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/CloudStorageManager.kt&quot; -Pattern &quot;executeFileIoAction&quot; | Select-Object -First 5" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Select-String -Path &quot;C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/CloudStorageManager.kt&quot; -Pattern &quot;FileIoAction&quot; | Select-Object -First 5" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Select-String -Path &quot;C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/SharedPrefsManager.kt&quot; -Pattern &quot;FileIoAction&quot; | Select-Object -ExpandProperty LineNumber | Select-Object -Last 1" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Select-String -Path &quot;C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/SharedPrefsManager.kt&quot; -Pattern &quot;FileIoAction&quot; | Select-Object -ExpandProperty LineNumber | Select-Object -First 1" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value=".\gradlew.bat assembleDebug" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Remove-Item -Recurse -Force &quot;C:/Android/Ohrana-c7953c45/functions&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="Test-Path &quot;C:/Android/Ohrana-c7953c45/EMAIL_REPORT_README.md&quot;" />
+        </Execute>
       </list>
     </option>
   </component>

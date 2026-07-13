@@ -52,7 +52,7 @@ Android-приложение на базе **Kotlin** и **Jetpack Compose**, п
 - URL файла сохраняется в SharedPreferences для доступа
 - Методы: `isFileIoEnabled()`, `setFileIoEnabled()`, `exportHtmlToFileIo()`
 
----
+
 
 ## 📂 Структура проекта
 
