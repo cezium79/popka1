@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter") // ДЛЯ MATERIAL 3
@@ -257,4 +258,7 @@ fun EmployeeListScreen(
             }
         }
     }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }

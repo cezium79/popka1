@@ -70,7 +70,7 @@ class AlarmService : Service() {
         // Запускаем сервис в приоритетном режиме, чтобы Android его не закрыл
         startForeground(101, notification)
 
-        // 🎵 Запуск звука будильника
+        // 🎵 Запуск звука будильника (всегда включён, будильники не зависят от настройки звуков)
         val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
 
@@ -84,7 +84,7 @@ class AlarmService : Service() {
             play()
         }
 
-        // 📳 Запуск бесконечной вибрации
+        // 📳 Запуск бесконечной вибрации (всегда включён, будильники не зависят от настройки звуков)
         vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
             vibratorManager.defaultVibrator

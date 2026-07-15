@@ -441,6 +441,8 @@ class ShiftDatabaseManager(private val context: Context) {
      */
     private fun saveLogEntry(entry: ShiftLogEntry) {
         android.util.Log.d("ShiftDatabaseManager", "saveLogEntry START: checkpoint=${entry.checkpointName}, actionType=${entry.actionType}, isSequenceCorrect=${entry.isSequenceCorrect}, sequenceErrorType=${entry.sequenceErrorType.name}, inputTitle=${entry.inputTitle}, inputValue=${entry.inputValue}")
+        android.util.Log.d("ShiftDatabaseManager", "saveLogEntry: inputValue='${entry.inputValue}', isNull=${entry.inputValue == null}, length=${entry.inputValue?.length}")
+        android.util.Log.d("ShiftDatabaseManager", "saveLogEntry: inputTitle='${entry.inputTitle}', isNull=${entry.inputTitle == null}")
         val json = JSONObject().apply {
             put("id", entry.id)
             put("timestamp", entry.timestamp)
@@ -457,7 +459,10 @@ class ShiftDatabaseManager(private val context: Context) {
             entry.questionText?.let { put("questionText", it) }
             entry.inputTitle?.let { put("inputTitle", it) }
             entry.answer?.let { put("answer", it) }
-            entry.inputValue?.let { put("inputValue", it) }
+            entry.inputValue?.let { 
+                android.util.Log.d("ShiftDatabaseManager", "saveLogEntry: Saving inputValue='$it' to JSON")
+                put("inputValue", it) 
+            }
             entry.photoPath?.let { put("photoPath", it) }
             entry.latitude?.let { put("latitude", it) }
             entry.longitude?.let { put("longitude", it) }
@@ -495,7 +500,7 @@ class ShiftDatabaseManager(private val context: Context) {
      */
     fun loadAllLogs(): List<ShiftLogEntry> {
         val all = prefs.all ?: return emptyList()
-        return all.filter { it.key.startsWith("log_") }
+        val logs = all.filter { it.key.startsWith("log_") }
             .mapNotNull { 
                 try {
                     val json = JSONObject(it.value as String)
@@ -527,11 +532,15 @@ class ShiftDatabaseManager(private val context: Context) {
                             android.util.Log.e("ShiftDatabaseManager", "loadAllLogs: Error loading sequenceErrorType for checkpoint=${json.optString("checkpointName")}, error: ${e.message}")
                             SequenceErrorType.NONE
                         }
-                    )
+                    ).also { entry ->
+                        android.util.Log.d("ShiftDatabaseManager", "loadAllLogs: Loaded log - checkpoint=${entry.checkpointName}, actionType=${entry.actionType}, inputValue='${entry.inputValue}', isNull=${entry.inputValue == null}")
+                    }
                 } catch (e: Exception) {
                     null
                 }
             }
+        android.util.Log.d("ShiftDatabaseManager", "loadAllLogs: Total logs loaded=${logs.size}")
+        return logs
     }
 
     /**
@@ -612,7 +621,7 @@ class ShiftDatabaseManager(private val context: Context) {
     ): Boolean {
         val logs = loadAllLogs().filter { it.roundId == roundId }
         android.util.Log.d("ShiftDatabaseManager", "updateLastScanEntry START: roundId=$roundId, actionType=$actionType, totalLogs=${logs.size}")
-        android.util.Log.d("ShiftDatabaseManager", "  - inputValue parameter: '$inputValue'")
+        android.util.Log.d("ShiftDatabaseManager", "  - inputValue parameter: '$inputValue', isNull=${inputValue == null}, length=${inputValue?.length}")
         logs.forEach { log ->
             android.util.Log.d("ShiftDatabaseManager", "  - Log: ${log.checkpointName}, actionType=${log.actionType}, isSequenceCorrect=${log.isSequenceCorrect}, sequenceErrorType=${log.sequenceErrorType}, inputTitle=${log.inputTitle}, inputValue=${log.inputValue}")
         }
@@ -646,7 +655,9 @@ class ShiftDatabaseManager(private val context: Context) {
                 photoPath = photoPath
             )
             
-            android.util.Log.d("ShiftDatabaseManager", "  - Created updated entry: actionType=${updatedEntry.actionType}, inputTitle=${updatedEntry.inputTitle}, inputValue=${updatedEntry.inputValue}")
+            android.util.Log.d("ShiftDatabaseManager", "  - Created updated entry: actionType=${updatedEntry.actionType}, inputTitle=${updatedEntry.inputTitle}, inputValue='${updatedEntry.inputValue}'")
+            android.util.Log.d("ShiftDatabaseManager", "  - inputValue is null: ${updatedEntry.inputValue == null}")
+            android.util.Log.d("ShiftDatabaseManager", "  - inputValue length: ${updatedEntry.inputValue?.length}")
             
             // Удаляем старую запись и сохраняем новую
             prefs.edit().remove("log_${entry.id}").apply()

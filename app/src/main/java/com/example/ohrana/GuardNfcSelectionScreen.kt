@@ -20,6 +20,7 @@ import android.nfc.NfcAdapter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,32 +68,21 @@ fun GuardNfcSelectionScreen(
                                 } else if (selectedGuards.size >= guardsCount) {
                                     scanMessage = "Достигнут лимит охранников"
                                 } else {
-                                    // Проверяем, является ли это старшим смены
-                                    val isShiftLeader = employee.role.contains("старший", ignoreCase = true) || 
-                                                        employee.role.contains("lead", ignoreCase = true) ||
-                                                        employee.role.contains("Senior", ignoreCase = true)
+                                    // СОГЛАСНО ТРЕБОВАНИЮ: первый сканированный сотрудник становится старшим смены
+                                    val isFirstGuard = selectedGuards.isEmpty()
                                     
-                                    // Если это старший смены и он еще не выбран, или это обычный охранник
-                                    if (isShiftLeader && selectedGuards.none { it.role.contains("старший", ignoreCase = true) }) {
-                                        // Добавляем старшего смены
-                                        val guard = GuardMember(
-                                            nfcId = nfcId,
-                                            name = employee.name,
-                                            role = "старший смены"
-                                        )
-                                        guardToAdd = guard
+                                    // Создаем GuardMember с правильной ролью
+                                    val guard = GuardMember(
+                                        nfcId = nfcId,
+                                        name = employee.name,
+                                        role = if (isFirstGuard) "старший смены" else "охранник"
+                                    )
+                                    guardToAdd = guard
+                                    
+                                    if (isFirstGuard) {
                                         scanMessage = "Старший смены: ${employee.name}"
-                                    } else if (!isShiftLeader) {
-                                        // Добавляем обычного охранника
-                                        val guard = GuardMember(
-                                            nfcId = nfcId,
-                                            name = employee.name,
-                                            role = "охранник"
-                                        )
-                                        guardToAdd = guard
-                                        scanMessage = "Охранник: ${employee.name}"
                                     } else {
-                                        scanMessage = "Старший смены уже выбран"
+                                        scanMessage = "Охранник: ${employee.name}"
                                     }
                                 }
                             } else {
@@ -285,4 +275,7 @@ fun GuardNfcSelectionScreen(
             }
         }
     }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }

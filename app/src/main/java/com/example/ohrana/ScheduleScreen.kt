@@ -12,11 +12,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.LaunchedEffect
 import android.util.Log
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,13 +42,17 @@ fun ScheduleScreen(
     val initialMaxDuration = sharedPrefsManager.loadMaxRoundDuration()
     
     // Загружаем список маршрутов для выбора
-    val allRoutes by remember { derivedStateOf { sharedPrefsManager.loadRoutes() } }
-    Log.d("ScheduleScreen", "Loaded ${allRoutes.size} routes from SharedPreferences: $allRoutes")
+    val allRoutesList = sharedPrefsManager.loadRoutes()
+    Log.d("ScheduleScreen", "Loaded ${allRoutesList.size} routes from SharedPreferences: ${allRoutesList.map { "${it.id}=${it.name}(checkpoints=${it.checkpointIds.size})" }}")
 
     // Загружаем чекпоинты для сохранения
     val routeCheckpoints = remember {
         sharedPrefsManager.loadRouteCheckpoints()
     }
+    
+    // Загружаем общее количество чекпоинтов из SharedPreferences при первом запуске
+    val initialTotalScheduledCheckpoints = sharedPrefsManager.loadTotalScheduledCheckpoints()
+    Log.d("ScheduleScreen", "DEBUG: initialTotalScheduledCheckpoints=$initialTotalScheduledCheckpoints (loaded from SharedPreferences)")
     
     // Определяем начальное количество раундов на основе загруженных будильников
     // Это предотвращает синхронизацию с устаревшим значением из SharedPreferences
@@ -61,9 +67,37 @@ fun ScheduleScreen(
     // Объявляем переменные с начальными значениями
     // При первом запуске используем количество будильников как количество раундов
     var roundsCount by remember { mutableStateOf(initialRoundsFromAlarms) }
-    var routeAlarms by remember { mutableStateOf(savedAlarms.toMutableList()) }
+    var routeAlarms by remember { mutableStateOf(savedAlarms.toList()) }
     var timeToleranceMinutes by remember { mutableStateOf(initialTimeTolerance) }
     var maxRoundDurationMinutes by remember { mutableStateOf(initialMaxDuration) }
+    
+    // 3. Количество чекпоинтов для каждого обхода (на основе маршрутов) - кэшируется
+    val roundCheckpointCounts = remember(routeAlarms, allRoutesList) {
+        routeAlarms.map { alarm ->
+            alarm.routeId?.let { routeId ->
+                allRoutesList.find { it.id == routeId }?.checkpointIds?.size ?: 0
+            } ?: 0
+        }
+    }
+    Log.d("ScheduleScreen", "DEBUG: roundCheckpointCounts=$roundCheckpointCounts")
+    
+    // 4. Сумма всех чекпоинтов за смену (для расписания) - кэшируется, зависит от маршрутов и количества обходов
+    val totalScheduledCheckpoints = remember(routeAlarms, allRoutesList, initialTotalScheduledCheckpoints) {
+        Log.d("ScheduleScreen", "DEBUG: Computing total - alarms=${routeAlarms.size}, routes=${allRoutesList.size}, allRoutes=${allRoutesList.map { it.id }}")
+        val computedValue = routeAlarms.map { alarm ->
+            val route = alarm.routeId?.let { routeId ->
+                allRoutesList.find { it.id == routeId }
+            }
+            val checkpointsSize = route?.checkpointIds?.size ?: 0
+            Log.d("ScheduleScreen", "DEBUG: alarm.id=${alarm.id}, routeId=${alarm.routeId}, routeName=${route?.name}, checkpoints=$checkpointsSize")
+            checkpointsSize
+        }.sum()
+        val finalValue = if (computedValue > 0) computedValue else initialTotalScheduledCheckpoints
+        Log.d("ScheduleScreen", "DEBUG: remember recalculates - computedValue=$computedValue, total alarms=${routeAlarms.size}, routes=${allRoutesList.size}, final=$finalValue")
+        Log.d("ScheduleScreen", "DEBUG: remember returns finalValue=$finalValue for totalScheduledCheckpoints")
+        finalValue
+    }
+    Log.d("ScheduleScreen", "DEBUG: totalScheduledCheckpoints=$totalScheduledCheckpoints (from remember)")
     
     // Лог после инициализации
     Log.d("ScheduleScreen", "DEBUG: After init - roundsCount=$roundsCount, routeAlarms.size=${routeAlarms.size}")
@@ -138,6 +172,11 @@ fun ScheduleScreen(
         
         // Сохраняем максимальную длительность обхода в тот же файл
         sharedPrefsManager.saveMaxRoundDuration(maxRoundDurationMinutes)
+        
+        // Сохраняем общее количество чекпоинтов за смену
+        Log.d("ScheduleScreen", "Saving total: totalScheduledCheckpoints=$totalScheduledCheckpoints (computedValue will be recalculated)")
+        sharedPrefsManager.saveTotalScheduledCheckpoints(totalScheduledCheckpoints)
+        Log.d("ScheduleScreen", "Total scheduled checkpoints saved: $totalScheduledCheckpoints")
         
         // Сохраняем будильники
         sharedPrefsManager.saveRouteAlarms(routeAlarms)
@@ -226,7 +265,7 @@ fun ScheduleScreen(
                             )
 
                             // Выпадающий список выбора маршрута (снизу)
-                            if (allRoutes.isNotEmpty()) {
+                            if (allRoutesList.isNotEmpty()) {
                                 var expanded by remember { mutableStateOf(false) }
                                 
                                 ExposedDropdownMenuBox(
@@ -236,7 +275,7 @@ fun ScheduleScreen(
                                 ) {
                                     OutlinedTextField(
                                         value = if (alarm.routeId != null) {
-                                            allRoutes.find { it.id == alarm.routeId }?.name ?: "Маршрут не найден"
+                                            allRoutesList.find { it.id == alarm.routeId }?.name ?: "Маршрут не найден"
                                         } else {
                                             "Без маршрута"
                                         },
@@ -265,7 +304,7 @@ fun ScheduleScreen(
                                         )
                                         
                                         // Маршруты
-                                        allRoutes.forEach { route ->
+                                        allRoutesList.forEach { route ->
                                             DropdownMenuItem(
                                                 text = { Text(route.name) },
                                                 onClick = {
@@ -318,6 +357,23 @@ fun ScheduleScreen(
                                     )
                                 )
                             }
+                            
+                            // 📍 Количество чекпоинтов для этого обхода
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                val checkpointsCount = roundCheckpointCounts.getOrNull(index) ?: 0
+                                Text(
+                                    text = if (checkpointsCount > 0) "📍 $checkpointsCount точек" else "⚠️ Маршрут не выбран",
+                                    fontSize = 11.sp,
+                                    color = if (checkpointsCount > 0) 
+                                        MaterialTheme.colorScheme.onSurfaceVariant 
+                                    else 
+                                        MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
 
@@ -339,6 +395,24 @@ fun ScheduleScreen(
                         singleLine = true
                     )
 
+                    // 📊 Итоговое количество чекпоинтов за смену
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "$totalScheduledCheckpoints",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
                 }
             }
 
@@ -358,6 +432,10 @@ fun ScheduleScreen(
                     // Сохраняем максимальное время на обход
                     sharedPrefsManager.saveMaxRoundDuration(maxRoundDurationMinutes)
                     Log.d("ScheduleScreen", "Max duration saved: $maxRoundDurationMinutes")
+                    
+                    // Сохраняем общее количество чекпоинтов за смену
+                    sharedPrefsManager.saveTotalScheduledCheckpoints(totalScheduledCheckpoints)
+                    Log.d("ScheduleScreen", "Total scheduled checkpoints saved: $totalScheduledCheckpoints")
                     
                     // Сохраняем будильники
                     Log.d("ScheduleScreen", "Calling saveRouteAlarms with ${routeAlarms.size} alarms")
@@ -379,4 +457,7 @@ fun ScheduleScreen(
 
         }
     }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }

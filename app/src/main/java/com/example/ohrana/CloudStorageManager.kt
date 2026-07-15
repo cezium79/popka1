@@ -701,6 +701,34 @@ class CloudStorageManager(private val context: Context) {
     }
 
     /**
+     * Вычисляет длительность обхода между startTime и endTime
+     * @param startTime Время начала в формате "dd.MM.yyyy HH:mm:ss"
+     * @param endTime Время окончания в формате "dd.MM.yyyy HH:mm:ss" или null
+     * @return Строка с длительностью в формате "mm мин. ss сек." или "-"
+     */
+    private fun calculateRoundDuration(startTime: String, endTime: String?): String {
+        if (endTime.isNullOrBlank()) return "-"
+        
+        try {
+            val format = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm:ss", java.util.Locale.getDefault())
+            val start = format.parse(startTime)
+            val end = format.parse(endTime)
+            
+            if (start == null || end == null) return "-"
+            
+            val duration = end.time - start.time
+            val hours = duration / (60 * 60 * 1000)
+            val minutes = (duration % (60 * 60 * 1000)) / (60 * 1000)
+            val seconds = (duration % (60 * 1000)) / 1000
+            
+            // Формат: mm мин. ss сек. (часы не отображаются, так как обходы короткие)
+            return "$minutes мин. $seconds сек."
+        } catch (e: Exception) {
+            return "-"
+        }
+    }
+
+    /**
      * Генерирует JSON-файл отчета для смены
      * Возвращает путь к созданному файлу
      */
@@ -811,32 +839,59 @@ class CloudStorageManager(private val context: Context) {
      * Генерирует HTML-файл отчета для смены (удобный для просмотра в браузере)
      * Возвращает путь к созданному файлу
      */
-    fun generateHtmlReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
-        return generateHtmlReportWithDesign(shiftId, shiftDatabase, "full")
+    fun generateHtmlReport(shiftId: String, shiftDatabase: ShiftDatabaseManager, context: Context? = null, sharedPrefsManager: SharedPrefsManager? = null): Pair<String?, String?> {
+        Log.d("CloudStorageManager", "generateHtmlReport: sharedPrefsManager=$sharedPrefsManager, context=$context")
+        val spm = sharedPrefsManager ?: context?.let { SharedPrefsManager(it) }
+        Log.d("CloudStorageManager", "generateHtmlReport: created spm=$spm")
+        if (spm != null) {
+            Log.d("CloudStorageManager", "generateHtmlReport: spm.isStrictSequenceEnabled()=${spm.isStrictSequenceEnabled()}")
+        }
+        return generateHtmlReportWithDesign(shiftId, shiftDatabase, spm, context)
     }
     
     /**
-     * Генерирует HTML-файл отчета для смены с указанным дизайном
+     * Генерирует HTML-файл отчета для смены
      * @param shiftId ID смены
      * @param shiftDatabase Менеджер базы данных смен
-     * @param design Дизайн отчета: "full" (полный) или "minimal" (минимальный)
-     * @return Путь к созданному файлу или null в случае ошибки
+     * @param sharedPrefsManager SharedPrefsManager для получения данных о маршрутах
+     * @return Pair(путь к созданному файлу, результат смены) или Pair(null, null) в случае ошибки
      */
-    fun generateHtmlReportWithDesign(shiftId: String, shiftDatabase: ShiftDatabaseManager, design: String): String? {
-        // Если дизайн minimal, используем отдельный метод
-        if (design.equals("minimal", ignoreCase = true)) {
-            return generateMinimalHtmlReport(shiftId, shiftDatabase)
+    fun generateHtmlReportWithDesign(shiftId: String, shiftDatabase: ShiftDatabaseManager, sharedPrefsManager: SharedPrefsManager?, context: Context? = null): Pair<String?, String?> {
+        Log.d("CloudStorageManager", "generateHtmlReportWithDesign: sharedPrefsManager=$sharedPrefsManager")
+        
+        // Добавляем логирование для отладки
+        if (sharedPrefsManager != null) {
+            Log.d("CloudStorageManager", "generateHtmlReportWithDesign: sharedPrefsManager.prefs = ${sharedPrefsManager.prefs}")
+            Log.d("CloudStorageManager", "generateHtmlReportWithDesign: isStrictSequenceEnabled() = ${sharedPrefsManager.isStrictSequenceEnabled()}")
+        } else {
+            Log.d("CloudStorageManager", "generateHtmlReportWithDesign: sharedPrefsManager is null")
         }
         
         return try {
             val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
             if (shift == null) {
                 Log.e(TAG, "Shift not found: $shiftId")
-                return null
+                return null to null
             }
 
             val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
             val logs = shiftDatabase.loadLogsByShift(shiftId)
+            
+            // Загружаем будильники для получения времени каждого обхода
+            val routeAlarms = sharedPrefsManager?.loadRouteAlarms() ?: emptyList()
+            
+            // Логируем количество логов и примеры значений inputValue
+            Log.d(TAG, "generateHtmlReportWithDesign: shiftId=$shiftId, logsCount=${logs.size}")
+            logs.forEach { log ->
+                if (log.actionType == "INPUT") {
+                    Log.d(TAG, "generateHtmlReportWithDesign: INPUT log - checkpoint=${log.checkpointName}, inputValue='${log.inputValue}', inputTitle='${log.inputTitle}', isNull=${log.inputValue == null}, length=${log.inputValue?.length}")
+                }
+            }
+            
+            // Логируем для отладки: все INPUT записи
+            logs.filter { it.actionType == "INPUT" }.forEach { log ->
+                Log.d(TAG, "generateHtmlReportWithDesign DEBUG: actionType=${log.actionType}, checkpoint=${log.checkpointName}, inputValue='${log.inputValue}', isNull=${log.inputValue == null}")
+            }
 
             val html = StringBuilder()
 
@@ -861,9 +916,48 @@ class CloudStorageManager(private val context: Context) {
 
             // === СТАТИСТИКА ПО ЧЕКПОИНТАМ ===
             val validCheckpoints = logs.filter { it.isSequenceCorrect }
+            val totalCheckpoints = logs.size
+            // Используем уже сохраненное значение общего количества чекпоинтов из SharedPreferences
+            // Если sharedPrefsManager недоступен, будет отображено "NULL"
 
             // === СТАТИСТИКА ПО НАРУШЕНИЯМ ===
             val totalViolations = logs.count { !it.isSequenceCorrect }
+
+            // === ЛОГИЧЕСКИЙ РЕЗУЛЬТАТ СМЕНЫ ===
+            // completedRounds.size - фактически пройденные обходы
+            // loadRouteRoundsCount() - запланированные обходы (из настроек)
+            // validCheckpoints.size - чекпоинты без нарушений (с нарушениями не учитываются)
+            // totalCheckpointsPlan - запланированные чекпоинты (из SharedPreferences)
+            val completedRoundsCount = completedRounds.size
+            val totalRoundsCount = sharedPrefsManager?.loadRouteRoundsCount() ?: rounds.size
+            val validCheckpointsCount = validCheckpoints.size
+            val totalCheckpointsCount = logs.size
+            
+            // Проверяем, включен ли строгий контроль
+            val strictSequenceEnabled = sharedPrefsManager?.isStrictSequenceEnabled() ?: false
+            Log.d("CloudStorageManager", "generateHtmlReportWithDesign: strictSequenceEnabled=$strictSequenceEnabled")
+            
+            // Определяем результат смены
+            val roundsMatchPlan = completedRoundsCount == totalRoundsCount
+            // Используем sharedPrefsManager для загрузки totalCheckpointsPlan, если доступен
+            val totalCheckpointsPlan = sharedPrefsManager?.loadTotalScheduledCheckpoints() ?: context?.let { SharedPrefsManager(it).loadTotalScheduledCheckpoints() }
+            val checkpointsMatchPlan = totalCheckpointsPlan != null && validCheckpointsCount == totalCheckpointsPlan
+            val hasViolations = totalViolations > 0
+            
+            val shiftResult = when {
+                // Если строгий контроль выключен - свободный режим
+                !strictSequenceEnabled -> "Свободный режим"
+                // Если количество обходов и чекпоинтов соответствуют плану, но были нарушения
+                roundsMatchPlan && checkpointsMatchPlan && hasViolations -> "ПОЙДЕТ"
+                // Если количество обходов или чекпоинтов не соответствуют плану (чекпоинты с нарушениями не учитываются)
+                !roundsMatchPlan || !checkpointsMatchPlan -> "ЭТО ФИАСКО"
+                // Если количество обходов и чекпоинтов соответствуют плану (без нарушений)
+                roundsMatchPlan && checkpointsMatchPlan -> "✓"
+                // Если totalCheckpointsPlan равен null, показываем предупреждение
+                totalCheckpointsPlan == null -> "⚠️ (NULL)"
+                // Иначе - есть проблема
+                else -> "⚠️"
+            }
 
             // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
             val sortedLogs = logs.sortedBy { it.timestamp }
@@ -894,6 +988,7 @@ class CloudStorageManager(private val context: Context) {
                         .round-info-item { background: #fff; padding: 8px; border-radius: 4px; border: 1px solid #eee; text-align: center; }
                         .round-info-item label { font-size: 11px; color: #666; }
                         .round-info-item value { font-size: 14px; font-weight: bold; color: #333; }
+                        .round-duration { color: #667eea; font-weight: bold; }
                         .guards-list { background: #fff3cd; padding: 8px; border-radius: 4px; margin: 10px 0; font-size: 13px; }
                         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px; }
                         .stat-item { text-align: center; padding: 12px; background: #f5f5f5; border-radius: 4px; }
@@ -943,18 +1038,20 @@ class CloudStorageManager(private val context: Context) {
             )
 
             // Статистика
-            // completedRounds, validCheckpoints, totalViolations, sortedLogs уже определены выше
+            // Используем уже объявленные переменные: completedRoundsCount, totalRoundsCount,
+            // validCheckpointsCount, totalCheckpointsCount, totalScheduledCheckpoints, shiftResult
+            
             html.append(
                 """
                 <div class="section">
                     <h2>📊 Статистика смены</h2>
                     <div class="stats-grid">
                         <div class="stat-item">
-                            <div class="stat-value success">${completedRounds.size}</div>
+                            <div class="stat-value success">$completedRoundsCount из ${context?.let { SharedPrefsManager(it).loadRouteRoundsCount() } ?: rounds.size}</div>
                             <div class="stat-label">Обходов (пройдено)</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value success">${validCheckpoints.size}</div>
+                            <div class="stat-value success">$validCheckpointsCount из ${context?.let { SharedPrefsManager(it).loadTotalScheduledCheckpoints() } ?: "NULL"}</div>
                             <div class="stat-label">Чекпоинтов (без нарушений)</div>
                         </div>
                         <div class="stat-item">
@@ -962,8 +1059,8 @@ class CloudStorageManager(private val context: Context) {
                             <div class="stat-label">Нарушений</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value">${rounds.size}</div>
-                            <div class="stat-label">Всего обходов</div>
+                            <div class="stat-value" style="font-size: 32px; color: ${if (shiftResult == "ПОЙДЕТ" || shiftResult == "✓") "#4caf50" else "#f44336"}">$shiftResult</div>
+                            <div class="stat-label">Результат</div>
                         </div>
                     </div>
                 </div>
@@ -972,27 +1069,30 @@ class CloudStorageManager(private val context: Context) {
 
             // Обходы и логи
             rounds.forEach { round ->
+                // Получаем время будильника для этого обхода
+                val alarmTime = routeAlarms.find { it.id == round.id }?.time ?: "-"
+                
                 html.append(
                     """
                     <div class="section">
                         <div class="round-card">
-                            <h3>🔄 Обход №${round.id}</h3>
+                            <h3>🔄 Обход №${round.id} (${alarmTime})</h3>
                             <div class="stats-grid">
                                 <div class="stat-item">
                                     <div class="stat-value">${round.routeName ?: "-"}</div>
                                     <div class="stat-label">Маршрут</div>
                                 </div>
                                 <div class="stat-item">
-                                    <div class="stat-value">${getTimePart(round.startTime)} - ${
-                        getTimePart(
-                            round.endTime
-                        ) ?: "-"
-                    }</div>
-                                    <div class="stat-label">Время</div>
+                                    <div class="stat-value">${getTimePart(round.startTime)}</div>
+                                    <div class="stat-label">Время начала</div>
                                 </div>
                                 <div class="stat-item">
-                                    <div class="stat-value">${round.checkpointsPassed}/${round.checkpointsCount}</div>
-                                    <div class="stat-label">Чекпоинтов</div>
+                                    <div class="stat-value">${getTimePart(round.endTime) ?: "-"}</div>
+                                    <div class="stat-label">Время окончания</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value round-duration">${calculateRoundDuration(round.startTime, round.endTime)}</div>
+                                    <div class="stat-label">Длительность</div>
                                 </div>
                             </div>
                 """.trimIndent()
@@ -1175,11 +1275,19 @@ class CloudStorageManager(private val context: Context) {
 
             Log.i(TAG, "HTML report saved to: ${outputFile.absolutePath}")
 
-            return outputFile.absolutePath
+            // Добавляем shiftResult в конец HTML комментарием для передачи в email
+            html.append("\n<!-- shift_result:$shiftResult -->")
+            
+            // Перезаписываем файл с shiftResult
+            FileOutputStream(outputFile).use { fos ->
+                fos.write(html.toString().toByteArray())
+            }
+
+            return outputFile.absolutePath to shiftResult
 
         } catch (e: Exception) {
             Log.e(TAG, "Error generating HTML report: ${e.message}", e)
-            return null
+            return null to null
         }
     }
     
@@ -1187,171 +1295,15 @@ class CloudStorageManager(private val context: Context) {
      * Генерирует минималистичный HTML-файл отчета для смены
      * Возвращает путь к созданному файлу
      */
-    fun generateMinimalHtmlReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
-        return try {
-            val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
-            if (shift == null) {
-                Log.e(TAG, "Shift not found: $shiftId")
-                return null
-            }
-
-            val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
-            val logs = shiftDatabase.loadLogsByShift(shiftId)
-
-            val html = StringBuilder()
-
-            // Извлекаем номер смены из ID
-            val shiftNumber = run {
-                val pattern = java.util.regex.Pattern.compile("NS\\d{6}_(\\d{3})")
-                val matcher = pattern.matcher(shiftId)
-                if (matcher.find()) {
-                    matcher.group(1)?.toInt() ?: 0
-                } else {
-                    0
-                }
-            }
-
-            val guards = shift.guardList
-            val guardsNames = if (guards.isNotEmpty()) guards.joinToString(", ") { it.name } else shift.employeeName
-            val completedRounds = rounds.filter { it.isCompleted }
-            val validCheckpoints = logs.filter { it.isSequenceCorrect }
-            val totalViolations = logs.count { !it.isSequenceCorrect }
-            val sortedLogs = logs.sortedBy { it.timestamp }
-
-            // Минималистичный HTML
-            html.append(
-                """
-                <!DOCTYPE html>
-                <html lang="ru">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Отчет о смене</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-                        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 15px; border-radius: 4px; }
-                        .header { background: #2196F3; color: white; padding: 15px; border-radius: 4px; margin-bottom: 15px; }
-                        .header h1 { margin: 0; font-size: 20px; }
-                        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
-                        .info-label { font-weight: bold; color: #666; }
-                        .info-value { color: #333; }
-                        .round { background: #f9f9f9; padding: 12px; margin-bottom: 12px; border-radius: 4px; border-left: 4px solid #2196F3; }
-                        .round h3 { margin: 0 0 8px 0; font-size: 16px; color: #2196F3; }
-                        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0; }
-                        .stat { text-align: center; padding: 10px; background: #f5f5f5; border-radius: 4px; }
-                        .stat-value { font-size: 24px; font-weight: bold; }
-                        .stat-value.violations { color: #f44336; }
-                        .stat-value.success { color: #4caf50; }
-                        .stat-label { font-size: 11px; color: #666; margin-top: 4px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; font-size: 13px; }
-                        th { background: #2196F3; color: white; }
-                        .violation { color: #f44336; }
-                        .footer { margin-top: 20px; text-align: center; color: #999; font-size: 11px; border-top: 1px solid #eee; padding-top: 10px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>ОТЧЕТ О СМЕНЕ</h1>
-                        </div>
-                        <div class="info-row"><span class="info-label">Смена №${shiftNumber}</span><span class="info-value">${shift.startTime.substring(0, 10)}</span></div>
-                        <div class="info-row"><span class="info-label">Охранники</span><span class="info-value">$guardsNames</span></div>
-                        <div class="info-row"><span class="info-label">Начало</span><span class="info-value">${shift.startTime.substring(11)}</span></div>
-                        <div class="info-row"><span class="info-label">Окончание</span><span class="info-value">${shift.endTime?.substring(11) ?: "-"}</span></div>
-                        
-                        <div class="stats">
-                            <div class="stat"><div class="stat-value success">${completedRounds.size}</div><div class="stat-label">Обходов</div></div>
-                            <div class="stat"><div class="stat-value success">${validCheckpoints.size}</div><div class="stat-label">Чекпоинтов</div></div>
-                            <div class="stat"><div class="stat-value violations">$totalViolations</div><div class="stat-label">Нарушений</div></div>
-                            <div class="stat"><div class="stat-value">${rounds.size}</div><div class="stat-label">Всего</div></div>
-                        </div>
-            """.trimIndent()
-            )
-
-            rounds.forEach { round ->
-                val roundLogs = logs.filter { it.roundId == round.id }
-                html.append(
-                    """
-                    <div class="round">
-                        <h3>Обход №${round.id} - ${round.routeName ?: "-"}</h3>
-                        <table>
-                            <tr><th>Чекпоинт</th><th>Время</th><th>Охранник</th><th>Статус</th></tr>
-                """.trimIndent()
-                )
-                
-                sortedLogs.forEach { log ->
-                    if (log.roundId == round.id) {
-                        val statusClass = if (log.isSequenceCorrect) "" else " class=\"violation\""
-                        val statusText = if (log.isSequenceCorrect) "OK" else "⚠️"
-                        html.append(
-                            """
-                            <tr$statusClass>
-                                <td>${log.checkpointName}</td>
-                                <td>${log.timestamp.substring(11)}</td>
-                                <td>${log.employeeName}</td>
-                                <td>$statusText</td>
-                            </tr>
-                            """.trimIndent()
-                        )
-                    }
-                }
-                
-                html.append(
-                    """
-                        </table>
-                    </div>
-                    """.trimIndent()
-                )
-            }
-
-            html.append(
-                """
-                        <div class="footer">
-                            Сгенерировано: ${dateFormat.format(Date())}<br>
-                            Ohrana Security System v1.0
-                        </div>
-                    </div>
-                </body>
-                </html>
-                """.trimIndent()
-            )
-
-            // Сохраняем файл
-            val fileName = "shift_report_${shift.id}_${jsonFormat.format(Date())}_minimal.html"
-            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val ohranaDir = File(downloadDir, "Ohrana")
-            val reportsDir = File(ohranaDir, "Reports")
-
-            if (!reportsDir.exists()) {
-                reportsDir.mkdirs()
-            }
-
-            val outputFile = File(reportsDir, fileName)
-            FileOutputStream(outputFile).use { fos ->
-                fos.write(html.toString().toByteArray())
-            }
-
-            Log.i(TAG, "Minimal HTML report saved to: ${outputFile.absolutePath}")
-
-            return outputFile.absolutePath
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error generating minimal HTML report: ${e.message}", e)
-            return null
-        }
-    }
-
-    /**
-     * Экспортирует отчет в оба формата (JSON и HTML)
-     * Возвращает путь к HTML файлу (для просмотра)
-     */
     fun exportShiftReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
+        Log.d("CloudStorageManager", "exportShiftReport: shiftId=$shiftId")
         // Сначала генерируем JSON
         generateJsonReport(shiftId, shiftDatabase)
 
         // Потом HTML (для просмотра)
-        return generateHtmlReport(shiftId, shiftDatabase)
+        val result = generateHtmlReport(shiftId, shiftDatabase, null)
+        Log.d("CloudStorageManager", "exportShiftReport: result=$result")
+        return result?.first
     }
 
     /**
@@ -1372,7 +1324,7 @@ class CloudStorageManager(private val context: Context) {
         val jsonPath = generateJsonReport(shiftId, shiftDatabase)
 
         // Генерируем HTML
-        val htmlPath = generateHtmlReport(shiftId, shiftDatabase)
+        val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, null)
 
         var jsonUploadResult: Result<String?> = Result.success(null)
         var htmlUploadResult: Result<String?> = Result.success(null)
@@ -1486,7 +1438,7 @@ class CloudStorageManager(private val context: Context) {
     }
 
     /**
-     * Экспортирует HTML отчет и загружает в Яндекс.Диск без сохранения на телефоне
+     * Экспортирует отчет в HTML и загружает в Яндекс.Диск без сохранения на телефоне
      * @param shiftId ID смены
      * @param shiftDatabase Менеджер базы данных смен
      * @param uploadToDisk Флаг, нужно ли загружать в Яндекс.Диск
@@ -1495,19 +1447,21 @@ class CloudStorageManager(private val context: Context) {
     fun exportHtmlToDisk(
         shiftId: String,
         shiftDatabase: ShiftDatabaseManager,
-        uploadToDisk: Boolean = false
+        uploadToDisk: Boolean = false,
+        context: Context? = null,
+        sharedPrefsManager: SharedPrefsManager? = null
     ): HtmlExportResult {
         Log.i(TAG, "exportHtmlToDisk: shiftId=$shiftId, uploadToDisk=$uploadToDisk")
         
         // Если не нужно загружать в Диск, просто генерируем и возвращаем путь
         if (!uploadToDisk) {
-            val htmlPath = generateHtmlReport(shiftId, shiftDatabase)
+            val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
             Log.i(TAG, "exportHtmlToDisk: Not uploading to disk, htmlPath=$htmlPath")
             return HtmlExportResult(htmlPath, Result.success(null))
         }
 
         // Загружаем HTML напрямую в Яндекс.Диск без сохранения на телефоне
-        val diskResult = uploadHtmlToDiskDirect(shiftId, shiftDatabase)
+        val diskResult = uploadHtmlToDiskDirect(shiftId, shiftDatabase, context)
         
         Log.i(TAG, "exportHtmlToDisk: diskResult=$diskResult")
         Log.i(TAG, "exportHtmlToDisk: isSuccess=${diskResult.isSuccess}")
@@ -1560,103 +1514,6 @@ class CloudStorageManager(private val context: Context) {
     }
     /**
      * Получает список всех сгенерированных отчетов
-     */
-
-    /**
-     * Загружает HTML отчет в DropMeFiles без сохранения на телефоне
-     * Использует OkHttp для работы с API
-     * @param shiftId ID смены
-     * @param shiftDatabase Менеджер базы данных смен
-     * @return Result с URL файла в DropMeFiles или сообщением об ошибке
-     */
-    fun uploadHtmlToDropMeDirect(
-        shiftId: String,
-        shiftDatabase: ShiftDatabaseManager
-    ): Result<String> {
-        return try {
-            val html = generateHtmlReport(shiftId, shiftDatabase)
-
-            if (html == null) {
-                Log.e(TAG, "uploadHtmlToDropMeDirect: Failed to generate HTML report")
-                return Result.failure(Exception("Ошибка генерации HTML отчета"))
-            }
-
-            Log.i(TAG, "uploadHtmlToDropMeDirect: HTML generated, uploading to DropMeFiles...")
-            Log.i(TAG, "uploadHtmlToDropMeDirect: HTML size: ${html.length} bytes")
-
-            // Используем OkHttp для загрузки
-            val client = okhttp3.OkHttpClient()
-
-            // Создаем MultipartBody для отправки файла (files[] для DropMeFiles, современный OkHttp API)
-            val fileRequestBody = okhttp3.RequestBody.create(
-                "text/html; charset=UTF-8".toMediaType(),
-                html.toByteArray(Charsets.UTF_8)
-            )
-            val requestBody = okhttp3.MultipartBody.Builder()
-                .setType(okhttp3.MultipartBody.FORM)
-                .addFormDataPart("files[]", "shift_report_${shiftId}.html", fileRequestBody)
-                .build()
-
-            // Формируем POST-запрос с заголовками для DropMeFiles
-            val request = okhttp3.Request.Builder()
-                .url("https://dropmefiles.com")
-                .post(requestBody)
-                .addHeader("Origin", "https://dropmefiles.com")
-                .addHeader("Referer", "https://dropmefiles.com/")
-                .addHeader("Accept", "application/json")
-                .addHeader(
-                    "User-Agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
-                .build()
-
-            // Выполняем запрос
-            client.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string() ?: ""
-
-                Log.i(TAG, "uploadHtmlToDropMeDirect: Response code: ${response.code}")
-                Log.i(TAG, "uploadHtmlToDropMeDirect: Response headers: ${response.headers}")
-                Log.i(TAG, "uploadHtmlToDropMeDirect: Response body: $responseBody")
-
-                if (!response.isSuccessful) {
-                    Log.e(
-                        TAG,
-                        "uploadHtmlToDropMeDirect: Server error: ${response.code} ${response.message}"
-                    )
-                    if (responseBody.contains("<html>") || responseBody.contains("<!DOCTYPE")) {
-                        Log.e(TAG, "uploadHtmlToDropMeDirect: Received HTML instead of JSON!")
-                    }
-                    return Result.failure(Exception("Ошибка сервера DropMeFiles: ${response.code} ${response.message}"))
-                }
-
-                // DropMeFiles возвращает JSON с массивом файлов
-                // Пример: {"files":[{"name":"file.html","link":"https://dropmefiles.com/xxx"}]}
-                val json = org.json.JSONObject(responseBody)
-                val filesArray = json.optJSONArray("files")
-
-                if (filesArray != null && filesArray.length() > 0) {
-                    val firstFile = filesArray.optJSONObject(0)
-                    val link = firstFile?.optString("link") ?: ""
-                    if (link.isNotEmpty()) {
-                        Log.i(TAG, "uploadHtmlToDropMeDirect: File URL: $link")
-                        Result.success(link)
-                    } else {
-                        Result.failure(Exception("Не удалось получить ссылку из ответа"))
-                    }
-                } else {
-                    Result.failure(Exception("Ответ не содержит файлов: $responseBody"))
-                }
-            }
-
-        } catch (e: Exception) {
-            val errorMsg = e.message ?: "Неизвестная ошибка"
-            Log.e(TAG, "uploadHtmlToDropMeDirect: Error: $errorMsg", e)
-            Result.failure(Exception("Ошибка загрузки в DropMeFiles: $errorMsg"))
-        }
-    }
-
-    /**
-     * Результат экспорта отчета в PDF и загрузки в Диск
      */
     data class PdfExportResult(
         val pdfPath: String?,
@@ -1791,9 +1648,14 @@ class CloudStorageManager(private val context: Context) {
      */
     fun uploadHtmlToDiskDirect(
         shiftId: String,
-        shiftDatabase: ShiftDatabaseManager
+        shiftDatabase: ShiftDatabaseManager,
+        context: Context? = null,
+        sharedPrefsManager: SharedPrefsManager? = null
     ): Result<String> {
         return try {
+            val spm = sharedPrefsManager ?: context?.let { SharedPrefsManager(it) }
+            // Загружаем будильники для получения времени каждого обхода
+            val routeAlarms = spm?.loadRouteAlarms() ?: emptyList()
             val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
             if (shift == null) {
                 Log.e(TAG, "uploadHtmlToDiskDirect: Shift not found: $shiftId")
@@ -1802,6 +1664,19 @@ class CloudStorageManager(private val context: Context) {
 
             val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
             val logs = shiftDatabase.loadLogsByShift(shiftId)
+
+            // Логируем количество логов и примеры значений inputValue
+            Log.d(TAG, "uploadHtmlToDiskDirect: shiftId=$shiftId, logsCount=${logs.size}")
+            logs.forEach { log ->
+                if (log.actionType == "INPUT") {
+                    Log.d(TAG, "uploadHtmlToDiskDirect: INPUT log - checkpoint=${log.checkpointName}, inputValue='${log.inputValue}', inputTitle='${log.inputTitle}'")
+                }
+            }
+            
+            // Логируем для отладки: все INPUT записи
+            logs.filter { it.actionType == "INPUT" }.forEach { log ->
+                Log.d(TAG, "uploadHtmlToDiskDirect DEBUG: actionType=${log.actionType}, checkpoint=${log.checkpointName}, inputValue='${log.inputValue}', isNull=${log.inputValue == null}")
+            }
 
             val html = StringBuilder()
 
@@ -1836,6 +1711,33 @@ class CloudStorageManager(private val context: Context) {
             // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
             val sortedLogs = logs.sortedBy { it.timestamp }
 
+            // === СТАТИСТИКА ДЛЯ ОТОБРАЖЕНИЯ (X из Y) ===
+            val completedRoundsCount = completedRounds.size
+            val totalRoundsCount = spm?.loadRouteRoundsCount() ?: rounds.size
+            val validCheckpointsCount = validCheckpoints.size
+            val totalCheckpointsCount = logs.size
+            // Используем уже сохраненное значение общего количества чекпоинтов из SharedPreferences
+            val totalScheduledCheckpoints = spm?.loadTotalScheduledCheckpoints() ?: "NULL"
+            
+            // === ЛОГИЧЕСКИЙ РЕЗУЛЬТАТ СМЕНЫ ===
+            val roundsMatchPlan = completedRoundsCount == totalRoundsCount
+            val totalCheckpointsPlan = spm?.loadTotalScheduledCheckpoints()
+            val checkpointsMatchPlan = totalCheckpointsPlan != null && totalCheckpointsCount == totalCheckpointsPlan
+            val hasViolations = totalViolations > 0
+            
+            // Проверяем, включен ли строгий контроль
+            val strictSequenceEnabled = spm?.isStrictSequenceEnabled() ?: false
+            
+            val shiftResult = when {
+                // Если строгий контроль выключен - свободный режим
+                !strictSequenceEnabled -> "Свободный режим"
+                roundsMatchPlan && checkpointsMatchPlan && hasViolations -> "ПОЙДЕТ"
+                (!roundsMatchPlan || !checkpointsMatchPlan) && hasViolations -> "ЭТО ФИАСКО"
+                roundsMatchPlan && checkpointsMatchPlan -> "✓"
+                totalCheckpointsPlan == null -> "⚠️ (NULL)"
+                else -> "⚠️"
+            }
+
             // HTML заголовок
             html.append(
                 """
@@ -1862,6 +1764,7 @@ class CloudStorageManager(private val context: Context) {
                         .round-info-item { background: #fff; padding: 8px; border-radius: 4px; border: 1px solid #eee; text-align: center; }
                         .round-info-item label { font-size: 11px; color: #666; }
                         .round-info-item value { font-size: 14px; font-weight: bold; color: #333; }
+                        .round-duration { color: #667eea; font-weight: bold; }
                         .guards-list { background: #fff3cd; padding: 8px; border-radius: 4px; margin: 10px 0; font-size: 13px; }
                         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px; }
                         .stat-item { text-align: center; padding: 12px; background: #f5f5f5; border-radius: 4px; }
@@ -1911,18 +1814,20 @@ class CloudStorageManager(private val context: Context) {
             )
 
             // Статистика
-            // completedRounds, validCheckpoints, totalViolations, sortedLogs уже определены выше
+            // Используем уже объявленные переменные: completedRoundsCount, totalRoundsCount,
+            // validCheckpointsCount, totalCheckpointsCount, totalScheduledCheckpoints, shiftResult
+            
             html.append(
                 """
                 <div class="section">
                     <h2>📊 Статистика смены</h2>
                     <div class="stats-grid">
                         <div class="stat-item">
-                            <div class="stat-value success">${completedRounds.size}</div>
+                            <div class="stat-value success">$completedRoundsCount из ${context?.let { SharedPrefsManager(it).loadRouteRoundsCount() } ?: rounds.size}</div>
                             <div class="stat-label">Обходов (пройдено)</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value success">${validCheckpoints.size}</div>
+                            <div class="stat-value success">$validCheckpointsCount из ${context?.let { SharedPrefsManager(it).loadTotalScheduledCheckpoints() } ?: "NULL"}</div>
                             <div class="stat-label">Чекпоинтов (без нарушений)</div>
                         </div>
                         <div class="stat-item">
@@ -1930,8 +1835,8 @@ class CloudStorageManager(private val context: Context) {
                             <div class="stat-label">Нарушений</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value">${rounds.size}</div>
-                            <div class="stat-label">Всего обходов</div>
+                            <div class="stat-value" style="font-size: 32px; color: ${if (shiftResult == "ПОЙДЕТ" || shiftResult == "✓") "#4caf50" else "#f44336"}">$shiftResult</div>
+                            <div class="stat-label">Результат</div>
                         </div>
                     </div>
                 </div>
@@ -1940,27 +1845,30 @@ class CloudStorageManager(private val context: Context) {
 
             // Обходы и логи
             rounds.forEach { round ->
+                // Получаем время будильника для этого обхода
+                val alarmTime = routeAlarms.find { it.id == round.id }?.time ?: "-"
+                
                 html.append(
                     """
                     <div class="section">
                         <div class="round-card">
-                            <h3>🔄 Обход №${round.id}</h3>
+                            <h3>🔄 Обход №${round.id} (${alarmTime})</h3>
                             <div class="stats-grid">
                                 <div class="stat-item">
                                     <div class="stat-value">${round.routeName ?: "-"}</div>
                                     <div class="stat-label">Маршрут</div>
                                 </div>
                                 <div class="stat-item">
-                                    <div class="stat-value">${getTimePart(round.startTime)} - ${
-                        getTimePart(
-                            round.endTime
-                        ) ?: "-"
-                    }</div>
-                                    <div class="stat-label">Время</div>
+                                    <div class="stat-value">${getTimePart(round.startTime)}</div>
+                                    <div class="stat-label">Время начала</div>
                                 </div>
                                 <div class="stat-item">
-                                    <div class="stat-value">${round.checkpointsPassed}/${round.checkpointsCount}</div>
-                                    <div class="stat-label">Чекпоинтов</div>
+                                    <div class="stat-value">${getTimePart(round.endTime) ?: "-"}</div>
+                                    <div class="stat-label">Время окончания</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value round-duration">${calculateRoundDuration(round.startTime, round.endTime)}</div>
+                                    <div class="stat-label">Длительность</div>
                                 </div>
                             </div>
                 """.trimIndent()

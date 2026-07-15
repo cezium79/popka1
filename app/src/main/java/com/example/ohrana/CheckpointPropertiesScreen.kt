@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -206,4 +207,7 @@ fun CheckpointPropertiesScreen(
             }
         }
     }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }

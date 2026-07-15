@@ -29,6 +29,7 @@ import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import java.io.FileOutputStream
 import java.io.File
+import androidx.activity.compose.BackHandler
 import android.os.Environment
 import android.net.Uri
 import android.content.Intent
@@ -639,7 +640,8 @@ fun ShiftLogDetailScreen(
         )
     }
     
-
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }
 
 // Функция экспорта отчета в PDF

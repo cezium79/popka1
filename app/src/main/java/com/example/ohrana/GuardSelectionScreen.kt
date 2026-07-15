@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -231,6 +232,9 @@ fun GuardSelectionScreen(
             ).show()
         }
     }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }
 
 @Composable

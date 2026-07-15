@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="GigaCodeAgentSettings">
-    <option name="autoApproveEdits" value="true" />
     <option name="autoApprovedCommands">
       <list>
         <Execute>
@@ -99,6 +98,9 @@
         </Execute>
         <Execute>
           <option name="pattern" value="Test-Path &quot;C:/Android/Ohrana-c7953c45/EMAIL_REPORT_README.md&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; ./gradlew assembleDebug --stacktrace 2&gt;&amp;1 | Select-String -Pattern &quot;error:&quot; -Context 0,3 | Select-Object -First 15" />
         </Execute>
       </list>
     </option>

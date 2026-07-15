@@ -51,6 +51,7 @@ import android.content.Intent
 import android.net.Uri
 import com.example.ohrana.SharedPrefsManager
 import com.example.ohrana.CloudStorageManager
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -482,51 +483,6 @@ fun CloudSettingsScreen(
                 
                 Spacer(modifier = Modifier.height(32.dp))
                 
-                // Выбор дизайна отчета
-                var showReportDesignMenu by remember { mutableStateOf(false) }
-                
-                Text(
-                    text = "Дизайн отчета в формате HTML:",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                
-                Box {
-                    OutlinedButton(
-                        onClick = { showReportDesignMenu = true },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                    ) {
-                        val currentDesign = prefsManager.getReportDesign()
-                        val designDescription = if (currentDesign == "minimal") "Минималистичный" else "Полный (по умолчанию)"
-                        Text(designDescription)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                    }
-                    
-                    DropdownMenu(
-                        expanded = showReportDesignMenu,
-                        onDismissRequest = { showReportDesignMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Полный (по умолчанию)") },
-                            onClick = {
-                                prefsManager.saveReportDesign("full")
-                                showReportDesignMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Минималистичный") },
-                            onClick = {
-                                prefsManager.saveReportDesign("minimal")
-                                showReportDesignMenu = false
-                            }
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(32.dp))
-                
                 // Выпадающее меню действия со ссылкой
                 var showLinkActionMenu by remember { mutableStateOf(false) }
                 
@@ -755,6 +711,9 @@ fun CloudSettingsScreen(
             }
         }
     }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }
 
 private fun saveSettings(

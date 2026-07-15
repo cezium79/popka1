@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -18,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -33,6 +35,7 @@ import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,7 +44,9 @@ fun AdministratorScreen(
     onNavigateToRoutes: () -> Unit,
     onNavigateToLogs: () -> Unit,
     onNavigateToCloudSettings: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    currentScreen: String,
+    onNavigateToSoundSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -49,6 +54,7 @@ fun AdministratorScreen(
 
     var isStrictSequence by remember { mutableStateOf(prefsManager.isStrictSequenceEnabled()) }
     var isAutoEndRound by remember { mutableStateOf(prefsManager.isAutoEndRoundEnabled()) }
+    var useSounds by remember { mutableStateOf(prefsManager.isSoundEnabled()) }
     var guardsCount by remember { mutableStateOf(prefsManager.getGuardsCount()) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -145,38 +151,52 @@ fun AdministratorScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF616161) // Серый фон как у экрана
+                )
             )
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color(0xFF616161)) // Серый фон
                 .padding(paddingValues)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Кнопки навигации
+            // Кнопки навигации (тёмно-серые с белым текстом)
             Button(
                 onClick = onNavigateToEmployeeList,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242), // Тёмно-серый
+                    contentColor = Color(0xFFFFFFFF)    // Белый текст
+                ),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
             ) {
-                Text("Редактировать список сотрудников", fontSize = 16.sp)
+                Text("Список сотрудников", fontSize = 16.sp)
             }
             
             Button(
                 onClick = onNavigateToRoutes,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242), // Тёмно-серый
+                    contentColor = Color(0xFFFFFFFF)    // Белый текст
+                ),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
             ) {
-                Text("Редактирование маршрутов", fontSize = 16.sp)
+                Text("Маршруты", fontSize = 16.sp)
             }
             
             Button(
                 onClick = onNavigateToLogs,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242), // Тёмно-серый
+                    contentColor = Color(0xFFFFFFFF)    // Белый текст
+                ),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
             ) {
                 Text("Журналы", fontSize = 16.sp)
@@ -184,7 +204,10 @@ fun AdministratorScreen(
             
             Button(
                 onClick = onNavigateToCloudSettings,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242), // Тёмно-серый
+                    contentColor = Color(0xFFFFFFFF)    // Белый текст
+                ),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
             ) {
                 Text("Настройки облачных хранилищ", fontSize = 16.sp)
@@ -296,6 +319,53 @@ fun AdministratorScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
             
+            // Настройка звукового сопровождения
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Использовать звуки",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                        Text(
+                            text = "Включить/выключить звуковое сопровождение событий",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Switch(
+                        checked = useSounds,
+                        onCheckedChange = { isChecked ->
+                            useSounds = isChecked
+                            prefsManager.setSoundEnabled(isChecked)
+                        }
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Кнопка "Настройки звука"
+            Button(
+                onClick = onNavigateToSoundSettings,
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) {
+                Text("Настройки звука", fontSize = 14.sp)
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
             // Настройка количества охранников
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -310,7 +380,7 @@ fun AdministratorScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Количество охранников",
+                            text = "Состав смены",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                         )
@@ -475,4 +545,7 @@ fun AdministratorScreen(
             }
         )
     }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }

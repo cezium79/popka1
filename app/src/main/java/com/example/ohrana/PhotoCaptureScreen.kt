@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,6 +54,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.util.Log
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,6 +94,9 @@ fun PhotoCaptureScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     // Флаг для отслеживания завершения
     var isPhotoComplete by remember { mutableStateOf(false) }
+    
+    // Для показа диалога успешного прохождения чекпоинта
+    var showCheckpointPassedDialog by remember { mutableStateOf(false) }
 
     // Сначала сохраняем в приватную папку
     val filesDir = context.filesDir
@@ -101,6 +107,16 @@ fun PhotoCaptureScreen(
     // Вызываем onCheckpointComplete при завершении съемки
     LaunchedEffect(isPhotoComplete) {
         if (isPhotoComplete) {
+            // Сначала показываем диалог успешного прохождения
+            showCheckpointPassedDialog = true
+            isPhotoComplete = false
+        }
+    }
+    
+    // Обрабатываем закрытие диалога и переход к следующему экрану
+    LaunchedEffect(showCheckpointPassedDialog) {
+        if (showCheckpointPassedDialog == false && capturedBitmap != null) {
+            // Показали диалог - теперь завершаем чекпоинт
             onCheckpointComplete()
             isPhotoComplete = false
             // Закрываем экран после завершения
@@ -135,12 +151,19 @@ fun PhotoCaptureScreen(
                                 // Сохраняем лог в SharedPreferences
                                 val logText = "Фото прибора: $checkpointId -> Файл: $fileName"
                                 prefsManager.saveScanResult(employeeName = employeeName, qrContent = logText)
+                                
+                                Log.d("PhotoCaptureScreen", "Photo saved successfully for checkpoint $checkpointId")
                             }
                         }
                     }
 
                     override fun onError(exception: ImageCaptureException) {
                         exception.printStackTrace()
+                        
+                        // Воспроизводим звук ошибки
+                        SoundPlayer.playError(context)
+                        
+                        Log.e("PhotoCaptureScreen", "Photo capture failed for checkpoint $checkpointId: ${exception.message}")
                     }
                 }
             )
@@ -413,6 +436,77 @@ fun PhotoCaptureScreen(
             }
         }
     }
+    
+    // Диалоговое окно успешного прохождения чекпоинта (показывается после нажатия "Сохранить")
+    if (showCheckpointPassedDialog) {
+        // Воспроизводим звук успеха при показе диалога
+        LaunchedEffect(showCheckpointPassedDialog) {
+            SoundPlayer.playSuccess(context)
+        }
+        
+        // Таймер для автоматического закрытия диалога
+        var autoCloseTrigger by remember { mutableStateOf(false) }
+        
+        LaunchedEffect(showCheckpointPassedDialog) {
+            autoCloseTrigger = false
+            kotlinx.coroutines.delay(100)
+            kotlinx.coroutines.delay(3000) // Ждем 3 секунды
+            showCheckpointPassedDialog = false
+        }
+        
+        AlertDialog(
+            onDismissRequest = { }, // Запрещаем закрытие кликом вне
+            title = { Text("Точка зафиксирована") },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Большая зеленая галочка
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(50.dp))
+                            .background(Color(0xFF4CAF50))
+                            .align(Alignment.CenterHorizontally),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Успех",
+                            modifier = Modifier.size(60.dp),
+                            tint = Color.White
+                        )
+                    }
+                    
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Фото прибора: $checkpointId",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Файл сохранен в галерею",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Время: ${java.text.SimpleDateFormat("HH:mm:ss dd.MM.yyyy", java.util.Locale.getDefault()).format(java.util.Date())}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {}  // Пустой confirmButton для компиляции
+        )
+    }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
 }
 
 // Функция для сохранения фото в галерею

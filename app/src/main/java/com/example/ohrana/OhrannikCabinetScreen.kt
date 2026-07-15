@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.Color
@@ -48,12 +49,14 @@ import com.example.ohrana.ShiftDatabaseManager
 import com.example.ohrana.QrHandler
 import com.example.ohrana.QrResult
 import com.example.ohrana.SharedPrefsManager
+import com.example.ohrana.SoundPlayer
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import androidx.activity.compose.BackHandler
 
 private const val TAG = "OhrannikCabinetScreen"
 
@@ -101,7 +104,7 @@ fun OhrannikCabinetScreen(
         val activeRoundIndex = manager.getActiveRoundIndex()
         if (activeRoundIndex != -1) {
             Log.d(TAG, "completeRoundManually: Completing round $activeRoundIndex")
-            val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            val currentTime = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
             manager.completeRound(activeRoundIndex, currentTime)
             QrHandler.endRoundIfActive()
             
@@ -316,6 +319,9 @@ fun OhrannikCabinetScreen(
                             }
                         )
                         
+                        // Воспроизводим звук ошибки
+                        SoundPlayer.playError(context)
+                        
                         nfcScanResult = null
                         return@LaunchedEffect
                     }
@@ -324,6 +330,9 @@ fun OhrannikCabinetScreen(
                 // NFC-ID найден в базе - обрабатываем в зависимости от типа
                 when (checkpoint.action) {
                     CheckpointAction.CHECKPOINT -> {
+                        // Воспроизводим звук успеха
+                        SoundPlayer.playSuccess(context)
+                        
                         // Сохраняем факт сканирования (для аудита)
                         val activeRoundIndex = manager.getActiveRoundIndex()
                         if (activeRoundIndex != -1) {
@@ -425,6 +434,9 @@ fun OhrannikCabinetScreen(
             } else {
                 // NFC-ID не найден в базе
                 showErrorDialog = "NFC-тег не найден в базе чекпоинтов"
+                
+                // Воспроизводим звук ошибки
+                SoundPlayer.playError(context)
             }
             
             nfcScanResult = null
@@ -553,6 +565,9 @@ fun OhrannikCabinetScreen(
                                                                 // --- НОВЫЙ БЛОК ОБРАБОТКИ РЕЗУЛЬТАТА ---
                                                                 when (qrResult) {
                                                                     is QrResult.CheckpointPassed -> {
+                                                                        // Воспроизводим звук успеха при успешном проходе чекпоинта
+                                                                        SoundPlayer.playSuccess(context)
+                                                                        
                                                                         // Ваша логика при успешном проходе точки
                                                                         showCheckpointPassedDialog = qrResult
                                                                     }
@@ -692,76 +707,118 @@ fun OhrannikCabinetScreen(
         )
     }
 
-    // 1. Диалог для обычной метки локации
+    // 1. Диалог для обычной метки локации (простой чекпоинт)
     // --- РЕНДЕРИНГ ДИАЛОГА ОБ УСПЕШНОМ ПРОХОЖДЕНИИ ---
     showCheckpointPassedDialog?.let { result ->
-        AlertDialog(
-            onDismissRequest = { showCheckpointPassedDialog = null }, // Закрываем при клике вне окна или назад
-            title = { Text("Точка зафиксирована") },
-            text = {
-                Column {
-                    Text("Локация: ${result.name}")
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("ID: ${result.checkpointId}")
-                    Text("Время: ${result.timestamp}")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showCheckpointPassedDialog = null
-                    // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
-                    val activeRoundIndex = manager.getActiveRoundIndex()
-                    if (activeRoundIndex != -1) {
-                        // Получаем последнюю запись SCAN
-                        val lastScanEntry = manager.shiftDatabase.loadLogsByRound(activeRoundIndex).asReversed().find { it.actionType == "SCAN" }
-                        manager.shiftDatabase.updateLastScanEntry(
-                            roundId = activeRoundIndex,
-                            actionType = "CHECKPOINT"
-                            // questionText и inputTitle не передаются - они будут взяты из чекпоинта
-                        )
-                        val newCheckpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex) + 1
-                        manager.updateCurrentCheckpointIndex(newCheckpointIndex)
-                    }
-                    // Обновляем имя следующего чекпоинта
-                    checkpointScanTrigger = System.currentTimeMillis()
-                    
-                    // Проверяем, является ли это последним чекпоинтом
-                    val expectedCheckpointName = manager.getNextCheckpointName()
-                    
-                    // Получаем количество чекпоинтов в маршруте
-                    var isLastCheckpoint = false
-                    if (activeRoundIndex != -1) {
-                        val routeId = manager.getRoundRouteId(activeRoundIndex)
-                        val route = routeId?.let { manager.getRouteById(it) }
-                        val checkpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex)
-                        if (route != null && checkpointIndex >= route.checkpointIds.size) {
-                            isLastCheckpoint = true
-                        }
-                    }
-                    
-                    Log.d(TAG, "CheckpointPassed: expectedCheckpointName=${expectedCheckpointName.orEmpty()}, isLastCheckpoint=$isLastCheckpoint, autoEndEnabled=${manager.isAutoEndRoundEnabled()}")
-                    
-                    // Проверяем, является ли это последним чекпоинтом
-                    val isLastCheckpointResult = (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank() || isLastCheckpoint)
-                    
-                    if (isLastCheckpointResult) {
-                        Log.d(TAG, "CheckpointPassed: Last checkpoint reached")
-                        // Если включен авто-финал - завершаем обход
-                        if (manager.isAutoEndRoundEnabled()) {
-                            Log.d(TAG, "CheckpointPassed: Auto end round is enabled")
-                            completeRoundManually()
-                        } else {
-                            Log.d(TAG, "CheckpointPassed: Auto end round is disabled, waiting for manual completion via TopAppBar button")
-                            // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
-                            // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
-                        }
-                    } else {
-                        Log.d(TAG, "CheckpointPassed: More checkpoints available, continuing...")
-                    }
-                }) {
-                    Text("ОК")
+        // Запускаем таймер для автоматического закрытия
+        var autoCloseTrigger by remember { mutableStateOf(false) }
+        
+        LaunchedEffect(showCheckpointPassedDialog) {
+            autoCloseTrigger = false
+            kotlinx.coroutines.delay(100) // Небольшая задержка перед началом отсчета
+            kotlinx.coroutines.delay(3000) // Ждем 3 секунды
+            
+            // Обновляем индекс при закрытии диалога
+            val activeRoundIndex = manager.getActiveRoundIndex()
+            if (activeRoundIndex != -1) {
+                // Получаем последнюю запись SCAN
+                val lastScanEntry = manager.shiftDatabase.loadLogsByRound(activeRoundIndex).asReversed().find { it.actionType == "SCAN" }
+                manager.shiftDatabase.updateLastScanEntry(
+                    roundId = activeRoundIndex,
+                    actionType = "CHECKPOINT"
+                    // questionText и inputTitle не передаются - они будут взяты из чекпоинта
+                )
+                val newCheckpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex) + 1
+                manager.updateCurrentCheckpointIndex(newCheckpointIndex)
+            }
+            // Обновляем имя следующего чекпоинта
+            checkpointScanTrigger = System.currentTimeMillis()
+            
+            // Проверяем, является ли это последним чекпоинтом
+            val expectedCheckpointName = manager.getNextCheckpointName()
+            
+            // Получаем количество чекпоинтов в маршруте
+            var isLastCheckpoint = false
+            if (activeRoundIndex != -1) {
+                val routeId = manager.getRoundRouteId(activeRoundIndex)
+                val route = routeId?.let { manager.getRouteById(it) }
+                val checkpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex)
+                if (route != null && checkpointIndex >= route.checkpointIds.size) {
+                    isLastCheckpoint = true
                 }
             }
+            
+            Log.d(TAG, "CheckpointPassed: expectedCheckpointName=${expectedCheckpointName.orEmpty()}, isLastCheckpoint=$isLastCheckpoint, autoEndEnabled=${manager.isAutoEndRoundEnabled()}")
+            
+            // Проверяем, является ли это последним чекпоинтом
+            val isLastCheckpointResult = (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank() || isLastCheckpoint)
+            
+            if (isLastCheckpointResult) {
+                Log.d(TAG, "CheckpointPassed: Last checkpoint reached")
+                // Если включен авто-финал - завершаем обход
+                if (manager.isAutoEndRoundEnabled()) {
+                    Log.d(TAG, "CheckpointPassed: Auto end round is enabled")
+                    completeRoundManually()
+                } else {
+                    Log.d(TAG, "CheckpointPassed: Auto end round is disabled, waiting for manual completion via TopAppBar button")
+                    // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
+                    // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
+                }
+            } else {
+                Log.d(TAG, "CheckpointPassed: More checkpoints available, continuing...")
+            }
+            
+            showCheckpointPassedDialog = null
+        }
+        
+        AlertDialog(
+            onDismissRequest = { }, // Запрещаем закрытие кликом вне
+            title = { Text("Точка зафиксирована") },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Большая зеленая галочка
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(50.dp))
+                            .background(Color(0xFF4CAF50))
+                            .align(Alignment.CenterHorizontally),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Успех",
+                            modifier = Modifier.size(60.dp),
+                            tint = Color.White
+                        )
+                    }
+                    
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Локация: ${result.name}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "ID: ${result.checkpointId}",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Время: ${result.timestamp}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {}  // Пустой confirmButton для компиляции
         )
     }
 
@@ -881,7 +938,7 @@ fun OhrannikCabinetScreen(
                             // Обновляем последнюю запись SCAN на тип INPUT
                             val activeRoundIndex = manager.getActiveRoundIndex()
                             if (activeRoundIndex != -1) {
-                                android.util.Log.d(TAG, "InputFormat: Updating SCAN entry with inputValue='$dialogInputText'")
+                                android.util.Log.d(TAG, "InputFormat: Updating SCAN entry with inputValue='$dialogInputText', isNull=${dialogInputText == null}, length=${dialogInputText?.length}")
                                 val success = manager.shiftDatabase.updateLastScanEntry(
                                     roundId = activeRoundIndex,
                                     actionType = "INPUT",
@@ -893,7 +950,7 @@ fun OhrannikCabinetScreen(
                                 // Дополнительно: проверяем, что запись действительно обновлена
                                 val updatedLogs = manager.shiftDatabase.loadLogsByRound(activeRoundIndex)
                                 val inputEntry = updatedLogs.asReversed().find { it.actionType == "INPUT" }
-                                android.util.Log.d(TAG, "InputFormat: Verified INPUT entry - actionType=${inputEntry?.actionType}, inputValue='${inputEntry?.inputValue}'")
+                                android.util.Log.d(TAG, "InputFormat: Verified INPUT entry - actionType=${inputEntry?.actionType}, inputValue='${inputEntry?.inputValue}', isNull=${inputEntry?.inputValue == null}")
                             }
 
                             showInputDialog = null
@@ -1022,6 +1079,225 @@ fun OhrannikCabinetScreen(
                 }
             }
         )
+    }
+    
+    // Обработка системной кнопки "Назад"
+    BackHandler(onBack = onBack)
+}
+
+// ============================================
+// PREVIEW - Для отображения в Android Studio
+// ============================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, name = "Кабинет охранника")
+@Composable
+fun OhrannikCabinetScreenPreview() {
+    androidx.compose.material3.MaterialTheme {
+        androidx.compose.foundation.layout.Box(
+            modifier = androidx.compose.ui.Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color(0xFFFAFAFA))
+        ) {
+            // TopAppBar
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .background(androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                    .align(androidx.compose.ui.Alignment.TopCenter)
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Назад",
+                    modifier = androidx.compose.ui.Modifier
+                        .align(androidx.compose.ui.Alignment.CenterStart)
+                        .padding(start = 16.dp),
+                    tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                )
+                
+                androidx.compose.material3.Text(
+                    text = "Иванов Иван",
+                    modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.Center),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                )
+                
+                androidx.compose.material3.Button(
+                    onClick = {},
+                    modifier = androidx.compose.ui.Modifier
+                        .align(androidx.compose.ui.Alignment.CenterEnd)
+                        .padding(end = 16.dp)
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "Завершить",
+                        fontSize = 14.sp
+                    )
+                }
+            }
+            
+            // Content
+            androidx.compose.foundation.layout.Column(
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxSize()
+                    .padding(top = 64.dp)
+                    .padding(16.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+            ) {
+                androidx.compose.material3.Text(
+                    text = "Следующая точка: Проверка ворот",
+                    fontSize = 18.sp,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                    modifier = androidx.compose.ui.Modifier.padding(bottom = 16.dp)
+                )
+                
+                // Camera preview container
+                androidx.compose.foundation.layout.Box(
+                    modifier = androidx.compose.ui.Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(androidx.compose.ui.graphics.Color(0xFF212121))
+                        .padding(bottom = 16.dp),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "[Камера]",
+                        fontSize = 14.sp,
+                        color = androidx.compose.ui.graphics.Color.LightGray
+                    )
+                }
+                
+                // Green frame
+                androidx.compose.foundation.layout.Box(
+                    modifier = androidx.compose.ui.Modifier
+                        .size(280.dp)
+                        .border(
+                            androidx.compose.foundation.BorderStroke(3.dp, androidx.compose.ui.graphics.Color.Green),
+                            androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        )
+                )
+                
+                // Scan button
+                androidx.compose.material3.Button(
+                    onClick = {},
+                    modifier = androidx.compose.ui.Modifier
+                        .width(200.dp)
+                        .height(56.dp)
+                        .padding(top = 16.dp)
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "Сканировать QR",
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, name = "Кабинет охранника (темная тема)")
+@Composable
+fun OhrannikCabinetScreenPreviewDark() {
+    androidx.compose.material3.MaterialTheme {
+        androidx.compose.foundation.layout.Box(
+            modifier = androidx.compose.ui.Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color(0xFF121212))
+        ) {
+            // TopAppBar
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .background(androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                    .align(androidx.compose.ui.Alignment.TopCenter)
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Назад",
+                    modifier = androidx.compose.ui.Modifier
+                        .align(androidx.compose.ui.Alignment.CenterStart)
+                        .padding(start = 16.dp),
+                    tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                )
+                
+                androidx.compose.material3.Text(
+                    text = "Иванов Иван",
+                    modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.Center),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary
+                )
+                
+                androidx.compose.material3.Button(
+                    onClick = {},
+                    modifier = androidx.compose.ui.Modifier
+                        .align(androidx.compose.ui.Alignment.CenterEnd)
+                        .padding(end = 16.dp)
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "Завершить",
+                        fontSize = 14.sp
+                    )
+                }
+            }
+            
+            // Content
+            androidx.compose.foundation.layout.Column(
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxSize()
+                    .padding(top = 64.dp)
+                    .padding(16.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+            ) {
+                androidx.compose.material3.Text(
+                    text = "Следующая точка: Проверка ворот",
+                    fontSize = 18.sp,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                    modifier = androidx.compose.ui.Modifier.padding(bottom = 16.dp)
+                )
+                
+                // Camera preview container
+                androidx.compose.foundation.layout.Box(
+                    modifier = androidx.compose.ui.Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(androidx.compose.ui.graphics.Color(0xFF424242))
+                        .padding(bottom = 16.dp),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "[Камера]",
+                        fontSize = 14.sp,
+                        color = androidx.compose.ui.graphics.Color.LightGray
+                    )
+                }
+                
+                // Green frame
+                androidx.compose.foundation.layout.Box(
+                    modifier = androidx.compose.ui.Modifier
+                        .size(280.dp)
+                        .border(
+                            androidx.compose.foundation.BorderStroke(3.dp, androidx.compose.ui.graphics.Color.Green),
+                            androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        )
+                )
+                
+                // Scan button
+                androidx.compose.material3.Button(
+                    onClick = {},
+                    modifier = androidx.compose.ui.Modifier
+                        .width(200.dp)
+                        .height(56.dp)
+                        .padding(top = 16.dp)
+                ) {
+                    androidx.compose.material3.Text(
+                        text = "Сканировать QR",
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
     }
 }
 

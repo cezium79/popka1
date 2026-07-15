@@ -142,11 +142,15 @@ class SharedPrefsManager(private val context: Context) {
     // --- МЕТОДЫ УПРАВЛЕНИЯ СМЕНОЙ ОХРАННИКА ---
 // Включен ли строгий контроль последовательности сканирования (true/false)
     fun isStrictSequenceEnabled(): Boolean {
-        return prefs.getBoolean("strict_sequence_enabled", false)
+        val value = prefs.getBoolean("strict_sequence_enabled", false)
+        Log.d("SharedPrefsManager", "isStrictSequenceEnabled: value=$value")
+        return value
     }
 
     fun setStrictSequenceEnabled(enabled: Boolean) {
+        Log.d("SharedPrefsManager", "setStrictSequenceEnabled: enabled=$enabled")
         prefs.edit().putBoolean("strict_sequence_enabled", enabled).apply()
+        Log.d("SharedPrefsManager", "setStrictSequenceEnabled: after apply, value=${prefs.getBoolean("strict_sequence_enabled", false)}")
     }
 
     // Включен ли автоматический перехват обхода при завершении последнего чекпоинта
@@ -156,6 +160,72 @@ class SharedPrefsManager(private val context: Context) {
 
     fun setAutoEndRoundEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("auto_end_round_enabled", enabled).apply()
+    }
+
+    // Включен ли звуковой сигнал
+    fun isSoundEnabled(): Boolean {
+        return prefs.getBoolean("sound_enabled", true)
+    }
+
+    fun setSoundEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("sound_enabled", enabled).apply()
+    }
+    
+    // Включен ли звук для конкретного события
+    fun isSoundEnabledForEvent(eventId: Int): Boolean {
+        return prefs.getBoolean("sound_event_${eventId}", prefs.getBoolean("sound_enabled", true))
+    }
+
+    fun setSoundEnabledForEvent(eventId: Int, enabled: Boolean) {
+        prefs.edit().putBoolean("sound_event_${eventId}", enabled).apply()
+    }
+    
+    // Получить URI звука события (для выбора звука)
+    fun getEventSoundUri(eventId: Int): android.net.Uri {
+        // Сначала проверяем сохраненный URI в SharedPreferences
+        val savedUriString = prefs.getString("sound_event_uri_${eventId}", null)
+        if (!savedUriString.isNullOrBlank()) {
+            try {
+                return android.net.Uri.parse(savedUriString)
+            } catch (e: Exception) {
+                android.util.Log.e("SharedPrefsManager", "Error parsing saved URI for event $eventId: ${e.message}")
+            }
+        }
+        
+        // Если URI не сохранен, возвращаем дефолтный
+        return when (eventId) {
+            1 -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+            2 -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+            3 -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+            else -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+        }
+    }
+    
+    // Установить URI звука события (для выбора звука)
+    fun setEventSoundUri(eventId: Int, uri: android.net.Uri) {
+        prefs.edit().putString("sound_event_uri_${eventId}", uri.toString()).apply()
+    }
+    
+    // Воспроизвести звук события (для предпросмотра в настройках)
+    fun playEventSound(context: android.content.Context, eventId: Int) {
+        val soundUri = when (eventId) {
+            1 -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+            2 -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+            3 -> android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+            else -> null
+        }
+        
+        soundUri?.let {
+            try {
+                val mediaPlayer = android.media.MediaPlayer.create(context, it)
+                mediaPlayer?.setOnCompletionListener {
+                    it.release()
+                }
+                mediaPlayer?.start()
+            } catch (e: Exception) {
+                android.util.Log.e("SharedPrefsManager", "Error playing event sound: ${e.message}")
+            }
+        }
     }
 
     // Сохраняет, был ли контроль последовательности включён в этой смене
@@ -206,6 +276,7 @@ class SharedPrefsManager(private val context: Context) {
         guardList: List<GuardMember>, 
         strictSequenceEnabled: Boolean
     ) {
+        Log.d("SharedPrefsManager", "startNewShift: strictSequenceEnabled=$strictSequenceEnabled")
         val currentTime = dateFormat.format(Date()) // Генерирует строку вида "27.06.2026 15:30:00"
         
         // Сохраняем список охранников в SharedPreferences
@@ -237,6 +308,8 @@ class SharedPrefsManager(private val context: Context) {
             putBoolean("active_shift_is_running", true)
             // Сохраняем статус контроля последовательности при старте смены
             putBoolean("sequence_control_was_enabled", strictSequenceEnabled)
+            // ДОБАВЛЕНО: также сохраняем strict_sequence_enabled для отчетов
+            putBoolean("strict_sequence_enabled", strictSequenceEnabled)
             apply()
         }
     }
@@ -305,22 +378,33 @@ class SharedPrefsManager(private val context: Context) {
     // Дополнительный метод (пригодится для вывода на экран отчетов)
     fun getShiftEndTime(): String = prefs.getString("active_shift_end_time", "-") ?: "-"
 
-    // Закрыть смену (с фиксацией времени закрытия)
+    // Закрыть смену (асинхронно генерирует отчеты и загружает в облако, не блокирует UI)
     fun closeCurrentShift() {
         val endTime = dateFormat.format(Date()) // Генерирует время закрытия, например "27.06.2026 10:15:00"
         
-        // ГЕНЕРАЦИЯ ОТЧЕТА - JSON файл для хранения (без автоматической загрузки в Яндекс.Диск)
+        // Получаем ID активной смены
         val activeShiftId = prefs.getString("active_shift_id", null)
-        activeShiftId?.let { shiftId ->
-            val cloudManager = CloudStorageManager(context)
-            val result = cloudManager.exportShiftReport(shiftId, shiftDatabase)
-            if (result != null) {
-                Log.d("SharedPrefsManager", "Отчеты сохранены локально в: $result")
-                
-                // 🔔 ОТПРАВКА EMAIL С HTML ОТЧЕТОМ ПРИ ЗАКРЫТИИ СМЕНЫ
-                sendReportViaEmail(shiftId, cloudManager)
-            } else {
-                Log.e("SharedPrefsManager", "Ошибка генерации отчета")
+        
+        // 🔔 ГЕНЕРАЦИЯ ОТЧЕТОВ И ЗАГРУЗКА В ОБЛАКО - ПОЛНОСТЬЮ АСИНХРОННО (НЕ БЛОКИРУЕТ UI)
+        CoroutineScope(Dispatchers.Main).launch {
+            // Запускаем генерацию отчетов в фоновом потоке
+            withContext(Dispatchers.IO) {
+                activeShiftId?.let { shiftId ->
+                    val cloudManager = CloudStorageManager(context)
+                    
+                    // Генерируем отчеты (JSON и HTML)
+                    val result = cloudManager.exportShiftReport(shiftId, shiftDatabase)
+                    if (result != null) {
+                        Log.d("SharedPrefsManager", "Отчеты сохранены локально в: $result")
+                    } else {
+                        Log.e("SharedPrefsManager", "Ошибка генерации отчета")
+                    }
+                    
+                    // Отправляем отчет по email (полностью асинхронно, не приостанавливает launch)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        sendReportViaEmailAsync(shiftId, cloudManager)
+                    }
+                }
             }
         }
         
@@ -329,7 +413,7 @@ class SharedPrefsManager(private val context: Context) {
         // Сбрасываем прогресс маршрута при закрытии смены
         resetRouteProgress()
         
-        // Получаем ID активной смены
+        // Закрываем смену в базе данных
         activeShiftId?.let { shiftDatabase.closeShift(it) }
         // Удаляем ID активной смены
         prefs.edit().remove("active_shift_id").apply()
@@ -354,19 +438,19 @@ class SharedPrefsManager(private val context: Context) {
     }
     
     /**
-     * Отправляет отчет по email при закрытии смены
+     * Отправляет отчет по email в фоновом режиме (не блокирует закрытие смены)
      * @param shiftId ID смены
      * @param cloudManager Менедгер облачного хранилища
      */
-    fun sendReportViaEmail(shiftId: String, cloudManager: CloudStorageManager) {
+    suspend fun sendReportViaEmailAsync(shiftId: String, cloudManager: CloudStorageManager) {
         val smtpUsername = getSmtpUsername()
         val smtpRecipient = getSmtpRecipient()
         
-        Log.d("SharedPrefsManager", "sendReportViaEmail: smtpUsername=$smtpUsername, smtpRecipient=$smtpRecipient")
+        Log.d("SharedPrefsManager", "sendReportViaEmailAsync: smtpUsername=$smtpUsername, smtpRecipient=$smtpRecipient")
         
         // Проверяем, настроен ли SMTP
         if (smtpUsername.isEmpty() || getSmtpPassword().isEmpty()) {
-            Log.d("SharedPrefsManager", "sendReportViaEmail: SMTP не настроен")
+            Log.d("SharedPrefsManager", "sendReportViaEmailAsync: SMTP не настроен")
             return
         }
         
@@ -375,50 +459,62 @@ class SharedPrefsManager(private val context: Context) {
         
         val emailManager = EmailManager(context)
         
-        // Получаем дизайн отчета
-        val reportDesign = getReportDesign()
+        // Логируем для отладки
+        Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Calling generateHtmlReportWithDesign with this@SharedPrefsManager")
+        Log.d("SharedPrefsManager", "sendReportViaEmailAsync: isStrictSequenceEnabled=${this@SharedPrefsManager.isStrictSequenceEnabled()}")
         
-        // Генерируем HTML отчет с учетом выбранного дизайна
-        val htmlPath = cloudManager.generateHtmlReportWithDesign(shiftId, shiftDatabase, reportDesign)
+        // Генерируем HTML отчет (только полный дизайн)
+        val (htmlPath, shiftResult) = withContext(Dispatchers.IO) {
+            cloudManager.generateHtmlReportWithDesign(shiftId, shiftDatabase, this@SharedPrefsManager, context)
+        }
         
         if (htmlPath == null) {
-            Log.e("SharedPrefsManager", "sendReportViaEmail: Failed to generate HTML report")
+            Log.e("SharedPrefsManager", "sendReportViaEmailAsync: Failed to generate HTML report")
             return
         }
         
         // Читаем HTML файл
         val htmlContent = try {
-            val file = java.io.File(htmlPath)
-            file.readText(charset = StandardCharsets.UTF_8)
+            withContext(Dispatchers.IO) {
+                val file = java.io.File(htmlPath)
+                file.readText(charset = StandardCharsets.UTF_8)
+            }
         } catch (e: Exception) {
-            Log.e("SharedPrefsManager", "sendReportViaEmail: Failed to read HTML file: ${e.message}", e)
+            Log.e("SharedPrefsManager", "sendReportViaEmailAsync: Failed to read HTML file: ${e.message}", e)
             return
         }
         
-        // Формируем тему и тело письма
-        val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
-        val subject = "Отчет Ohrana - Смена №${shiftId.substringAfterLast("_")} от ${shift?.startTime?.substring(0, 10) ?: "-"}"
-        val body = "Отчет о смене прилагается.\n\nСмена: $shiftId\nВремя начала: ${shift?.startTime ?: "-"}\nВремя окончания: ${shift?.endTime ?: "-"}"
+        // Извлекаем shiftResult из HTML комментария
+        val result = shiftResult ?: run {
+            val pattern = Regex("<!--\\s*shift_result:(.*?)\\s*-->", RegexOption.DOT_MATCHES_ALL)
+            val match = pattern.find(htmlContent)
+            match?.groupValues?.get(1) ?: "?"
+        }
         
-        Log.d("SharedPrefsManager", "sendReportViaEmail: Sending email to $recipient")
+        // Формируем тему и тело письма
+        val shift = withContext(Dispatchers.IO) {
+            shiftDatabase.loadAllShifts().find { it.id == shiftId }
+        }
+        val subject = "Отчет Ohrana - Смена №${shiftId.substringAfterLast("_")} от ${shift?.startTime?.substring(0, 10) ?: "-"}"
+        val body = "Отчет о смене прилагается.\n\nРезультат: $result\nСмена: $shiftId\nВремя начала: ${shift?.startTime ?: "-"}\nВремя окончания: ${shift?.endTime ?: "-"}"
+        
+        Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Sending email to $recipient")
         
         // Отправляем email с вложением
-        CoroutineScope(Dispatchers.Main).launch {
-            val success = withContext(Dispatchers.IO) {
-                emailManager.sendEmailWithAttachment(
-                    to = recipient,
-                    subject = subject,
-                    body = body,
-                    attachmentHtml = htmlContent,
-                    attachmentName = "shift_report_${shiftId}.html"
-                )
-            }
-            
-            if (success) {
-                Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $recipient")
-            } else {
-                Log.e("SharedPrefsManager", "Failed to send email via SMTP")
-            }
+        val success = withContext(Dispatchers.IO) {
+            emailManager.sendEmailWithAttachment(
+                to = recipient,
+                subject = subject,
+                body = body,
+                attachmentHtml = htmlContent,
+                attachmentName = "shift_report_${shiftId}.html"
+            )
+        }
+        
+        if (success) {
+            Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $recipient")
+        } else {
+            Log.e("SharedPrefsManager", "Failed to send email via SMTP")
         }
     }
 
@@ -567,6 +663,23 @@ class SharedPrefsManager(private val context: Context) {
         Log.d("SharedPrefsManager", "Verification - rounds=$savedRounds, times=$savedTimes")
         Log.d("SharedPrefsManager", "Route settings saved successfully: rounds=${savedRounds == roundsCount}")
     }
+
+    /**
+     * Сохраняет общее количество чекпоинтов за смену (сумма всех обходов)
+     */
+    fun saveTotalScheduledCheckpoints(total: Int) {
+        Log.d("SharedPrefsManager", "Saving total scheduled checkpoints: $total")
+        prefs.edit().putInt("route_total_checkpoints", total).commit()
+        
+        // Проверка
+        val saved = prefs.getInt("route_total_checkpoints", -1)
+        Log.d("SharedPrefsManager", "Total scheduled checkpoints saved successfully: ${saved == total}")
+    }
+
+    /**
+     * Загружает общее количество чекпоинтов за смену
+     */
+    fun loadTotalScheduledCheckpoints(): Int = prefs.getInt("route_total_checkpoints", 0)
 
     /**
      * Сохраняет максимальную длительность обхода
@@ -1147,6 +1260,55 @@ class SharedPrefsManager(private val context: Context) {
             // 7. Настройки контроля последовательности
             allData.put("strict_sequence_enabled", isStrictSequenceEnabled())
             allData.put("auto_end_round_enabled", isAutoEndRoundEnabled())
+            allData.put("sound_enabled", isSoundEnabled())
+            
+            // 8. URI картинок чекпоинтов
+            val checkpointImagesObj = org.json.JSONObject()
+            getAllCheckpointImageUris().forEach { (checkpointId, uri) ->
+                checkpointImagesObj.put(checkpointId, uri)
+            }
+            allData.put("checkpoint_images", checkpointImagesObj)
+            
+            // 9. Настройки SMTP
+            val smtpObj = org.json.JSONObject()
+            smtpObj.put("host", getSmtpHost())
+            smtpObj.put("port", getSmtpPort())
+            smtpObj.put("username", getSmtpUsername())
+            smtpObj.put("password", getSmtpPassword()) // ВАЖНО: сохраняем пароль для восстановления
+            smtpObj.put("recipient", getSmtpRecipient())
+            allData.put("smtp_settings", smtpObj)
+            
+            // 10. Настройки SMS
+            val smsObj = org.json.JSONObject()
+            smsObj.put("phone", getSmsPhone())
+            smsObj.put("template", getSmsTemplate())
+            allData.put("sms_settings", smsObj)
+            
+            // 11. Настройки File.io
+            val fileioObj = org.json.JSONObject()
+            fileioObj.put("email", getFileIoEmail())
+            fileioObj.put("telegram", getFileIoTelegram())
+            allData.put("fileio_settings", fileioObj)
+            
+            // 12. Количество охранников
+            allData.put("guards_count", getGuardsCount())
+            
+            // 13. Настройки звуков для событий
+            allData.put("sound_enabled", isSoundEnabled())
+            allData.put("sound_event_1", isSoundEnabledForEvent(1))
+            allData.put("sound_event_2", isSoundEnabledForEvent(2))
+            allData.put("sound_event_3", isSoundEnabledForEvent(3))
+            allData.put("sound_event_4", isSoundEnabledForEvent(4))
+            
+            // 14. URI звуков для событий
+            val soundUrisObj = org.json.JSONObject()
+            for (eventId in 1..4) {
+                val uriString = prefs.getString("sound_event_uri_${eventId}", null)
+                if (!uriString.isNullOrBlank()) {
+                    soundUrisObj.put("sound_event_uri_${eventId}", uriString)
+                }
+            }
+            allData.put("sound_uris", soundUrisObj)
             
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1222,6 +1384,50 @@ class SharedPrefsManager(private val context: Context) {
             // 7. Настройки контроля последовательности
             sb.append("# Настройки контроля последовательности\n")
             sb.append("strict_sequence_enabled=${isStrictSequenceEnabled()}\n")
+            sb.append("auto_end_round_enabled=${isAutoEndRoundEnabled()}\n")
+            sb.append("sound_enabled=${isSoundEnabled()}\n")
+            sb.append("sound_event_1=${isSoundEnabledForEvent(1)}\n")
+            sb.append("sound_event_2=${isSoundEnabledForEvent(2)}\n")
+            sb.append("sound_event_3=${isSoundEnabledForEvent(3)}\n")
+            sb.append("sound_event_4=${isSoundEnabledForEvent(4)}\n")
+            
+            // 7.1. URI звуков для событий
+            sb.append("# URI звуков для событий\n")
+            for (eventId in 1..4) {
+                val uriString = prefs.getString("sound_event_uri_${eventId}", null)
+                if (!uriString.isNullOrBlank()) {
+                    sb.append("sound_event_uri_${eventId}=${uriString}\n")
+                }
+            }
+            
+            // 8. Настройка количества охранников
+            sb.append("# Настройка количества охранников\n")
+            sb.append("guards_count=${getGuardsCount()}\n")
+            
+            // 9. Настройки SMTP
+            sb.append("# Настройки SMTP\n")
+            sb.append("smtp_host=${getSmtpHost()}\n")
+            sb.append("smtp_port=${getSmtpPort()}\n")
+            sb.append("smtp_username=${getSmtpUsername()}\n")
+            sb.append("smtp_password=${getSmtpPassword()}\n")
+            sb.append("smtp_recipient=${getSmtpRecipient()}\n")
+            
+            // 10. Настройки SMS
+            sb.append("# Настройки SMS\n")
+            sb.append("sms_phone=${getSmsPhone()}\n")
+            sb.append("sms_template=${getSmsTemplate()}\n")
+            
+            // 11. Настройки File.io
+            sb.append("# Настройки File.io\n")
+            sb.append("fileio_email=${getFileIoEmail()}\n")
+            sb.append("fileio_telegram=${getFileIoTelegram()}\n")
+            
+            // 12. URI картинок чекпоинтов
+            sb.append("# URI картинок чекпоинтов (формат: id_чекпоинта;uri)\n")
+            getAllCheckpointImageUris().forEach { (checkpointId, uri) ->
+                sb.append("checkpoint_image=${checkpointId};${uri}\n")
+            }
+            sb.append("\n")
             
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1282,6 +1488,10 @@ class SharedPrefsManager(private val context: Context) {
                         imageUri = if (checkpointObj.has("image")) checkpointObj.getString("image") else null,
                         nfcId = if (checkpointObj.has("nfcId")) checkpointObj.getString("nfcId") else null
                     ))
+                    // Сохраняем URI картинки отдельно, если она есть
+                    checkpointObj.optString("image", null)?.let { uri ->
+                        saveCheckpointImageUri(checkpointObj.getString("id"), uri)
+                    }
                 }
                 saveCheckpoints(checkpoints.toList())
             }
@@ -1351,6 +1561,85 @@ class SharedPrefsManager(private val context: Context) {
             }
             if (data.has("auto_end_round_enabled")) {
                 setAutoEndRoundEnabled(data.getBoolean("auto_end_round_enabled"))
+            }
+            if (data.has("sound_enabled")) {
+                setSoundEnabled(data.getBoolean("sound_enabled"))
+            }
+            
+            // 6. Импорт URI картинок чекпоинтов
+            if (data.has("checkpoint_images")) {
+                val imagesObj = data.getJSONObject("checkpoint_images")
+                val keys = imagesObj.keys()
+                while (keys.hasNext()) {
+                    val checkpointId = keys.next()
+                    saveCheckpointImageUri(checkpointId, imagesObj.getString(checkpointId))
+                }
+            }
+            
+            // 7. Импорт настроек SMTP
+            if (data.has("smtp_settings")) {
+                val smtpObj = data.getJSONObject("smtp_settings")
+                saveSmtpHost(smtpObj.optString("host", ""))
+                saveSmtpPort(smtpObj.optInt("port", 465))
+                saveSmtpUsername(smtpObj.optString("username", ""))
+                saveSmtpPassword(smtpObj.optString("password", "")) // ВАЖНО: импортируем пароль
+                saveSmtpRecipient(smtpObj.optString("recipient", ""))
+            }
+            
+            // 8. Импорт настроек SMS
+            if (data.has("sms_settings")) {
+                val smsObj = data.getJSONObject("sms_settings")
+                saveSmsPhone(smsObj.optString("phone", ""))
+                saveSmsTemplate(smsObj.optString("template", ""))
+            }
+            
+            // 9. Импорт настроек File.io
+            if (data.has("fileio_settings")) {
+                val fileioObj = data.getJSONObject("fileio_settings")
+                saveFileIoEmail(fileioObj.optString("email", ""))
+                saveFileIoTelegram(fileioObj.optString("telegram", ""))
+            }
+            
+            // 10. Импорт количества охранников
+            if (data.has("guards_count")) {
+                setGuardsCount(data.getInt("guards_count"))
+            }
+            
+            // 11. Импорт настроек звуков для событий
+            if (data.has("sound_enabled")) {
+                setSoundEnabled(data.getBoolean("sound_enabled"))
+            }
+            if (data.has("sound_event_1")) {
+                setSoundEnabledForEvent(1, data.getBoolean("sound_event_1"))
+            }
+            if (data.has("sound_event_2")) {
+                setSoundEnabledForEvent(2, data.getBoolean("sound_event_2"))
+            }
+            if (data.has("sound_event_3")) {
+                setSoundEnabledForEvent(3, data.getBoolean("sound_event_3"))
+            }
+            if (data.has("sound_event_4")) {
+                setSoundEnabledForEvent(4, data.getBoolean("sound_event_4"))
+            }
+            
+            // 12. Импорт URI звуков для событий
+            if (data.has("sound_uris")) {
+                val soundUrisObj = data.getJSONObject("sound_uris")
+                val keys = soundUrisObj.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val uriString = soundUrisObj.getString(key)
+                    if (!uriString.isNullOrBlank()) {
+                        try {
+                            // Извлекаем ID события из ключа (формат: sound_event_uri_X)
+                            val eventId = key.removePrefix("sound_event_uri_").toInt()
+                            val uri = android.net.Uri.parse(uriString)
+                            setEventSoundUri(eventId, uri)
+                        } catch (e: Exception) {
+                            android.util.Log.e("SharedPrefsManager", "Error importing sound URI: ${e.message}")
+                        }
+                    }
+                }
             }
             
             true
@@ -1459,6 +1748,92 @@ class SharedPrefsManager(private val context: Context) {
                     }
                     "strict_sequence_enabled" -> {
                         setStrictSequenceEnabled(value.toBoolean())
+                    }
+                    "auto_end_round_enabled" -> {
+                        setAutoEndRoundEnabled(value.toBoolean())
+                    }
+                    "sound_enabled" -> {
+                        setSoundEnabled(value.toBoolean())
+                    }
+                    "sound_event_1" -> {
+                        setSoundEnabledForEvent(1, value.toBoolean())
+                    }
+                    "sound_event_2" -> {
+                        setSoundEnabledForEvent(2, value.toBoolean())
+                    }
+                    "sound_event_3" -> {
+                        setSoundEnabledForEvent(3, value.toBoolean())
+                    }
+                    "sound_event_4" -> {
+                        setSoundEnabledForEvent(4, value.toBoolean())
+                    }
+                    "sound_event_uri_1" -> {
+                        try {
+                            val uri = android.net.Uri.parse(value)
+                            setEventSoundUri(1, uri)
+                        } catch (e: Exception) {
+                            android.util.Log.e("SharedPrefsManager", "Error importing sound URI 1: ${e.message}")
+                        }
+                    }
+                    "sound_event_uri_2" -> {
+                        try {
+                            val uri = android.net.Uri.parse(value)
+                            setEventSoundUri(2, uri)
+                        } catch (e: Exception) {
+                            android.util.Log.e("SharedPrefsManager", "Error importing sound URI 2: ${e.message}")
+                        }
+                    }
+                    "sound_event_uri_3" -> {
+                        try {
+                            val uri = android.net.Uri.parse(value)
+                            setEventSoundUri(3, uri)
+                        } catch (e: Exception) {
+                            android.util.Log.e("SharedPrefsManager", "Error importing sound URI 3: ${e.message}")
+                        }
+                    }
+                    "sound_event_uri_4" -> {
+                        try {
+                            val uri = android.net.Uri.parse(value)
+                            setEventSoundUri(4, uri)
+                        } catch (e: Exception) {
+                            android.util.Log.e("SharedPrefsManager", "Error importing sound URI 4: ${e.message}")
+                        }
+                    }
+                    "guards_count" -> {
+                        setGuardsCount(value.toInt())
+                    }
+                    "smtp_host" -> {
+                        saveSmtpHost(value)
+                    }
+                    "smtp_port" -> {
+                        saveSmtpPort(value.toInt())
+                    }
+                    "smtp_username" -> {
+                        saveSmtpUsername(value)
+                    }
+                    "smtp_password" -> {
+                        saveSmtpPassword(value)
+                    }
+                    "smtp_recipient" -> {
+                        saveSmtpRecipient(value)
+                    }
+                    "sms_phone" -> {
+                        saveSmsPhone(value)
+                    }
+                    "sms_template" -> {
+                        saveSmsTemplate(value)
+                    }
+                    "fileio_email" -> {
+                        saveFileIoEmail(value)
+                    }
+                    "fileio_telegram" -> {
+                        saveFileIoTelegram(value)
+                    }
+                    "checkpoint_image" -> {
+                        val parts2 = value.split(";")
+                        if (parts2.size >= 2) {
+                            saveCheckpointImageUri(parts2[0], parts2[1])
+                        }
                     }
                 }
             }
@@ -1767,20 +2142,6 @@ class SharedPrefsManager(private val context: Context) {
         val username = getSmtpUsername()
         val password = getSmtpPassword()
         return username.isNotEmpty() && password.isNotEmpty()
-    }
-    
-    /**
-     * Сохраняет дизайн отчета (full или minimal)
-     */
-    fun saveReportDesign(design: String) {
-        prefs.edit().putString("report_design", design).apply()
-    }
-    
-    /**
-     * Получает дизайн отчета
-     */
-    fun getReportDesign(): String {
-        return prefs.getString("report_design", "full") ?: "full"
     }
     
     /**

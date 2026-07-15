@@ -35,8 +35,7 @@ import kotlinx.coroutines.delay
 fun RoundsScreen(
     onBack: () -> Unit,
     onCloseShift: () -> Unit, // Вызывается при завершении смены
-    onStartRound: (guardName: String, roundIndex: Int, routeId: String?) -> Unit,
-    onOpenJournal: () -> Unit // Вызывается при нажатии кнопки "Журнал текущей смены"
+    onStartRound: (guardName: String, roundIndex: Int, routeId: String?) -> Unit
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -84,8 +83,14 @@ fun RoundsScreen(
     
     // Функция для обработки нажатия кнопки "Назад"
     fun onNavigateBack() {
+        val guardsCount = guardList.size
         if (isShiftActive) {
-            onBack()
+            if (guardsCount == 1) {
+                // Для одного охранника выходим в privet
+                onCloseShift()
+            } else {
+                onBack()
+            }
         } else {
             onCloseShift()
         }
@@ -306,24 +311,7 @@ fun RoundsScreen(
                 }
             }
             
-            // Кнопка "Журнал текущей смены"
-            Button(
-                onClick = {
-                    // Сохраняем статус контроля последовательности для отчета
-                    prefsManager.saveSequenceControlStatus(prefsManager.isStrictSequenceEnabled())
-                    
-                    // Переходим на экран журнала
-                    onOpenJournal()
-                },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            ) {
-                Text("Журнал текущей смены", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(modifier = Modifier.height(16.dp))
+
             
             // Информационная карточка
             Card(

@@ -42,10 +42,19 @@ import com.example.ohrana.CloudSettingsScreen
 import com.example.ohrana.GuardMember
 import com.example.ohrana.GuardNfcSelectionScreen
 import com.example.ohrana.JournalActivity
+import com.example.ohrana.HtmlReportViewerScreen
+import com.example.ohrana.SoundSettingsScreen
+import com.example.ohrana.SoundPlayer
+import android.content.pm.ActivityInfo
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Инициализируем SoundPlayer при создании Activity
+        SoundPlayer.init(this)
+        
         setContent {
             AppNavigation()
         }
@@ -55,6 +64,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         // Сохраняем intent для обработки NFC-тегов
         setIntent(intent)
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        
+        // Освобождаем ресурсы SoundPlayer при уничтожении Activity
+        SoundPlayer.release()
     }
 }
 @Composable
@@ -110,6 +126,7 @@ fun AppNavigation() {
     var currentScreen by remember { mutableStateOf("privet") }
     var selectedEmployeeName by remember { mutableStateOf("") }
     var selectedCheckpointId by remember { mutableStateOf<String?>(null) }
+    var htmlReportPath by remember { mutableStateOf("") }
     var currentShiftId by remember { mutableStateOf("") }
     var guardsCount by remember { mutableStateOf(1) }
     var showErrorOverlay by remember { mutableStateOf<String?>(null) }
@@ -153,12 +170,13 @@ fun AppNavigation() {
             // Синхронизируем guardsCount из SharedPreferences
             guardsCount = prefsManager.getGuardsCount()
             
-            // Проверяем статус смены
-            val isShiftActive = prefsManager.isAnyShiftActive()
-            
-            // Автоматическое NFC-сканирование при загрузке экрана (только для групповой работы и открытой смены)
+            // Сбрасываем ориентацию при возврате на экран привет
             val context = LocalContext.current
             val activity = context as? ComponentActivity
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            
+            // Проверяем статус смены
+            val isShiftActive = prefsManager.isAnyShiftActive()
             
             val nfcManager = context.getSystemService(android.content.Context.NFC_SERVICE) as android.nfc.NfcManager
             val nfcAdapter = nfcManager.defaultAdapter
@@ -348,14 +366,21 @@ fun AppNavigation() {
                                         currentScreen = "rounds"
                                     } else {
                                         // Охранник не у смены - отказываем в доступе через overlay
-                                        showErrorOverlay = "Доступ запрещен: вы не в текущей смене"
+                                        showErrorOverlay = "Вас нет в смене"
                                     }
                                 } else {
                                     selectedEmployeeName = employee.name
                                     
                                     // Если смена открыта - сразу открываем экран rounds
                                     if (isShiftActive) {
-                                        currentScreen = "rounds"
+                                        // Для guardsCount = 1 проверяем, что сотрудник на смене
+                                        val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
+                                        if (activeEmployeeName.isNotEmpty() && activeEmployeeName != employee.name) {
+                                            // Смена открыта другим сотрудником
+                                            showErrorOverlay = "Вас нет в смене"
+                                        } else {
+                                            currentScreen = "rounds"
+                                        }
                                     } else {
                                         // Для guardsCount = 1 сразу начинаем смену
                                         if (guardsCount == 1) {
@@ -427,7 +452,13 @@ fun AppNavigation() {
             onNavigateToRoutes = { currentScreen = "routes" },
             onNavigateToLogs = { currentScreen = "shift_logs" },
             onNavigateToCloudSettings = { currentScreen = "cloud_settings" },
-            onBack = { currentScreen = "privet" }
+            onBack = { currentScreen = "privet" },
+            currentScreen = currentScreen,
+            onNavigateToSoundSettings = { currentScreen = "sound_settings" }
+        )
+        
+        "sound_settings" -> SoundSettingsScreen(
+            onBack = { currentScreen = "admin" }
         )
         
         "ohrannik_cabinet" -> OhrannikCabinetScreen(
@@ -435,16 +466,12 @@ fun AppNavigation() {
             onBack = {
                 val guardsCount = prefsManager.getGuardsCount()
                 
-                // Если guardsCount > 1, всегда возвращаемся в rounds
-                // Если guardsCount = 1, проверяем статус смены как раньше
+                // Для guardsCount > 1 возвращаемся в rounds
+                // Для guardsCount = 1 всегда возвращаемся в privet (так как убрали экран shift_control)
                 if (guardsCount > 1) {
                     currentScreen = "rounds"
-                } else if (prefsManager.isShiftActiveByOther(selectedEmployeeName)) {
-                    currentScreen = "shift_control"
-                } else if (prefsManager.isShiftActiveFor(selectedEmployeeName)) {
-                    currentScreen = "rounds"
                 } else {
-                    currentScreen = "shift_control"
+                    currentScreen = "privet"
                 }
             },
             onLogout = {
@@ -462,29 +489,6 @@ fun AppNavigation() {
             onCloseShift = {
                 selectedEmployeeName = ""
                 currentScreen = "privet"
-            }
-        )
-        
-        "shift_control" -> OhrannikShiftControlScreen(
-            employeeName = selectedEmployeeName,
-            isAnyShiftActive = prefsManager.isAnyShiftActive(),
-            selectedEmployeeName = selectedEmployeeName,
-            onStartShiftSuccess = {
-                prefsManager.startNewShift(selectedEmployeeName, prefsManager.isStrictSequenceEnabled())
-                currentScreen = "rounds"
-            },
-            onContinueShift = {
-                currentScreen = "rounds"
-            },
-            onShiftClosedSuccess = {
-                selectedEmployeeName = ""
-                currentScreen = "privet"
-            },
-            onBack = {
-                currentScreen = "privet"
-            },
-            onNavigateToCompletedShifts = {
-                currentScreen = "shift_logs"
             }
         )
         
@@ -517,13 +521,9 @@ fun AppNavigation() {
         "rounds" -> RoundsScreen(
             onBack = {
                 val guardsCount = prefsManager.getGuardsCount()
-                // Если guardsCount > 1, возвращаемся в privet
-                // Если guardsCount = 1, возвращаемся в shift_control как раньше
-                if (guardsCount > 1) {
-                    currentScreen = "privet"
-                } else {
-                    currentScreen = "shift_control"
-                }
+                // Для guardsCount > 1 возвращаемся в privet
+                // Для guardsCount = 1 тоже возвращаемся в privet (так как убрали экран shift_control)
+                currentScreen = "privet"
             },
             onCloseShift = {
                 selectedEmployeeName = ""
@@ -543,11 +543,6 @@ fun AppNavigation() {
                 }
                 
                 currentScreen = "ohrannik_cabinet"
-            },
-            onOpenJournal = {
-                // Открываем JournalActivity с горизонтальной ориентацией
-                val intent = android.content.Intent(context, JournalActivity::class.java)
-                context.startActivity(intent)
             }
         )
         
@@ -651,7 +646,21 @@ fun AppNavigation() {
             },
             onNavigateToCloudSettings = {
                 currentScreen = "cloud_settings"
+            },
+            onNavigateToHtmlReport = { htmlPath ->
+                htmlReportPath = htmlPath
+                selectedCheckpointId = htmlPath
+                currentScreen = "html_report_viewer"
             }
+        )
+        
+        "html_report_viewer" -> HtmlReportViewerScreen(
+            onBack = { 
+                selectedCheckpointId = null
+                htmlReportPath = ""
+                currentScreen = "shift_logs"
+            },
+            htmlFilePath = htmlReportPath
         )
         
         "shift_detail" -> ShiftLogDetailScreen(
