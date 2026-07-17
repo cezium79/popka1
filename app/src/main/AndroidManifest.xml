@@ -13,7 +13,7 @@
     <!-- Разрешение для управления внешним хранилищем (Android 11+) -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     
-    <!-- 🔔 Новые разрешения для работы будильников -->
+    <!-- 🔔 Новые разрешения для работы будильников и архивации -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
@@ -23,6 +23,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Разрешение для Foreground служб конкретно для будильников в Android 14+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Разрешение для WakeLock (для архивации) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     
     <!-- NFC разрешения для сканирования NFC-тегов -->
     <uses-permission android:name="android.permission.NFC" />
@@ -31,12 +33,6 @@
     <!-- Разрешение для интернета (Yandex Cloud загрузка) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    
-    <!-- Разрешение для сохранения отчетов в внешнее хранилище -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
 
     <application
@@ -79,6 +75,11 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+        
+        <!-- Регистрация приемника архивации -->
+        <receiver
+            android:name=".ArchiveBroadcastReceiver"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -92,6 +93,11 @@
         <service
             android:name=".AlarmService"
             android:foregroundServiceType="specialUse"
+            android:exported="false" />
+        
+        <!-- Служба архивации -->
+        <service
+            android:name=".ArchiveService"
             android:exported="false" />
 
 

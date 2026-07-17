@@ -3,7 +3,7 @@ package com.example.ohrana
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -11,6 +11,8 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -19,6 +21,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.LaunchedEffect
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -192,24 +197,33 @@ fun ScheduleScreen(
             TopAppBar(
                 title = { Text("Расписание обходов") },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        Log.d("ScheduleScreen", "Back button clicked")
-                        onBack()
-                    }) {
+                    IconButton(
+                        onClick = {
+                            Log.d("ScheduleScreen", "Back button clicked")
+                            onBack()
+                        }
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 }
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Размытый фон
+            BlurredBackground()
+            
+            // Контент экрана
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
 
             // --- РАЗДЕЛ 1: КОЛИЧЕСТВО ОБХОДОВ ---
             Card(
@@ -223,11 +237,11 @@ fun ScheduleScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Button(onClick = { if (roundsCount > 1) roundsCount-- }) {
+                        Button(onClick = { if (roundsCount > 1) roundsCount-- }, elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)) {
                             Text("-", fontSize = 20.sp)
                         }
                         Text("$roundsCount обходов за смену", fontSize = 18.sp)
-                        Button(onClick = { roundsCount++ }) {
+                        Button(onClick = { roundsCount++ }, elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)) {
                             Text("+", fontSize = 20.sp)
                         }
                     }
@@ -450,11 +464,12 @@ fun ScheduleScreen(
                     Log.d("ScheduleScreen", "Closing screen...")
                     onBack()
                 },
-                modifier = Modifier.fillMaxWidth().height(50.dp)
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
             ) {
                 Text("Сохранить расписание", fontSize = 16.sp)
             }
-
+            }
         }
     }
     

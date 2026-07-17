@@ -1,8 +1,11 @@
 package com.example.ohrana
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
+import androidx.compose.material3.ButtonDefaults
 import android.annotation.SuppressLint
 import android.nfc.NfcAdapter
 import androidx.compose.foundation.layout.*
@@ -19,11 +22,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter") // ДЛЯ MATERIAL 3
@@ -101,12 +108,19 @@ fun EmployeeListScreen(
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues) // <- 1. ПРИМЕНЯЕМ ОТСТУПЫ ОТ SCAFFOLD В ПЕРВУЮ ОЧЕРЕДЬ
-                .padding(16.dp)         // 2. Ваши собственные дополнительные отступы
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Размытый фон
+            BlurredBackground()
+            
+            // Контент экрана
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+            ) {
             // Форма ввода / редактирования
             OutlinedTextField(
                 value = nameInput,
@@ -169,7 +183,8 @@ fun EmployeeListScreen(
             } else {
                 Button(
                     onClick = { nfcScanningEnabled = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
                 ) {
                     Icon(Icons.Default.QrCodeScanner, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -193,7 +208,8 @@ fun EmployeeListScreen(
                         nfcIdInput = ""
                     }
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
             ) {
                 Text(if (editingEmployee == null) "Добавить сотрудника" else "Сохранить изменения")
             }
@@ -207,7 +223,8 @@ fun EmployeeListScreen(
                         nfcIdInput = ""
                         nfcScanningEnabled = false
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp, pressedElevation = 4.dp)
                 ) {
                     Text("Отмена")
                 }
@@ -255,6 +272,7 @@ fun EmployeeListScreen(
                         }
                     }
                 }
+            }
             }
         }
     }

@@ -41,10 +41,11 @@ import com.example.ohrana.CloudStorageManager
 import com.example.ohrana.CloudSettingsScreen
 import com.example.ohrana.GuardMember
 import com.example.ohrana.GuardNfcSelectionScreen
-import com.example.ohrana.JournalActivity
+import com.example.ohrana.JournalScreen
 import com.example.ohrana.HtmlReportViewerScreen
 import com.example.ohrana.SoundSettingsScreen
 import com.example.ohrana.SoundPlayer
+import com.example.ohrana.ui.theme.OhranaTheme
 import android.content.pm.ActivityInfo
 import android.util.Log
 
@@ -56,7 +57,9 @@ class MainActivity : ComponentActivity() {
         SoundPlayer.init(this)
         
         setContent {
-            AppNavigation()
+            OhranaTheme {
+                AppNavigation()
+            }
         }
     }
     
@@ -450,10 +453,9 @@ fun AppNavigation() {
         "admin" -> AdministratorScreen(
             onNavigateToEmployeeList = { currentScreen = "employee_list" },
             onNavigateToRoutes = { currentScreen = "routes" },
-            onNavigateToLogs = { currentScreen = "shift_logs" },
+            onNavigateToLogs = { currentScreen = "journal" },
             onNavigateToCloudSettings = { currentScreen = "cloud_settings" },
             onBack = { currentScreen = "privet" },
-            currentScreen = currentScreen,
             onNavigateToSoundSettings = { currentScreen = "sound_settings" }
         )
         
@@ -546,8 +548,6 @@ fun AppNavigation() {
             }
         )
         
-        // JournalScreen удален - теперь используется JournalActivity
-        
         "photo_capture" -> PhotoCaptureScreen(
             checkpointId = selectedCheckpointId ?: "",
             onPhotoTaken = { fileName ->
@@ -635,22 +635,16 @@ fun AppNavigation() {
             onSave = { /* Обновление списка маршрутов происходит внутри редактора */ }
         )
         
-        "shift_logs" -> ShiftLogsListScreen(
-            onBack = {
-                currentScreen = "admin"
-            },
-            selectedEmployeeName = selectedEmployeeName,
-            onNavigateToDetails = { shiftId ->
-                currentScreen = "shift_detail"
-                currentShiftId = shiftId
-            },
-            onNavigateToCloudSettings = {
-                currentScreen = "cloud_settings"
-            },
+        "journal" -> JournalScreen(
+            onBack = { currentScreen = "admin" },
             onNavigateToHtmlReport = { htmlPath ->
                 htmlReportPath = htmlPath
                 selectedCheckpointId = htmlPath
                 currentScreen = "html_report_viewer"
+            },
+            onSelectDate = { dateStr ->
+                android.util.Log.d("MainActivity", "Selected date: $dateStr")
+                // Здесь можно добавить логику, если нужно что-то делать при выборе даты
             }
         )
         
@@ -658,15 +652,13 @@ fun AppNavigation() {
             onBack = { 
                 selectedCheckpointId = null
                 htmlReportPath = ""
-                currentScreen = "shift_logs"
+                currentScreen = "admin"
             },
             htmlFilePath = htmlReportPath
         )
         
         "shift_detail" -> ShiftLogDetailScreen(
-            onBack = {
-                currentScreen = "shift_logs"
-            },
+            onBack = { currentScreen = "admin" },
             shiftId = currentShiftId,
             employeeName = selectedEmployeeName
         )

@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,6 +57,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -160,8 +162,10 @@ fun PhotoCaptureScreen(
                     override fun onError(exception: ImageCaptureException) {
                         exception.printStackTrace()
                         
-                        // Воспроизводим звук ошибки
-                        SoundPlayer.playError(context)
+                        // Воспроизводим звук ошибки (только если включен звук)
+                        if (prefsManager.isSoundEnabled()) {
+                            SoundPlayer.playError(context)
+                        }
                         
                         Log.e("PhotoCaptureScreen", "Photo capture failed for checkpoint $checkpointId: ${exception.message}")
                     }
@@ -439,9 +443,11 @@ fun PhotoCaptureScreen(
     
     // Диалоговое окно успешного прохождения чекпоинта (показывается после нажатия "Сохранить")
     if (showCheckpointPassedDialog) {
-        // Воспроизводим звук успеха при показе диалога
+        // Воспроизводим звук успеха при показе диалога (только если включен звук)
         LaunchedEffect(showCheckpointPassedDialog) {
-            SoundPlayer.playSuccess(context)
+            if (prefsManager.isSoundEnabled()) {
+                SoundPlayer.playSuccess(context)
+            }
         }
         
         // Таймер для автоматического закрытия диалога

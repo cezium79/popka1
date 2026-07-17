@@ -3,6 +3,9 @@ package com.example.ohrana
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -12,6 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -19,6 +24,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.activity.compose.BackHandler
+import com.example.ohrana.ui.components.OhranaOutlinedButton
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,68 +84,94 @@ fun MarshrutiScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Настройка маршрутов и смен") },
+                title = { Text("Настройка маршрутов и стен") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF616161) // Серый фон как у экрана
+                )
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Размытый фон
+            BlurredBackground()
+            
+            // Контент экрана
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(4.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
 
             // Кнопка для перехода к расписанию обходов
-            Button(
+            OhranaOutlinedButton(
+                text = "Расписание обходов",
                 onClick = onNavigateToSchedule,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Text("Расписание обходов", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242),
+                    contentColor = Color(0xFFFFFFFF)
+                ),
+                elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                    defaultElevation = 8.dp,
+                    pressedElevation = 16.dp,
+                    disabledElevation = 8.dp
+                ),
+                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp)
+            )
 
-            Spacer(modifier = Modifier.height(16.dp))
+           
             
             // --- КНОПКА РЕДАКТИРОВАНИЯ МАРШРУТОВ ---
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-            ) {
-                Button(
-                    onClick = onNavigateToRouteEditor,
-                    modifier = Modifier.fillMaxWidth().padding(16.dp)
-                ) {
-                    Text("Редактирование маршрутов", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
+            OhranaOutlinedButton(
+                text = "Редактирование маршрутов",
+                onClick = onNavigateToRouteEditor,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242),
+                    contentColor = Color(0xFFFFFFFF)
+                ),
+                elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                    defaultElevation = 8.dp,
+                    pressedElevation = 16.dp,
+                    disabledElevation = 8.dp
+                ),
+                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp)
+            )
             
-            // --- РАЗДЕЛ 2: СПИСОК ЧЕКПОИНТОВ С КНОПКАМИ РЕДАКТИРОВАНИЯ ---
-            Text("2. Список чекпоинтов (${allCheckpoints.size} шт.)", fontSize = 16.sp, style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
+
             
-            // Кнопка создания чекпоинта - сразу после оглавления
-            Button(
+            // Кнопка создания чекпоинта
+            OhranaOutlinedButton(
+                text = "Создать чекпоинт",
                 onClick = { onNavigateToCheckpointEditor(null) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(" Создать чекпоинт")
-            }
-            Spacer(modifier = Modifier.height(8.dp))
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242),
+                    contentColor = Color(0xFFFFFFFF)
+                ),
+                elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                    defaultElevation = 8.dp,
+                    pressedElevation = 16.dp,
+                    disabledElevation = 8.dp
+                ),
+                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
             
             if (allCheckpoints.isEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -146,23 +180,24 @@ fun MarshrutiScreen(
                         Text(
                             "Чекпоинты еще не созданы",
                             fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = Color(0xFF050505)
                         )
                         Text(
                             "Нажмите кнопку выше, чтобы создать новый чекпоинт",
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = Color(0xFF050505),
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             } else {
                 // Отображаем список чекпоинтов
-                allCheckpoints.forEach { checkpoint ->
+                val sortedCheckpoints = allCheckpoints.sortedBy { it.id }
+                sortedCheckpoints.forEach { checkpoint ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
                     ) {
                         Column(
                             modifier = Modifier.padding(12.dp)
@@ -172,81 +207,167 @@ fun MarshrutiScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
                                         text = checkpoint.id,
                                         fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFFFFFF),
+                                        modifier = Modifier.padding(end = 12.dp)
                                     )
                                     Text(
                                         text = checkpoint.name,
                                         fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = Color(0xFFE0E0E0),
+                                        modifier = Modifier.padding(end = 12.dp)
                                     )
                                     Text(
                                         text = "Тип: ${checkpoint.action.name.lowercase()}",
                                         fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = Color(0xFFB0B0B0)
                                     )
                                 }
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = { onNavigateToCheckpointEditor(checkpoint.id) },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = "Редактировать",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            sharedPrefsManager.removeCheckpoint(checkpoint.id)
-                                            // Перезагружаем список чекпоинтов
-                                            allCheckpoints.clear()
-                                            allCheckpoints.addAll(sharedPrefsManager.loadCheckpoints())
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = "Удалить",
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OhranaOutlinedButton(
+                                    text = "Редактировать",
+                                    onClick = { onNavigateToCheckpointEditor(checkpoint.id) },
+                                    modifier = Modifier.weight(1f).height(40.dp),
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF424242),
+                                        contentColor = Color(0xFFFFFFFF)
+                                    ),
+                                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                                        defaultElevation = 4.dp,
+                                        pressedElevation = 8.dp,
+                                        disabledElevation = 0.dp
+                                    ),
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                                )
+                                OhranaOutlinedButton(
+                                    text = "Удалить",
+                                    onClick = {
+                                        sharedPrefsManager.removeCheckpoint(checkpoint.id)
+                                        // Перезагружаем список чекпоинтов
+                                        allCheckpoints.clear()
+                                        allCheckpoints.addAll(sharedPrefsManager.loadCheckpoints())
+                                    },
+                                    modifier = Modifier.weight(1f).height(40.dp),
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFB00000),
+                                        contentColor = Color(0xFFFFFFFF)
+                                    ),
+                                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                                        defaultElevation = 4.dp,
+                                        pressedElevation = 8.dp,
+                                        disabledElevation = 0.dp
+                                    ),
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                                )
                             }
                         }
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(16.dp))
             }
-
-            // Кнопка сохранения настроек
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = {
-                    sharedPrefsManager.saveRouteAlarms(sharedPrefsManager.loadRouteAlarms())
-                    onBack()
-                },
-                modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) {
-                Text("Сохранить настройки маршрута", fontSize = 16.sp)
             }
-
         }
     }
     
     // Обработка системной кнопки "Назад"
-    BackHandler(onBack = onBack)
+    BackHandler(onBack = {
+        sharedPrefsManager.saveRouteAlarms(sharedPrefsManager.loadRouteAlarms())
+        onBack()
+    })
 }
 
 @Composable
 @Preview(showBackground = true, name = "Marshruti Screen Preview")
 fun MarshrutiScreenPreview() {
     MarshrutiScreen(onBack = {}, onNavigateToCheckpointEditor = {}, onNavigateToRouteEditor = {}, onNavigateToSchedule = {})
+}
+
+@Composable
+@Preview(showBackground = true, name = "Checkpoint Card Preview")
+fun CheckpointCardPreview() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "CHECKPOINT_ID",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFFFFFF),
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                    Text(
+                        text = "Название точки",
+                        fontSize = 12.sp,
+                        color = Color(0xFFE0E0E0),
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                    Text(
+                        text = "scan",
+                        fontSize = 12.sp,
+                        color = Color(0xFFB0B0B0)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OhranaOutlinedButton(
+                    text = "Редактировать",
+                    onClick = {},
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF424242),
+                        contentColor = Color(0xFFFFFFFF)
+                    ),
+                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        defaultElevation = 4.dp,
+                        pressedElevation = 8.dp,
+                        disabledElevation = 0.dp
+                    ),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                )
+                OhranaOutlinedButton(
+                    text = "Удалить",
+                    onClick = {},
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFB00000),
+                        contentColor = Color(0xFFFFFFFF)
+                    ),
+                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        defaultElevation = 4.dp,
+                        pressedElevation = 8.dp,
+                        disabledElevation = 0.dp
+                    ),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                )
+            }
+        }
+    }
 }

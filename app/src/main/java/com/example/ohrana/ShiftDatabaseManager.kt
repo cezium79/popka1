@@ -19,6 +19,7 @@ class ShiftDatabaseManager(private val context: Context) {
     
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
     private val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+    private val shiftTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
     
     // Получаем чекпоинт по ID из SharedPrefsManager
     private fun getCheckpointById(checkpointId: String): com.example.ohrana.Checkpoint? {
@@ -136,6 +137,39 @@ class ShiftDatabaseManager(private val context: Context) {
             }
         }
     }
+    
+    /**
+     * Удалить смену из базы данных
+     * @param shiftId ID смены
+     */
+    fun deleteShift(shiftId: String) {
+        // Удаляем смену
+        prefs.edit().remove("shift_$shiftId").apply()
+        
+        // Удаляем все обходы этой смены
+        val rounds = loadAllRounds()
+        rounds.forEach { round ->
+            if (round.shiftId == shiftId) {
+                prefs.edit().remove("round_${round.id}").apply()
+            }
+        }
+        
+        // Удаляем все логи этой смены
+        val logs = loadAllLogs()
+        logs.forEach { log ->
+            if (log.shiftId == shiftId) {
+                prefs.edit().remove("log_${log.id}").apply()
+            }
+        }
+        
+        // Удаляем все нарушения этой смены
+        val violations = loadAllViolations()
+        violations.forEach { violation ->
+            if (violation.shiftId == shiftId) {
+                prefs.edit().remove("violation_${violation.id}").apply()
+            }
+        }
+    }
 
     /**
      * Получить активную смену
@@ -217,6 +251,29 @@ class ShiftDatabaseManager(private val context: Context) {
                     null
                 }
             }
+    }
+    
+    /**
+     * Получить флаг strictSequenceEnabled для смены
+     * @param shiftId ID смены
+     * @return true если контроль включен, false если нет
+     */
+    fun isStrictSequenceEnabledForShift(shiftId: String): Boolean {
+        val shift = loadAllShifts().find { it.id == shiftId }
+        return shift?.strictSequenceEnabled ?: false
+    }
+    
+    /**
+     * Парсит время смены и возвращает Date
+     * @param timeString Строка времени
+     * @return Дата или null если ошибка
+     */
+    fun parseShiftTime(timeString: String): Date? {
+        return try {
+            shiftTimeFormat.parse(timeString)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // ============================================

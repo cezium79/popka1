@@ -319,8 +319,10 @@ fun OhrannikCabinetScreen(
                             }
                         )
                         
-                        // Воспроизводим звук ошибки
-                        SoundPlayer.playError(context)
+                        // Воспроизводим звук ошибки (только если включен звук)
+                        if (manager.isSoundEnabled()) {
+                            SoundPlayer.playError(context)
+                        }
                         
                         nfcScanResult = null
                         return@LaunchedEffect
@@ -330,8 +332,10 @@ fun OhrannikCabinetScreen(
                 // NFC-ID найден в базе - обрабатываем в зависимости от типа
                 when (checkpoint.action) {
                     CheckpointAction.CHECKPOINT -> {
-                        // Воспроизводим звук успеха
-                        SoundPlayer.playSuccess(context)
+                        // Воспроизводим звук успеха (только если включен звук)
+                        if (manager.isSoundEnabled()) {
+                            SoundPlayer.playSuccess(context)
+                        }
                         
                         // Сохраняем факт сканирования (для аудита)
                         val activeRoundIndex = manager.getActiveRoundIndex()
@@ -435,8 +439,10 @@ fun OhrannikCabinetScreen(
                 // NFC-ID не найден в базе
                 showErrorDialog = "NFC-тег не найден в базе чекпоинтов"
                 
-                // Воспроизводим звук ошибки
-                SoundPlayer.playError(context)
+                // Воспроизводим звук ошибки (только если включен звук)
+                if (manager.isSoundEnabled()) {
+                    SoundPlayer.playError(context)
+                }
             }
             
             nfcScanResult = null
@@ -565,8 +571,10 @@ fun OhrannikCabinetScreen(
                                                                 // --- НОВЫЙ БЛОК ОБРАБОТКИ РЕЗУЛЬТАТА ---
                                                                 when (qrResult) {
                                                                     is QrResult.CheckpointPassed -> {
-                                                                        // Воспроизводим звук успеха при успешном проходе чекпоинта
-                                                                        SoundPlayer.playSuccess(context)
+                                                                        // Воспроизводим звук успеха при успешном проходе чекпоинта (только если включен звук)
+                                                                        if (manager.isSoundEnabled()) {
+                                                                            SoundPlayer.playSuccess(context)
+                                                                        }
                                                                         
                                                                         // Ваша логика при успешном проходе точки
                                                                         showCheckpointPassedDialog = qrResult
@@ -577,9 +585,19 @@ fun OhrannikCabinetScreen(
                                                                         if (manager.isStrictSequenceEnabled()) {
                                                                             // Показываем экран с красным X и сообщением "ТОчка вне очереди"
                                                                             showSequenceErrorScreen = qrResult
+                                                                            
+                                                                            // Воспроизводим звук ошибки (только если включен звук)
+                                                                            if (manager.isSoundEnabled()) {
+                                                                                SoundPlayer.playError(context)
+                                                                            }
                                                                         } else {
                                                                             // В нестрогом режиме показываем просто Toast
                                                                             android.widget.Toast.makeText(context, qrResult.message, android.widget.Toast.LENGTH_LONG).show()
+                                                                            
+                                                                            // Воспроизводим звук ошибки (только если включен звук)
+                                                                            if (manager.isSoundEnabled()) {
+                                                                                SoundPlayer.playError(context)
+                                                                            }
                                                                         }
                                                                     }
                                                                     is QrResult.QuestionFormat -> {

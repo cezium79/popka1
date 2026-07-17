@@ -97,21 +97,18 @@ class EmailManager(private val context: Context) {
             
             if (username.isEmpty() || password.isEmpty()) {
                 Log.e(TAG, "SMTP credentials not configured")
-                Toast.makeText(context, "Настройте SMTP в настройках", Toast.LENGTH_LONG).show()
                 return@withContext false
             }
             
             // Проверяем, что username содержит @ (это должен быть email)
             if (!username.contains("@")) {
                 Log.e(TAG, "SMTP username is not a valid email address: $username")
-                Toast.makeText(context, "SMTP username должен быть email адресом", Toast.LENGTH_LONG).show()
                 return@withContext false
             }
             
             // Проверяем, что password не слишком короткий (app password обычно 16 символов)
             if (password.length < 8) {
                 Log.w(TAG, "SMTP password seems too short (length: ${password.length})")
-                Toast.makeText(context, "Проверьте SMTP пароль (должен быть app password)", Toast.LENGTH_LONG).show()
                 return@withContext false
             }
             
@@ -167,18 +164,10 @@ class EmailManager(private val context: Context) {
             Transport.send(message)
             
             Log.i(TAG, "Email sent successfully to $to")
-            Toast.makeText(context, "Письмо отправлено!", Toast.LENGTH_SHORT).show()
             true
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send email: ${e.message}", e)
-            // Добавляем более подробное сообщение об ошибке
-            val errorMsg = when {
-                e.message?.contains("535") == true -> "Ошибка аутентификации: проверьте SMTP username и app password"
-                e.message?.contains("465") == true -> "Ошибка подключения к порту 465: проверьте настройки"
-                else -> "Ошибка отправки письма: ${e.message}"
-            }
-            Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
             false
         }
     }
@@ -201,27 +190,18 @@ class EmailManager(private val context: Context) {
             
             if (username.isEmpty() || password.isEmpty()) {
                 Log.e(TAG, "SMTP credentials not configured")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Настройте SMTP в настройках", Toast.LENGTH_LONG).show()
-                }
                 return@withContext false
             }
             
             // Проверяем, что username содержит @ (это должен быть email)
             if (!username.contains("@")) {
                 Log.e(TAG, "SMTP username is not a valid email address: $username")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "SMTP username должен быть email адресом", Toast.LENGTH_LONG).show()
-                }
                 return@withContext false
             }
             
             // Проверяем, что password не слишком короткий (app password обычно 16 символов)
             if (password.length < 8) {
                 Log.w(TAG, "SMTP password seems too short (length: ${password.length})")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Проверьте SMTP пароль (должен быть app password)", Toast.LENGTH_LONG).show()
-                }
                 return@withContext false
             }
             
@@ -257,23 +237,11 @@ class EmailManager(private val context: Context) {
             // Отправляем сообщение
             Transport.send(message)
             
-            withContext(Dispatchers.Main) {
-                Log.i(TAG, "Simple email sent successfully to $to")
-                Toast.makeText(context, "Письмо отправлено!", Toast.LENGTH_SHORT).show()
-            }
+            Log.i(TAG, "Simple email sent successfully to $to")
             true
             
         } catch (e: Exception) {
-            withContext(Dispatchers.Main) {
-                Log.e(TAG, "Failed to send simple email: ${e.message}", e)
-                // Добавляем более подробное сообщение об ошибке
-                val errorMsg = when {
-                    e.message?.contains("535") == true -> "Ошибка аутентификации: проверьте SMTP username и app password"
-                    e.message?.contains("465") == true -> "Ошибка подключения к порту 465: проверьте настройки"
-                    else -> "Ошибка отправки письма: ${e.message}"
-                }
-                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
-            }
+            Log.e(TAG, "Failed to send simple email: ${e.message}", e)
             false
         }
     }

@@ -1,8 +1,11 @@
 package com.example.ohrana
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Log
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -435,6 +438,64 @@ class SharedPrefsManager(private val context: Context) {
             
             apply()
         }
+    }
+    
+    // --- АРХИВАЦИЯ ДАННЫХ ---
+    
+    /**
+     * Менеджер архивации данных
+     */
+    private val archiveManager = ArchiveManager(context)
+    
+    /**
+     * Архивирует и удаляет данные смен старше 7 дней
+     * Вызывается ежедневно в 23:55
+     * @return Количество архивированных смен
+     */
+    fun archiveOldShifts(): Int {
+        return archiveManager.archiveAndRemoveOldShifts(shiftDatabase)
+    }
+    
+    /**
+     * Находит смены старше указанного количества дней
+     * @param daysCount Количество дней
+     * @return Список ID смен старше указанного срока
+     */
+    fun findOldShifts(daysCount: Int): List<String> {
+        return archiveManager.findOldShifts(daysCount, shiftDatabase)
+    }
+    
+    /**
+     * Архивирует конкретную смену (по запросу пользователя)
+     * @param shiftId ID смены
+     * @return true если успешно, false если ошибка
+     */
+    fun archiveShift(shiftId: String): Boolean {
+        return archiveManager.archiveCompleteShift(shiftId, shiftDatabase)
+    }
+    
+    /**
+     * Получает размер архивной папки в байтах
+     * @return Размер архива
+     */
+    fun getArchiveSize(): Long {
+        return archiveManager.getArchiveSize()
+    }
+    
+    /**
+     * Получает количество файлов в архиве
+     * @return Количество файлов
+     */
+    fun getArchiveFileCount(): Int {
+        return archiveManager.getArchiveFiles().size
+    }
+    
+    /**
+     * Очищает архив старше указанного количества дней
+     * @param daysCount Количество дней
+     */
+    fun cleanupOldArchive(daysCount: Int) {
+        archiveManager.cleanupOldArchive(daysCount)
     }
     
     /**
@@ -2361,18 +2422,80 @@ class SharedPrefsManager(private val context: Context) {
         val body = "Отчет загружен в Яндекс.Диск: $url"
         
         // Запускаем отправку в фоновом потоке
-        CoroutineScope(Dispatchers.Main).launch {
-            val success = withContext(Dispatchers.IO) {
-                emailManager.sendSimpleEmail(email, subject, body)
-            }
-            
-            if (success) {
-                Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $email")
-                Toast.makeText(context, "Письмо отправлено!", Toast.LENGTH_SHORT).show()
-            } else {
-                Log.e("SharedPrefsManager", "Failed to send email via SMTP")
-                Toast.makeText(context, "Ошибка отправки письма", Toast.LENGTH_LONG).show()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val success = emailManager.sendSimpleEmail(email, subject, body)
+                
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $email")
+                        Toast.makeText(context, "Письмо отправлено!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Log.e("SharedPrefsManager", "Failed to send email via SMTP")
+                        Toast.makeText(context, "Ошибка отправки письма", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Log.e("SharedPrefsManager", "Exception sending email via SMTP: ${e.message}", e)
+                    Toast.makeText(context, "Ошибка отправки письма: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
+    }
+    
+    // ==================================================
+    // 🖼️ МЕТОДЫ ДЛЯ РАБОТЫ С РАЗМЫТЫМ ФОНОМ (Bitmap)
+    // ==================================================
+    
+    /**
+     * Сохраняет Bitmap с размытым фоном в SharedPreferences
+     * Кодирует Bitmap в PNG и сохраняет как Base64 строку
+     */
+    fun saveBlurredBackgroundBitmap(bitmap: Bitmap) {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        // Сжимаем Bitmap в PNG и кодируем в Base64
+        val byteArray = ByteArrayOutputStream().also { stream ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        }.toByteArray()
+        val base64String = android.util.Base64.encodeToString(byteArray, android.util.Base64.DEFAULT)
+        localPrefs.edit().putString("blurred_background_bitmap", base64String).apply()
+        Log.d("SharedPrefsManager", "Blurred background bitmap saved")
+    }
+    
+    /**
+     * Загружает Bitmap с размытым фоном из SharedPreferences
+     * Возвращает null если данные не найдены
+     */
+    fun loadBlurredBackgroundBitmap(): Bitmap? {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val base64String = localPrefs.getString("blurred_background_bitmap", null)
+        
+        return base64String?.let {
+            try {
+                val byteArray = android.util.Base64.decode(it, android.util.Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
+            } catch (e: Exception) {
+                Log.e("SharedPrefsManager", "Error loading blurred background bitmap: ${e.message}")
+                null
+            }
+        }
+    }
+    
+    /**
+     * Удаляет сохраненный Bitmap с размытым фоном
+     */
+    fun clearBlurredBackgroundBitmap() {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        localPrefs.edit().remove("blurred_background_bitmap").apply()
+        Log.d("SharedPrefsManager", "Blurred background bitmap cleared")
+    }
+    
+    /**
+     * Проверяет, сохранен ли Bitmap с размытым фоном
+     */
+    fun hasBlurredBackgroundBitmap(): Boolean {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        return localPrefs.contains("blurred_background_bitmap")
     }
 }

@@ -1,15 +1,10 @@
 package com.example.ohrana
 
-import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -21,13 +16,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.OutputStream
+import androidx.compose.ui.tooling.preview.Preview
+import com.example.ohrana.ui.components.OhranaOutlinedButton
+import com.example.ohrana.BlurredBackground
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -36,6 +29,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.BackHandler
+import android.app.ActivityManager
+import android.app.Service
+import android.content.ComponentName
+import android.content.Intent
+import android.os.Build
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,7 +43,6 @@ fun AdministratorScreen(
     onNavigateToLogs: () -> Unit,
     onNavigateToCloudSettings: () -> Unit,
     onBack: () -> Unit,
-    currentScreen: String,
     onNavigateToSoundSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -63,7 +60,8 @@ fun AdministratorScreen(
     var exportStatusMessage by remember { mutableStateOf("") }
     var importStatusMessage by remember { mutableStateOf("") }
     var exportFileName by remember { mutableStateOf("") }
-    
+    var archiveServiceRunning = remember { mutableStateOf(false) }
+
     // Лаунчер для выбора файла импорта
     val importFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -73,7 +71,7 @@ fun AdministratorScreen(
                     try {
                         val inputStream = context.contentResolver.openInputStream(uri)
                         val text = inputStream?.bufferedReader().use { it?.readText() }
-                        
+
                         if (text != null) {
                             val success = prefsManager.importSettingsFromText(text)
                             withContext(Dispatchers.Main) {
@@ -84,7 +82,8 @@ fun AdministratorScreen(
                                 }
                                 showImportStatus = true
                                 showImportDialog = false
-                                Toast.makeText(context, importStatusMessage, Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, importStatusMessage, Toast.LENGTH_LONG)
+                                    .show()
                             }
                         } else {
                             withContext(Dispatchers.Main) {
@@ -105,7 +104,7 @@ fun AdministratorScreen(
             }
         }
     )
-    
+
     // Лаунчер для создания файла экспорта через SAF
     val exportFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain")
@@ -121,7 +120,8 @@ fun AdministratorScreen(
                         exportStatusMessage = "Настройки сохранены через SAF"
                         showExportStatus = true
                         showExportDialog = false
-                        Toast.makeText(context, "Настройки успешно сохранены!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Настройки успешно сохранены!", Toast.LENGTH_LONG)
+                            .show()
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -134,7 +134,7 @@ fun AdministratorScreen(
             }
         }
     }
-    
+
     // Функция экспорта
     val exportSettingsFunction: () -> Unit = {
         // Используем SAF для создания файла экспорта
@@ -158,394 +158,661 @@ fun AdministratorScreen(
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF616161)) // Серый фон
+        Box(
+            modifier = Modifier.fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Кнопки навигации (тёмно-серые с белым текстом)
-            Button(
-                onClick = onNavigateToEmployeeList,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF424242), // Тёмно-серый
-                    contentColor = Color(0xFFFFFFFF)    // Белый текст
-                ),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
-            ) {
-                Text("Список сотрудников", fontSize = 16.sp)
-            }
-            
-            Button(
-                onClick = onNavigateToRoutes,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF424242), // Тёмно-серый
-                    contentColor = Color(0xFFFFFFFF)    // Белый текст
-                ),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
-            ) {
-                Text("Маршруты", fontSize = 16.sp)
-            }
-            
-            Button(
-                onClick = onNavigateToLogs,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF424242), // Тёмно-серый
-                    contentColor = Color(0xFFFFFFFF)    // Белый текст
-                ),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
-            ) {
-                Text("Журналы", fontSize = 16.sp)
-            }
-            
-            Button(
-                onClick = onNavigateToCloudSettings,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF424242), // Тёмно-серый
-                    contentColor = Color(0xFFFFFFFF)    // Белый текст
-                ),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp)
-            ) {
-                Text("Настройки облачных хранилищ", fontSize = 16.sp)
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Кнопки экспорта и импорта
-            Text(
-                text = "Резервное копирование",
-                fontSize = 18.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = { showExportDialog = true },
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) {
-                    Text("Экспорт", fontSize = 14.sp)
-                }
-                
-                Button(
-                    onClick = { showImportDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) {
-                    Text("Импорт", fontSize = 14.sp)
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // Настройки контроля последовательности
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Строгий контроль",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                        Text(
-                            text = "Охранник обязан сканировать точки строго по порядку",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+            // Размытый фон
+            BlurredBackground()
 
-                    Switch(
-                        checked = isStrictSequence,
-                        onCheckedChange = { isChecked ->
-                            isStrictSequence = isChecked
-                            prefsManager.setStrictSequenceEnabled(isChecked)
-                        }
+            // Контент экрана
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Top,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Кнопки навигации (тёмно-серые с белым текстом)
+                OhranaOutlinedButton(
+                    text = "Список сотрудников",
+                    onClick = onNavigateToEmployeeList,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF424242), // Тёмно-серый
+                        contentColor = Color(0xFFFFFFFF)    // Белый текст
+                    ),
+                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 16.dp,
+                        disabledElevation = 8.dp
+                    ),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 20.sp
+                    )
+                )
+
+                OhranaOutlinedButton(
+                    text = "Маршруты",
+                    onClick = onNavigateToRoutes,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF424242), // Тёмно-серый
+                        contentColor = Color(0xFFFFFFFF)    // Белый текст
+                    ),
+                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 16.dp,
+                        disabledElevation = 8.dp
+                    ),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 20.sp
+                    )
+                )
+
+                OhranaOutlinedButton(
+                    text = "Журналы",
+                    onClick = onNavigateToLogs,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF424242), // Тёмно-серый
+                        contentColor = Color(0xFFFFFFFF)    // Белый текст
+                    ),
+                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 16.dp,
+                        disabledElevation = 8.dp
+                    ),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 20.sp
+                    )
+                )
+
+                OhranaOutlinedButton(
+                    text = "Настройки облока",
+                    onClick = onNavigateToCloudSettings,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF424242), // Тёмно-серый
+                        contentColor = Color(0xFFFFFFFF)    // Белый текст
+                    ),
+                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 16.dp,
+                        disabledElevation = 8.dp
+                    ),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 20.sp
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Кнопки экспорта и импорта
+                Text(
+                    text = "Резервное копирование настроек",
+                    fontSize = 18.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OhranaOutlinedButton(
+                        onClick = { showExportDialog = true },
+                        text = "Экспорт",
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF424242),
+                            contentColor = Color(0xFFFFFFFF)
+                        ),
+                        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                            defaultElevation = 8.dp,
+                            pressedElevation = 16.dp,
+                            disabledElevation = 8.dp
+                        ),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 18.sp
+                        )
+                    )
+
+                    OhranaOutlinedButton(
+                        onClick = { showImportDialog = true },
+                        text = "Импорт",
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            contentColor = MaterialTheme.colorScheme.onSecondary
+                        ),
+                        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                            defaultElevation = 8.dp,
+                            pressedElevation = 16.dp,
+                            disabledElevation = 8.dp
+                        ),
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 18.sp
+                        )
                     )
                 }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Настройки автоматического завершения обхода
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // Настройки контроля последовательности
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Автоматическое завершение обхода",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                        Text(
-                            text = "Завершать обход автоматически после прохождения последнего чекпоинта",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(// Заголовок карточки
+                                text = "Строгий контроль",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFFFFFFFF),
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                            Text(//описание положения свича
+                                text = if (isStrictSequence) {
+                                    "Охранник обязан соблюдать последовательность маршрута"
+                                } else {
+                                    "Охранник приходит маршрут как хочет, анализ не производится"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFFFFFFF)
+                            )
+                        }
+
+                        Switch(
+                            checked = isStrictSequence,
+                            onCheckedChange = { isChecked ->
+                                isStrictSequence = isChecked
+                                prefsManager.setStrictSequenceEnabled(isChecked)
+                            }
                         )
                     }
-
-                    Switch(
-                        checked = isAutoEndRound,
-                        onCheckedChange = { isChecked ->
-                            isAutoEndRound = isChecked
-                            prefsManager.setAutoEndRoundEnabled(isChecked)
-                        }
-                    )
                 }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Настройка звукового сопровождения
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Настройки автоматического завершения обхода
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Использовать звуки",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                        Text(
-                            text = "Включить/выключить звуковое сопровождение событий",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Автоматическое завершение обхода",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFFFFFFFF),
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isAutoEndRound) {
+                                    "Обход завершается автоматически после последнего чекпоинта"
+                                } else {
+                                    "Охранник должен сам завершать обход кнопкой"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFFFFFFF)
+                            )
+                        }
+
+                        Switch(
+                            checked = isAutoEndRound,
+                            onCheckedChange = { isChecked ->
+                                isAutoEndRound = isChecked
+                                prefsManager.setAutoEndRoundEnabled(isChecked)
+                            }
                         )
                     }
-
-                    Switch(
-                        checked = useSounds,
-                        onCheckedChange = { isChecked ->
-                            useSounds = isChecked
-                            prefsManager.setSoundEnabled(isChecked)
-                        }
-                    )
                 }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Кнопка "Настройки звука"
-            Button(
-                onClick = onNavigateToSoundSettings,
-                modifier = Modifier.fillMaxWidth().height(48.dp)
-            ) {
-                Text("Настройки звука", fontSize = 14.sp)
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Настройка количества охранников
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Настройка звукового сопровождения
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Использовать звуки",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color(0xFFFFFFFF),
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                            Text(
+                                text = if (useSounds) {
+                                    "Звуки включены"
+                                } else {
+                                    "Звуки выключены"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFFFFFFF)
+                            )
+                        }
+
+                        Switch(
+                            checked = useSounds,
+                            onCheckedChange = { isChecked ->
+                                useSounds = isChecked
+                                prefsManager.setSoundEnabled(isChecked)
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Кнопка "Настройки звука"
+                OhranaOutlinedButton(
+                    text = "Настройки звука",
+                    onClick = onNavigateToSoundSettings,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF424242),
+                        contentColor = Color(0xFFFFFFFF)
+                    ),
+                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 16.dp,
+                        disabledElevation = 8.dp
+                    ),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 18.sp
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Настройки архивации данных
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Состав смены",
+                            text = "Архивация данных",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = Color(0xFFFFFFFF)
                         )
                         
-                        // Выпадающее меню для выбора количества охранников
-                        var showGuardDropdown by remember { mutableStateOf(false) }
+                        Spacer(modifier = Modifier.height(12.dp))
                         
-                        Box {
-                            OutlinedButton(
-                                onClick = { showGuardDropdown = true },
-                                modifier = Modifier.width(260.dp)
-                            ) {
-                                Text(
-                                    when (guardsCount) {
+                        Text(
+                            text = "Архивирование данных смен старше 7 дней",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFFFFFFF)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Кнопки управления архивацией
+                        OhranaOutlinedButton(
+                            text = if (archiveServiceRunning.value) "Остановить архивацию" else "Запустить архивацию",
+                            onClick = {
+                                scope.launch {
+                                    if (archiveServiceRunning.value) {
+                                        stopArchiveService(context, archiveServiceRunning)
+                                    } else {
+                                        startArchiveService(context, archiveServiceRunning)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF424242),
+                                contentColor = Color(0xFFFFFFFF)
+                            ),
+                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                                defaultElevation = 8.dp,
+                                pressedElevation = 16.dp,
+                                disabledElevation = 8.dp
+                            ),
+                            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp
+                            )
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        OhranaOutlinedButton(
+                            text = "Архивировать данные сейчас",
+                            onClick = {
+                                scope.launch {
+                                    archiveNow(context)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF424242),
+                                contentColor = Color(0xFFFFFFFF)
+                            ),
+                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                                defaultElevation = 8.dp,
+                                pressedElevation = 16.dp,
+                                disabledElevation = 8.dp
+                            ),
+                            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp
+                            )
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        val archiveSize = prefsManager.getArchiveSize()
+                        val archiveFileCount = prefsManager.getArchiveFileCount()
+                        
+                        Text(
+                            text = "Размер архива: ${formatFileSize(archiveSize)} (${archiveFileCount} файлов)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFE0E0E0)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Настройка количества охранников
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Состав смены",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+
+                            // Выпадающее меню для выбора количества охранников
+                            var showGuardDropdown by remember { mutableStateOf(false) }
+
+                            Box {
+                                OhranaOutlinedButton(
+                                    onClick = { showGuardDropdown = true },
+                                    modifier = Modifier.width(260.dp).height(48.dp),
+                                    text = when (guardsCount) {
                                         1 -> "1 охранник (старший)"
                                         2 -> "Старший и 1 охранник"
                                         3 -> "Старший и 2 охранника"
                                         else -> "Выберите количество"
                                     },
-                                    fontSize = 14.sp
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF424242),
+                                        contentColor = Color(0xFFFFFFFF)
+                                    ),
+                                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                                        defaultElevation = 8.dp,
+                                        pressedElevation = 16.dp,
+                                        disabledElevation = 8.dp
+                                    ),
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                                        fontSize = 16.sp
+                                    )
                                 )
                                 Icon(
                                     imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = "Раскрыть меню"
+                                    contentDescription = "Раскрыть меню",
+                                    modifier = Modifier
+                                        .width(24.dp)
+                                        .height(24.dp)
+                                        .align(Alignment.CenterEnd)
                                 )
-                            }
-                            
-                            DropdownMenu(
-                                modifier = Modifier.width(260.dp),
-                                expanded = showGuardDropdown,
-                                onDismissRequest = { showGuardDropdown = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("1 охранник (старший)") },
-                                    onClick = {
-                                        // Проверяем, есть ли активная смена
-                                        if (prefsManager.isAnyShiftActive()) {
-                                            // Закрываем текущую смену
-                                            prefsManager.closeCurrentShift()
+
+                                DropdownMenu(
+                                    modifier = Modifier.width(260.dp),
+                                    expanded = showGuardDropdown,
+                                    onDismissRequest = { showGuardDropdown = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("1 охранник (старший)") },
+                                        onClick = {
+                                            // Проверяем, есть ли активная смена
+                                            if (prefsManager.isAnyShiftActive()) {
+                                                // Закрываем текущую смену
+                                                prefsManager.closeCurrentShift()
+                                            }
+                                            guardsCount = 1
+                                            prefsManager.setGuardsCount(1)
+                                            showGuardDropdown = false
                                         }
-                                        guardsCount = 1
-                                        prefsManager.setGuardsCount(1)
-                                        showGuardDropdown = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Старший и 1 охранник") },
-                                    onClick = {
-                                        // Проверяем, есть ли активная смена
-                                        if (prefsManager.isAnyShiftActive()) {
-                                            // Закрываем текущую смену
-                                            prefsManager.closeCurrentShift()
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Старший и 1 охранник") },
+                                        onClick = {
+                                            // Проверяем, есть ли активная смена
+                                            if (prefsManager.isAnyShiftActive()) {
+                                                // Закрываем текущую смену
+                                                prefsManager.closeCurrentShift()
+                                            }
+                                            guardsCount = 2
+                                            prefsManager.setGuardsCount(2)
+                                            showGuardDropdown = false
                                         }
-                                        guardsCount = 2
-                                        prefsManager.setGuardsCount(2)
-                                        showGuardDropdown = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Старший и 2 охранника") },
-                                    onClick = {
-                                        // Проверяем, есть ли активная смена
-                                        if (prefsManager.isAnyShiftActive()) {
-                                            // Закрываем текущую смену
-                                            prefsManager.closeCurrentShift()
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Старший и 2 охранника") },
+                                        onClick = {
+                                            // Проверяем, есть ли активная смена
+                                            if (prefsManager.isAnyShiftActive()) {
+                                                // Закрываем текущую смену
+                                                prefsManager.closeCurrentShift()
+                                            }
+                                            guardsCount = 3
+                                            prefsManager.setGuardsCount(3)
+                                            showGuardDropdown = false
                                         }
-                                        guardsCount = 3
-                                        prefsManager.setGuardsCount(3)
-                                        showGuardDropdown = false
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(32.dp))
             }
-            
-            Spacer(modifier = Modifier.height(32.dp))
+        }
+
+        // Диалог экспорта
+        if (showExportDialog) {
+            AlertDialog(
+                onDismissRequest = { showExportDialog = false },
+                title = { Text("Экспорт настроек") },
+                text = { Text("Сохранить все настройки в текстовый файл?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            exportSettingsFunction()
+                        }
+                    ) {
+                        Text("Экспортировать")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showExportDialog = false }
+                    ) {
+                        Text("Отмена")
+                    }
+                }
+            )
+        }
+
+        // Диалог импорта
+        if (showImportDialog) {
+            AlertDialog(
+                onDismissRequest = { showImportDialog = false },
+                title = { Text("Импорт настроек") },
+                text = {
+                    Column {
+                        Text("Выберите файл резервной копии для восстановления настроек.")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { importFileLauncher.launch("text/*") },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Выбрать файл")
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { showImportDialog = false }
+                    ) {
+                        Text("Отмена")
+                    }
+                }
+            )
+        }
+
+        // Диалог статуса экспорта
+        if (showExportStatus) {
+            AlertDialog(
+                onDismissRequest = { showExportStatus = false },
+                title = { Text("Экспорт") },
+                text = { Text(exportStatusMessage) },
+                confirmButton = {
+                    TextButton(
+                        onClick = { showExportStatus = false }
+                    ) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
+
+        // Диалог статуса импорта
+        if (showImportStatus) {
+            AlertDialog(
+                onDismissRequest = { showImportStatus = false },
+                title = { Text("Импорт") },
+                text = { Text(importStatusMessage) },
+                confirmButton = {
+                    TextButton(
+                        onClick = { showImportStatus = false }
+                    ) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
+
+        // Обработка системной кнопки "Назад"
+        BackHandler(onBack = onBack)
+    }
+}
+
+/**
+ * Проверяет, работает ли служба архивации
+ */
+fun isArchiveServiceRunning(context: android.content.Context): Boolean {
+    val manager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+    for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
+        if (ArchiveService::class.java.name == service.service.className) {
+            return true
         }
     }
-    
-    // Диалог экспорта
-    if (showExportDialog) {
-        AlertDialog(
-            onDismissRequest = { showExportDialog = false },
-            title = { Text("Экспорт настроек") },
-            text = { Text("Сохранить все настройки в текстовый файл?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        exportSettingsFunction()
-                    }
-                ) {
-                    Text("Экспортировать")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showExportDialog = false }
-                ) {
-                    Text("Отмена")
-                }
-            }
-        )
-    }
-    
-    // Диалог импорта
-    if (showImportDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportDialog = false },
-            title = { Text("Импорт настроек") },
-            text = { 
-                Column {
-                    Text("Выберите файл резервной копии для восстановления настроек.")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = { importFileLauncher.launch("text/*") },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Выбрать файл")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { showImportDialog = false }
-                ) {
-                    Text("Отмена")
-                }
-            }
-        )
-    }
-    
-    // Диалог статуса экспорта
-    if (showExportStatus) {
-        AlertDialog(
-            onDismissRequest = { showExportStatus = false },
-            title = { Text("Экспорт") },
-            text = { Text(exportStatusMessage) },
-            confirmButton = {
-                TextButton(
-                    onClick = { showExportStatus = false }
-                ) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-    
-    // Диалог статуса импорта
-    if (showImportStatus) {
-        AlertDialog(
-            onDismissRequest = { showImportStatus = false },
-            title = { Text("Импорт") },
-            text = { Text(importStatusMessage) },
-            confirmButton = {
-                TextButton(
-                    onClick = { showImportStatus = false }
-                ) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-    
-    // Обработка системной кнопки "Назад"
-    BackHandler(onBack = onBack)
+    return false
 }
+
+/**
+ * Форматирует размер файла в читаемый вид
+ */
+fun formatFileSize(sizeBytes: Long): String {
+    return when {
+        sizeBytes >= 1024 * 1024 -> "${String.format("%.2f", sizeBytes / (1024.0 * 1024.0))} МБ"
+        sizeBytes >= 1024 -> "${String.format("%.2f", sizeBytes / 1024.0)} КБ"
+        else -> "$sizeBytes Б"
+    }
+}
+
+/**
+ * Запускает службу архивации
+ */
+fun startArchiveService(context: android.content.Context, archiveServiceState: androidx.compose.runtime.MutableState<Boolean>) {
+    val intent = Intent(context, ArchiveService::class.java).apply {
+        action = ArchiveService.ACTION_START
+    }
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        context.startForegroundService(intent)
+    } else {
+        context.startService(intent)
+    }
+    
+    archiveServiceState.value = true
+}
+
+/**
+ * Останавливает службу архивации
+ */
+fun stopArchiveService(context: android.content.Context, archiveServiceState: androidx.compose.runtime.MutableState<Boolean>) {
+    val intent = Intent(context, ArchiveService::class.java).apply {
+        action = ArchiveService.ACTION_STOP
+    }
+    
+    context.stopService(intent)
+    
+    archiveServiceState.value = false
+}
+
+/**
+ * Запускает архивацию немедленно
+ */
+fun archiveNow(context: android.content.Context) {
+    val intent = Intent(context, ArchiveService::class.java).apply {
+        action = ArchiveService.ACTION_ARCHIVE_NOW
+    }
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        context.startForegroundService(intent)
+    } else {
+        context.startService(intent)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+@Preview(showBackground = true, name = "AdministratorScreen Preview")
+fun AdministratorScreenPreview() {
+    AdministratorScreen(
+        onNavigateToEmployeeList = {},
+        onNavigateToRoutes = {},
+        onNavigateToLogs = {},
+        onNavigateToCloudSettings = {},
+        onBack = {},
+        onNavigateToSoundSettings = {}
+    )
+}
+

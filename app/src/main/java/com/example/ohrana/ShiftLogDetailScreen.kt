@@ -5,12 +5,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +41,7 @@ import android.graphics.pdf.PdfDocument
 import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.ui.res.painterResource
 
 private const val TAG = "ShiftLogDetailScreen"
 
@@ -151,11 +155,18 @@ fun ShiftLogDetailScreen(
         }
     ) { paddingValues ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Размытый фон
+            BlurredBackground()
+            
+            // Контент экрана
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+            ) {
             if (shift == null) {
                 Text(
                     text = "Смена не найдена",
@@ -519,6 +530,7 @@ fun ShiftLogDetailScreen(
                 )
             ) {
                 Text("ЭКСПОРТИРОВАТЬ В PDF", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
             }
         }
     }

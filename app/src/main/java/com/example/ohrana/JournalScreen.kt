@@ -1,506 +1,695 @@
 package com.example.ohrana
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import androidx.core.content.FileProvider
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import androidx.activity.compose.BackHandler
+import java.util.Date
+import java.util.Locale
+import java.lang.StringBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.example.ohrana.ui.components.OhranaOutlinedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JournalScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToHtmlReport: (htmlFilePath: String) -> Unit,
+    onSelectDate: (dateStr: String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
-    
-    // Диалог для просмотра фото
-    var selectedPhotoPath by remember { mutableStateOf<String?>(null) }
-    var showDialog by remember { mutableStateOf(false) }
-    
-    if (showDialog && selectedPhotoPath != null) {
-        PhotoDialog(
-            photoPath = selectedPhotoPath!!,
-            onDismiss = { showDialog = false }
-        )
+    val shiftDatabase = prefsManager.shiftDatabase
+    val scope = rememberCoroutineScope()
+
+    // Текущая дата и выбранная дата
+    val currentDate = remember { Calendar.getInstance() }
+    var selectedDate by remember { mutableStateOf(currentDate) }
+
+    // Состояние для всплывающего меню
+    var showMenu by remember { mutableStateOf(false) }
+    var selectedShiftForMenu by remember { mutableStateOf<ShiftRecord?>(null) }
+
+    // Обработка системной кнопки Назад
+    BackHandler {
+        showMenu = false
+        onBack()
     }
-    
-    // Данные о смене - обновляются при изменении SharedPreferences
-    val guards by remember { mutableStateOf(prefsManager.loadGuards()) }
-    val routeAlarms by remember { mutableStateOf(prefsManager.loadRouteAlarms()) }
-    
-    // Метаданные смены
-    val shiftStartTime by remember { mutableStateOf(prefsManager.getShiftStartTime()) }
-    val shiftEndTime by remember { mutableStateOf(prefsManager.getShiftEndTime()) }
-    val isShiftActive by remember { mutableStateOf(prefsManager.isAnyShiftActive()) }
-    val shiftId by remember { mutableStateOf(prefsManager.prefs.getString("active_shift_id", null) ?: "-") }
-    
-    val simpleDateFormat = SimpleDateFormat("dd.MM.yy HH:mm", Locale.getDefault())
-    
-    // Получаем epoch time из SharedPreferences и обрабатываем ошибки
-    val startTimeDate by remember {
-        mutableStateOf(
-            try {
-                val epochTime = prefsManager.prefs.getLong("active_shift_start_time_epoch", 0)
-                if (epochTime > 0) {
-                    simpleDateFormat.format(Date(epochTime))
-                } else {
-                    shiftStartTime
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("JournalScreen", "Error parsing shift start time", e)
-                shiftStartTime
+
+    // Таймер для автоматического скрытия всплывающего меню через 3 секунды
+    LaunchedEffect(showMenu) {
+        if (showMenu) {
+            delay(3000)
+            showMenu = false
+        }
+    }
+
+    // Формат даты для хранения и сравнения
+    val dateFormat = SimpleDateFormat("dd.MM.yyyy", java.util.Locale.getDefault())
+    val storageFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", java.util.Locale.getDefault())
+
+    // Загрузка смен за выбранную дату
+    val allShifts = try {
+        shiftDatabase.loadAllShifts()
+    } catch (e: Exception) {
+        emptyList()
+    }
+    val selectedDateStr = dateFormat.format(selectedDate.time)
+    val completedShifts = allShifts.filter { shift ->
+        try {
+            // Проверяем, что startTime не пустой
+            if (shift.startTime.isNullOrBlank()) {
+                return@filter false
             }
-        )
+            val shiftDate = storageFormat.parse(shift.startTime)?.let { 
+                dateFormat.format(it.time) 
+            }
+            shiftDate == selectedDateStr && !shift.isShiftActive && shift.endTime != null && shift.endTime?.isNotBlank() == true
+        } catch (e: Exception) {
+            false
+        }
     }
-    
-    // Количество чекпоинтов в смене (из всех маршрутов)
-    val totalCheckpoints by remember {
-        mutableStateOf(routeAlarms.sumOf { alarm ->
-            prefsManager.getRouteById(alarm.routeId ?: "")?.checkpointIds?.size ?: 0
-        })
+
+    // Функции переключения месяцев
+    val previousMonth = {
+        val calendar = selectedDate.clone() as Calendar
+        calendar.add(Calendar.MONTH, -1)
+        selectedDate = calendar
     }
-    
-    // Количество нарушений обхода - оптимизировано для текущей смены
-    val activeLogs by remember {
-        mutableStateOf(prefsManager.shiftDatabase.loadAllLogs().filter { it.shiftId == shiftId })
+
+    val nextMonth = {
+        val calendar = selectedDate.clone() as Calendar
+        calendar.add(Calendar.MONTH, 1)
+        selectedDate = calendar
     }
-    val violationsCount by remember {
-        mutableStateOf(activeLogs.filter { it.isSequenceCorrect == false }.size)
+
+    // Функции быстрого выбора даты
+    val selectToday = {
+        selectedDate = Calendar.getInstance()
     }
-    
-    // Имя старшего смены - безопасный доступ
-    val seniorName by remember {
-        mutableStateOf(
-            guards.firstOrNull { 
-                it.role.lowercase().contains("старший") || it.role.lowercase().contains("senior") || it.role.lowercase().contains("администратор") 
-            }?.name ?: "-"
-        )
+
+    val selectYesterday = {
+        val calendar = Calendar.getInstance()
+        calendar.add(Calendar.DAY_OF_MONTH, -1)
+        selectedDate = calendar
+    }
+
+    val selectDayBeforeYesterday = {
+        val calendar = Calendar.getInstance()
+        calendar.add(Calendar.DAY_OF_MONTH, -2)
+        selectedDate = calendar
+    }
+
+    val selectTwoDaysAgo = {
+        val calendar = Calendar.getInstance()
+        calendar.add(Calendar.DAY_OF_MONTH, -3)
+        selectedDate = calendar
+    }
+
+    // Получение дней в месяце (как список недель)
+    fun getWeeksInMonth(year: Int, month: Int): List<List<String?>> {
+        val calendar = Calendar.getInstance().apply {
+            set(year, month - 1, 1)
+        }
+        
+        val lastDay = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val weeks = mutableListOf<List<String?>>()
+        
+        // Добавляем пустые ячейки до первого дня месяца
+        val firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
+        val offset = (firstDayOfWeek + 5) % 7 // Convert to Monday-based index
+        
+        val days = mutableListOf<String?>()
+        
+        repeat(offset) {
+            days.add(null)
+        }
+        
+        // Добавляем дни месяца с форматированием dd.MM.yyyy
+        for (day in 1..lastDay) {
+            val dayStr = if (day < 10) "0$day" else "$day"
+            days.add("$dayStr.$month.$year")
+        }
+        
+        // Разбиваем на недели по 7 дней
+        var currentWeek = mutableListOf<String?>()
+        days.forEach { day ->
+            currentWeek.add(day)
+            if (currentWeek.size == 7) {
+                weeks.add(currentWeek.toList())
+                currentWeek = mutableListOf()
+            }
+        }
+        
+        // Добавляем последнюю неделю, если она не пустая
+        if (currentWeek.isNotEmpty()) {
+            while (currentWeek.size < 7) {
+                currentWeek.add(null)
+            }
+            weeks.add(currentWeek.toList())
+        }
+        
+        return weeks
+    }
+
+    // Вычисляем текущий год и месяц
+    val currentYear = selectedDate.get(Calendar.YEAR)
+    val currentMonth = selectedDate.get(Calendar.MONTH) + 1 // Calendar.MONTH is 0-indexed
+
+    // Получаем недели месяца
+    val weeksInMonth = getWeeksInMonth(currentYear, currentMonth)
+
+    // Названия дней недели
+    val weekDays = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+
+    // Форматирование даты для отображения
+    val monthName = remember(currentMonth) {
+        val months = listOf("Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", 
+                           "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь")
+        months[currentMonth - 1]
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Журнал текущей смены") },
+                title = { Text("Журналы") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF616161)
+                )
             )
         }
     ) { paddingValues ->
-        // Если смена закрыта, показываем уведомление
-        if (!isShiftActive && shiftId != "-") {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(0.8f),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Смена завершена",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Журнал отображает данные последней завершенной смены.",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = onBack) {
-                            Text("OK")
-                        }
-                    }
-                }
-            }
-        } else {
+        Box(
+            modifier = Modifier.fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Размытый фон
+            BlurredBackground()
+
+            // Контент экрана
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // ЗАГОЛОВОК С МЕТАДАННЫМИ СМЕНЫ
                 item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f), androidx.compose.ui.graphics.RectangleShape)
+                    // Календарь
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF595757)),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            // Заголовок с кнопками переключения месяцев
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(onClick = previousMonth) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Предыдущий месяц",
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "$monthName $currentYear",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                IconButton(onClick = nextMonth) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "Следующий месяц",
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Названия дней недели
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                weekDays.forEachIndexed { index, day ->
+                                    Text(
+                                        text = day,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF9E9E9E),
+                                        modifier = Modifier.weight(1f),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Сетка дней календаря - используем LazyColumn с неделями
+                            weeksInMonth.forEachIndexed { weekIndex, week ->
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    week.forEach { day ->
+                                        if (day != null) {
+                                            val isSelected = day == selectedDateStr
+                                            val todayCalendar = Calendar.getInstance()
+                                            val todayStr = dateFormat.format(todayCalendar.time)
+                                            val isToday = day == todayStr
+                                            val dayParts = day.split(".")
+                                            val dayOfMonth = dayParts[0].toInt()
+                                            val month = dayParts[1].toInt()
+                                            val year = dayParts[2].toInt()
+                                            
+                                            // Определяем день недели для текущего дня в календаре
+                                            val dayOfWeekCalendar = Calendar.getInstance().apply {
+                                                set(year, month - 1, dayOfMonth)
+                                            }
+                                            val weekDayIndex = dayOfWeekCalendar.get(Calendar.DAY_OF_WEEK)
+                                            // Calendar.DAY_OF_WEEK: Воскресенье=1, Понедельник=2, ..., Суббота=7
+                                            // Нам нужно: Понедельник=0, ..., Суббота=5, Воскресенье=6
+                                            val adjustedIndex = if (weekDayIndex == Calendar.SUNDAY) 6 else weekDayIndex - 2
+                                            val isWeekend = adjustedIndex == 5 || adjustedIndex == 6 // Сб = 5, Вс = 6
+                                            
+                                            // Обработчик нажатия на день
+                                            val onClickDay = {
+                                                val selectedCalendar = Calendar.getInstance().apply {
+                                                    set(year, month - 1, dayOfMonth)
+                                                }
+                                                val clickedDateStr = dateFormat.format(selectedCalendar.time)
+                                                selectedDate = selectedCalendar
+                                                onSelectDate(clickedDateStr)
+                                            }
+                                            
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .size(40.dp)
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = if (isSelected) Color(0xFF4CAF50) else Color(0xFF9E9E9E),
+                                                        shape = RoundedCornerShape(50)
+                                                    )
+                                                    .clickable { onClickDay() }
+                                                    .padding(4.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = dayOfMonth.toString(),
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isWeekend) Color(0xFFFF6B6B) else Color(0xFF9E9E9E),
+                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                )
+                                            }
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .size(40.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Заголовок кнопок быстрого выбора
                             Text(
-                                text = "МЕТАДАННЫЕ СМЕНЫ",
+                                text = "Быстрый выбор:",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = Color.White
                             )
+
                             Spacer(modifier = Modifier.height(8.dp))
-                            
-                            Text(text = "Номер смены: $shiftId", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            if (seniorName != "-") {
-                                Text(text = "Старший смены: $seniorName", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+
+                            // Кнопки быстрого выбора
+                            Column {
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = selectToday,
+                                        modifier = Modifier.weight(1f).height(48.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF424242))
+                                    ) {
+                                        Text(text = "Сегодня", color = Color.White)
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = selectYesterday,
+                                        modifier = Modifier.weight(1f).height(48.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF424242))
+                                    ) {
+                                        Text(text = "Вчера", color = Color.White)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = selectDayBeforeYesterday,
+                                        modifier = Modifier.weight(1f).height(48.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF424242))
+                                    ) {
+                                        Text(text = "Третьего дня", color = Color.White)
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = selectTwoDaysAgo,
+                                        modifier = Modifier.weight(1f).height(48.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF424242))
+                                    ) {
+                                        Text(text = "Давича", color = Color.White)
+                                    }
+                                }
                             }
-                            Text(text = "Охранники: ${guards.joinToString(", ") { it.name }}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            Text(text = "Время начала: $startTimeDate", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            if (shiftEndTime != "-" && shiftEndTime.isNotEmpty()) {
-                                Text(text = "Время окончания: $shiftEndTime", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                            Text(text = "Чекпоинтов в смене: $totalCheckpoints", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            Text(text = "Нарушений обхода: $violationsCount", fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            // Заголовок списка журналов
+                            Text(
+                                text = "Журналы за $selectedDateStr:",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
+                }
+
+                // Список журналов
+                if (completedShifts.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Нет завершенных смен за выбранную дату",
+                            fontSize = 14.sp,
+                            color = Color(0xFFBDBDBD),
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else {
+                    items(completedShifts) { shift ->
+                        ShiftMiniCard(
+                            shift = shift,
+                            onMenuClick = { shift ->
+                                selectedShiftForMenu = shift
+                                showMenu = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Поиск HTML отчета для выбранной смены
+            val htmlReportFile = findHtmlReportFile(selectedShiftForMenu?.id, context)
+
+            // Всплывающее меню
+            if (showMenu && selectedShiftForMenu != null) {
+                Card(
+                    modifier = Modifier
+                        .offset(x = 100.dp, y = 100.dp)
+                        .clickable { showMenu = false },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF333333)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Посмотреть", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                if (htmlReportFile != null && htmlReportFile.exists()) {
+                                    openHtmlReport(htmlReportFile, context)
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "HTML отчет не найден",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Загрузить HTML в Яндекс.Диск", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                scope.launch {
+                                    val cloudManager = CloudStorageManager(context)
+                                    val diskToken = cloudManager.getDiskToken()
+
+                                    if (diskToken == null || diskToken.isEmpty()) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                context,
+                                                "Настройте Яндекс.Диск в настройках",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    } else {
+                                        val selectedAction = prefsManager.getSmsAction()
+                                        val reportResult = withContext(Dispatchers.IO) {
+                                            cloudManager.exportHtmlToDisk(
+                                                selectedShiftForMenu!!.id,
+                                                shiftDatabase,
+                                                uploadToDisk = true,
+                                                context,
+                                                prefsManager
+                                            )
+                                        }
+
+                                        withContext(Dispatchers.Main) {
+                                            if (reportResult.isSuccess()) {
+                                                val downloadUrl = reportResult.getDownloadUrl()
+                                                if (downloadUrl != null) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "HTML отчет загружен! Ссылка: $downloadUrl",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                    scope.launch {
+                                                        prefsManager.sendLinkWithAction(
+                                                            selectedAction,
+                                                            downloadUrl
+                                                        )
+                                                    }
+                                                } else {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "HTML отчет загружен в Яндекс.Диск!",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Ошибка при загрузке HTML в Диск: ${reportResult.getDiskErrorMessage()}",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ShiftMiniCard(shift: ShiftRecord, onMenuClick: (ShiftRecord) -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF595757)),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                // Название смены
+                val datePart = shift.startTime.split(" ").firstOrNull() ?: "-"
+                val startTime = shift.startTime.split(" ").lastOrNull() ?: "-"
+                val endTime = shift.endTime?.split(" ")?.lastOrNull() ?: "-"
+                
+                val formattedDate = when {
+                    datePart.length >= 10 && datePart.contains("-") -> {
+                        " ${datePart.substring(8, 10)}.${datePart.substring(5, 7)}.${datePart.substring(0, 4)}"
+                    }
+                    datePart.length >= 10 && datePart.contains(".") -> {
+                        datePart
+                    }
+                    else -> datePart
                 }
                 
-                // ТАБЛИЦА ПО КАЖДОМУ ОБХОДУ
-                routeAlarms.forEach { alarm ->
-                    val roundId = alarm.id
-                    val roundStartTime = prefsManager.getRoundStartTime(roundId)
-                    val roundEndTime = prefsManager.getRoundEndTime(roundId)
-                    val isCompleted = prefsManager.isRoundCompleted(roundId)
-                    val checkpointIndex = prefsManager.getRoundCheckpointIndex(roundId)
-                    val routeId = prefsManager.getRoundRouteId(roundId)
-                    val route = prefsManager.getRouteById(routeId ?: "")
-                    val totalRouteCheckpoints = route?.checkpointIds?.size ?: 0
-                    val roundLogs = prefsManager.getRoundScanLogs(roundId).sortedBy { it.timestamp }
-                    val roundViolations = prefsManager.getRoundViolations(roundId)
-                    
-                    // Логируем логи для диагностики
-                    android.util.Log.d("JournalScreen", "=== ROUND $roundId ===")
-                    android.util.Log.d("JournalScreen", "  roundLogs.size = ${roundLogs.size}")
-                    roundLogs.forEach { log ->
-                        android.util.Log.d("JournalScreen", "  Log: checkpoint=${log.checkpointName}, actionType=${log.actionType}, isSequenceCorrect=${log.isSequenceCorrect}, answer='${log.answer}', inputValue='${log.inputValue}'")
-                    }
-                    
-                    // Заголовок обхода
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.secondaryContainer)
-                                .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f), androidx.compose.ui.graphics.RectangleShape)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "ОБХОД №${alarm.id} (${alarm.time})",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "Статус: ${if (isCompleted) "Завершен" else "В процессе"} | Прогресс: $checkpointIndex/$totalRouteCheckpoints",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                                Text(
-                                    text = "Время: $roundStartTime - $roundEndTime",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Заголовки столбцов
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Время",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.2f)) {
-                                Text(
-                                    text = "Сотрудник",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.5f)) {
-                                Text(
-                                    text = "Чекпоинт",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.5f)) {
-                                Text(
-                                    text = "Вопрос/Пояснение",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.5f)) {
-                                Text(
-                                    text = "Ответ/Данные",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(0.8f)) {
-                                Text(
-                                    text = "Фото",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Примечание",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Записи обхода
-                    items(roundLogs) { log ->
-                        // Определяем наличие нарушения для этой записи
-                        // Просто проверяем isSequenceCorrect - если false, значит нарушение
-                        val hasViolation = !log.isSequenceCorrect
-                        // Получаем тип нарушения
-                        val errorType = log.sequenceErrorType
-                        android.util.Log.d("JournalScreen", "Log entry: checkpoint=${log.checkpointName}, actionType=${log.actionType}, isSequenceCorrect=${log.isSequenceCorrect}, sequenceErrorType=${errorType.name}, answer='${log.answer}', inputValue='${log.inputValue}'")
-                        val violationNote = if (hasViolation) {
-                            when (errorType) {
-                                SequenceErrorType.FOREIGN_CHECKPOINT -> "Чужая метка"
-                                SequenceErrorType.OUTSIDE_ROUTE -> "Вне маршрута"
-                                SequenceErrorType.OUT_OF_SEQUENCE -> "Вне очереди"
-                                SequenceErrorType.NONE -> "-"
-                            }
-                        } else {
-                            "-"
-                        }
-                        
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp)
-                                .border(1.dp, if (hasViolation) MaterialTheme.colorScheme.error.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f), androidx.compose.ui.graphics.RectangleShape),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = log.timestamp.substring(11),
-                                    fontSize = 11.sp,
-                                    color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.2f)) {
-                                Text(
-                                    text = log.employeeName ?: "-",
-                                    fontSize = 11.sp,
-                                    color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.5f)) {
-                                Text(
-                                    text = log.checkpointName,
-                                    fontSize = 11.sp,
-                                    color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.5f)) {
-                                // Столбец 4: Вопрос/Пояснение
-                                // Для нарушений не отображаем вопросы/заголовки
-                                val checkpoint = prefsManager.getCheckpointById(log.checkpointId)
-                                val questionOrTitle = when {
-                                    hasViolation -> "-"
-                                    log.actionType == "QUESTION" -> checkpoint?.questionText ?: "-"
-                                    log.actionType == "INPUT" -> checkpoint?.inputTitle ?: "-"
-                                    log.actionType == "PHOTO" -> log.checkpointName
-                                    else -> "-"
-                                }
-                                Text(
-                                    text = questionOrTitle,
-                                    fontSize = 11.sp,
-                                    color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1.5f)) {
-                                // Столбец 5: Ответ/Данные
-                                // Для нарушений не отображаем вопросы/ответы, но показываем действие
-                                android.util.Log.d("JournalScreen", "Rendering log: checkpoint=${log.checkpointName}, actionType=${log.actionType}, inputValue='${log.inputValue}', answer='${log.answer}'")
-                                android.util.Log.d("JournalScreen", "  checkpointId=${log.checkpointId}, shiftId=${log.shiftId}, roundId=${log.roundId}, isSequenceCorrect=${log.isSequenceCorrect}, sequenceErrorType=${log.sequenceErrorType.name}")
-                                val answerOrData = when {
-                                    hasViolation -> when {
-                                        log.actionType == "PHOTO" -> "Фото снято"
-                                        else -> "-"  // Для нарушений остальных типов - дефис
-                                    }
-                                    log.actionType == "CHECKPOINT" -> "Точка пройдена"
-                                    log.actionType == "QUESTION" -> log.answer ?: "-"
-                                    log.actionType == "INPUT" -> log.inputValue ?: "-"
-                                    log.actionType == "PHOTO" -> "Фото снято"
-                                    else -> "-"
-                                }
-                                android.util.Log.d("JournalScreen", "  -> answerOrData='$answerOrData'")
-                                Text(
-                                    text = answerOrData,
-                                    fontSize = 11.sp,
-                                    color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Box(modifier = Modifier.weight(0.8f)) {
-                                if (log.photoPath != null) {
-                                    Text(
-                                        text = "👁️",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.clickable { 
-                                            selectedPhotoPath = log.photoPath
-                                            showDialog = true
-                                        }
-                                    )
-                                } else {
-                                    Text(
-                                        text = "-",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Box(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = violationNote,
-                                    fontSize = 11.sp,
-                                    color = if (hasViolation) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Если нет записей
-                    if (roundLogs.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Нет записей сканирования",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Пустая строка между обходами
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
+                val formattedStartTime = if (startTime.length >= 5) {
+                    startTime.substring(0, 5)
+                } else {
+                    startTime
                 }
-            }
-        }
-    }
-    
-    // Обработка системной кнопки "Назад"
-    BackHandler(onBack = onBack)
-}
+                
+                val formattedEndTime = if (endTime?.length ?: 0 >= 5) {
+                    endTime.substring(0, 5)
+                } else {
+                    "-"
+                }
 
-@Composable
-@Preview(showBackground = true, name = "Журнал текущей смены")
-fun JournalScreenPreview() {
-    MaterialTheme {
-        JournalScreen(onBack = {})
-    }
-}
-
-// Диалог для просмотра фото
-@Composable
-fun PhotoDialog(
-    photoPath: String,
-    onDismiss: () -> Unit
-) {
-    val bitmap = remember { androidx.compose.runtime.mutableStateOf<android.graphics.Bitmap?>(null) }
-    
-    LaunchedEffect(photoPath) {
-        bitmap.value = runCatching {
-            android.graphics.BitmapFactory.decodeFile(photoPath)
-        }.getOrNull()
-    }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Фото чекпоинта") },
-        text = {
-            if (bitmap.value != null) {
-                androidx.compose.foundation.Image(
-                    bitmap = bitmap.value!!.asImageBitmap(),
-                    contentDescription = "Фото чекпоинта",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .clip(androidx.compose.ui.graphics.RectangleShape)
+                Text(
+                    text = "СМЕНА №${shift.id.takeLast(3)} от $formattedDate $formattedStartTime - $formattedEndTime",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .background(Color.LightGray),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Невозможно загрузить фото")
-                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Сотрудник: ${shift.employeeName}",
+                    fontSize = 12.sp,
+                    color = Color(0xFFE0E0E0)
+                )
             }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text("Закрыть")
-            }
+
+            // Кнопка с меню
+            OhranaOutlinedButton(
+                text = "⋮",
+                onClick = { onMenuClick(shift) },
+                modifier = Modifier.height(48.dp).width(48.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242),
+                    contentColor = Color(0xFFFFFFFF)
+                )
+            )
         }
-    )
+    }
 }
+
+/**
+ * Находит HTML отчет для выбранной смены в папке Reports
+ */
+fun findHtmlReportFile(shiftId: String?, context: android.content.Context): File? {
+    if (shiftId == null) return null
+    
+    val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
+        android.os.Environment.DIRECTORY_DOWNLOADS
+    )
+    val ohranaDir = File(downloadDir, "Ohrana")
+    val reportsDir = File(ohranaDir, "Reports")
+    
+    if (!reportsDir.exists()) return null
+    
+    // Ищем файл с именем shift_report_{shiftId}_yyyy-MM-ddTHH:mm:ss.SSSZ.html
+    // Например: shift_report_NS220726_001_2024-07-22T14:30:45.123Z.html
+    return reportsDir.listFiles()
+        ?.filter { it.name.startsWith("shift_report_${shiftId}_") && it.name.endsWith(".html") }
+        ?.maxByOrNull { it.name }
+}
+
+/**
+ * Открывает HTML отчет в стороннем приложении
+ */
+fun openHtmlReport(file: File, context: android.content.Context) {
+    try {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "text/html")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        
+        val resolveInfo = context.packageManager.resolveActivity(intent, 0)
+        if (resolveInfo != null) {
+            context.startActivity(intent)
+        } else {
+            Toast.makeText(
+                context,
+                "Нет приложения для открытия HTML",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    } catch (e: Exception) {
+        Toast.makeText(
+            context,
+            "Ошибка при открытии отчета: ${e.message}",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+}
+
+// Превью отключено - не работает в IDE без реального Android-контекста
+// из-за инициализации ArchiveManager и SharedPrefsManager
+// @OptIn(ExperimentalMaterial3Api::class)
+// @Composable
+// @Preview(showBackground = true, name = "JournalScreen Preview")
+// fun JournalScreenPreview() {
+//     androidx.compose.material3.MaterialTheme {
+//         JournalScreen(
+//             onBack = {},
+//             onNavigateToHtmlReport = {}
+//         )
+//     }
+// }
+
+// Превью отключено - не работает в IDE без реального Android-контекста
+// @OptIn(ExperimentalMaterial3Api::class)
+// @Composable
+// @Preview(showBackground = true, name = "JournalScreen Preview (No Data)")
+// fun JournalScreenPreviewNoData() {
+//     androidx.compose.material3.MaterialTheme {
+//         JournalScreen(
+//             onBack = {},
+//             onNavigateToHtmlReport = {}
+//         )
+//     }
+// }
