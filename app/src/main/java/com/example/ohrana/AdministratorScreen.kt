@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.ohrana.ui.components.OhranaOutlinedButton
-import com.example.ohrana.BlurredBackground
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,11 +28,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.BackHandler
+import android.content.Intent
+import android.os.Build
+import android.content.Context
 import android.app.ActivityManager
 import android.app.Service
 import android.content.ComponentName
-import android.content.Intent
-import android.os.Build
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontWeight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +67,7 @@ fun AdministratorScreen(
     var exportStatusMessage by remember { mutableStateOf("") }
     var importStatusMessage by remember { mutableStateOf("") }
     var exportFileName by remember { mutableStateOf("") }
-    var archiveServiceRunning = remember { mutableStateOf(false) }
+    val archiveServiceRunning = remember { mutableStateOf(false) }
 
     // Лаунчер для выбора файла импорта
     val importFileLauncher = rememberLauncherForActivityResult(
@@ -206,7 +213,7 @@ fun AdministratorScreen(
                         pressedElevation = 16.dp,
                         disabledElevation = 8.dp
                     ),
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                    style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
                     )
                 )
@@ -215,16 +222,16 @@ fun AdministratorScreen(
                     text = "Журналы",
                     onClick = onNavigateToLogs,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF424242), // Тёмно-серый
                         contentColor = Color(0xFFFFFFFF)    // Белый текст
                     ),
-                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                    elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 8.dp,
                         pressedElevation = 16.dp,
                         disabledElevation = 8.dp
                     ),
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                    style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
                     )
                 )
@@ -233,16 +240,16 @@ fun AdministratorScreen(
                     text = "Настройки облока",
                     onClick = onNavigateToCloudSettings,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF424242), // Тёмно-серый
                         contentColor = Color(0xFFFFFFFF)    // Белый текст
                     ),
-                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                    elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 8.dp,
                         pressedElevation = 16.dp,
                         disabledElevation = 8.dp
                     ),
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                    style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
                     )
                 )
@@ -253,7 +260,7 @@ fun AdministratorScreen(
                 Text(
                     text = "Резервное копирование настроек",
                     fontSize = 18.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
@@ -265,16 +272,16 @@ fun AdministratorScreen(
                         onClick = { showExportDialog = true },
                         text = "Экспорт",
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFF424242),
                             contentColor = Color(0xFFFFFFFF)
                         ),
-                        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        elevation = ButtonDefaults.buttonElevation(
                             defaultElevation = 8.dp,
                             pressedElevation = 16.dp,
                             disabledElevation = 8.dp
                         ),
-                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                        style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 18.sp
                         )
                     )
@@ -283,16 +290,16 @@ fun AdministratorScreen(
                         onClick = { showImportDialog = true },
                         text = "Импорт",
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.secondary,
                             contentColor = MaterialTheme.colorScheme.onSecondary
                         ),
-                        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        elevation = ButtonDefaults.buttonElevation(
                             defaultElevation = 8.dp,
                             pressedElevation = 16.dp,
                             disabledElevation = 8.dp
                         ),
-                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                        style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 18.sp
                         )
                     )
@@ -317,7 +324,7 @@ fun AdministratorScreen(
                                 text = "Строгий контроль",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color(0xFFFFFFFF),
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontWeight = FontWeight.Bold
                             )
                             Text(//описание положения свича
                                 text = if (isStrictSequence) {
@@ -359,7 +366,7 @@ fun AdministratorScreen(
                                 text = "Автоматическое завершение обхода",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color(0xFFFFFFFF),
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = if (isAutoEndRound) {
@@ -401,7 +408,7 @@ fun AdministratorScreen(
                                 text = "Использовать звуки",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color(0xFFFFFFFF),
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = if (useSounds) {
@@ -431,16 +438,16 @@ fun AdministratorScreen(
                     text = "Настройки звука",
                     onClick = onNavigateToSoundSettings,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF424242),
                         contentColor = Color(0xFFFFFFFF)
                     ),
-                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                    elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 8.dp,
                         pressedElevation = 16.dp,
                         disabledElevation = 8.dp
                     ),
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                    style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 18.sp
                     )
                 )
@@ -456,7 +463,7 @@ fun AdministratorScreen(
                         Text(
                             text = "Архивация данных",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            fontWeight = FontWeight.Bold,
                             color = Color(0xFFFFFFFF)
                         )
                         
@@ -483,16 +490,16 @@ fun AdministratorScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF424242),
                                 contentColor = Color(0xFFFFFFFF)
                             ),
-                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                            elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 8.dp,
                                 pressedElevation = 16.dp,
                                 disabledElevation = 8.dp
                             ),
-                            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                            style = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 16.sp
                             )
                         )
@@ -736,9 +743,15 @@ fun AdministratorScreen(
 /**
  * Проверяет, работает ли служба архивации
  */
-fun isArchiveServiceRunning(context: android.content.Context): Boolean {
-    val manager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-    for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
+fun isArchiveServiceRunning(context: Context): Boolean {
+    val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+    val services = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        manager.getRunningServices(Integer.MAX_VALUE)
+    } else {
+        @Suppress("DEPRECATION")
+        manager.getRunningServices(Integer.MAX_VALUE)
+    }
+    for (service in services) {
         if (ArchiveService::class.java.name == service.service.className) {
             return true
         }
@@ -751,8 +764,8 @@ fun isArchiveServiceRunning(context: android.content.Context): Boolean {
  */
 fun formatFileSize(sizeBytes: Long): String {
     return when {
-        sizeBytes >= 1024 * 1024 -> "${String.format("%.2f", sizeBytes / (1024.0 * 1024.0))} МБ"
-        sizeBytes >= 1024 -> "${String.format("%.2f", sizeBytes / 1024.0)} КБ"
+        sizeBytes >= 1024 * 1024 -> "${String.format(java.util.Locale.getDefault(), "%.2f", sizeBytes / (1024.0 * 1024.0))} МБ"
+        sizeBytes >= 1024 -> "${String.format(java.util.Locale.getDefault(), "%.2f", sizeBytes / 1024.0)} КБ"
         else -> "$sizeBytes Б"
     }
 }
@@ -760,7 +773,7 @@ fun formatFileSize(sizeBytes: Long): String {
 /**
  * Запускает службу архивации
  */
-fun startArchiveService(context: android.content.Context, archiveServiceState: androidx.compose.runtime.MutableState<Boolean>) {
+fun startArchiveService(context: Context, archiveServiceState: MutableState<Boolean>) {
     val intent = Intent(context, ArchiveService::class.java).apply {
         action = ArchiveService.ACTION_START
     }
@@ -777,7 +790,7 @@ fun startArchiveService(context: android.content.Context, archiveServiceState: a
 /**
  * Останавливает службу архивации
  */
-fun stopArchiveService(context: android.content.Context, archiveServiceState: androidx.compose.runtime.MutableState<Boolean>) {
+fun stopArchiveService(context: Context, archiveServiceState: MutableState<Boolean>) {
     val intent = Intent(context, ArchiveService::class.java).apply {
         action = ArchiveService.ACTION_STOP
     }

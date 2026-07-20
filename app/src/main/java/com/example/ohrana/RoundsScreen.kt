@@ -2,12 +2,8 @@ package com.example.ohrana
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,17 +16,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.zIndex
-import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,9 +42,6 @@ fun RoundsScreen(
     // Загружаем список маршрутов для отображения названий
     val allRoutes by remember { mutableStateOf(prefsManager.loadRoutes()) }
     
-    // Получаем имя активного сотрудника
-    val activeEmployeeName by remember { mutableStateOf(prefsManager.getActiveShiftEmployeeName()) }
-    
     // Получаем список охранников
     val guardList by remember { mutableStateOf(prefsManager.loadGuards()) }
     
@@ -62,7 +53,7 @@ fun RoundsScreen(
     var showConfirmCloseShiftDialog by remember { mutableStateOf(false) }
     var showGuardSelectionDialog by remember { mutableStateOf(false) }
     var showUnfinishedRoundWarning by remember { mutableStateOf(false) }
-    var selectedRoundForGuardSelection by remember { mutableStateOf<Pair<Int, String?>>(0 to null) }
+    var selectedRoundForGuardSelection by remember { mutableStateOf<Pair<Int, String?>?>(null) }
     
     // Проверка: есть ли незавершённый обход
     fun hasUnfinishedRound(): Boolean {
@@ -250,7 +241,7 @@ fun RoundsScreen(
                     
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = if (isRoundCompleted) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF424242)) // Серый фон
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp)
@@ -274,25 +265,32 @@ fun RoundsScreen(
                                     Text(
                                         text = "Маршрут: $routeName",
                                         fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = Color(0xFF050000)    // Белый текст
                                     )
                                 }
                                 
                                 if (isRoundCompleted) {
-                                    // Если обход завершен - показываем текст "Завершен"
-                                    Text(
-                                        text = "Завершен",
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    // Если обход завершен - неактивная красная кнопка с текстом "Завершен"
+                                    Button(
+                                        onClick = { },
+                                        modifier = Modifier.width(150.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFE53935), // Красный фон
+                                            contentColor = Color(0xFF43A047)    // Белый текст
+                                        )
+                                    ) {
+                                        Text("Завершен", fontSize = 14.sp)
+                                    }
                                 } else if (prefsManager.isRoundStarted(alarm.id)) {
                                     // Если обход начат, но не завершен - показываем кнопку "Продолжить обход" красным
                                     Button(
                                         onClick = { handleStartRound(alarm.id, alarm.routeId, isContinuation = true) },
                                         enabled = isShiftActive,
                                         modifier = Modifier.width(150.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF424242), // Тёмно-серый
+                                            contentColor = Color(0xFFFFFFFF)    // Белый текст
+                                        ),
                                     ) {
                                         Text("Продолжить обход", fontSize = 14.sp, color = MaterialTheme.colorScheme.onError)
                                     }
@@ -301,7 +299,11 @@ fun RoundsScreen(
                                     Button(
                                         onClick = { handleStartRound(alarm.id, alarm.routeId) },
                                         enabled = isShiftActive,
-                                        modifier = Modifier.width(150.dp)
+                                        modifier = Modifier.width(150.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF424242), // Тёмно-серый
+                                            contentColor = Color(0xFFFFFFFF)    // Белый текст
+                                        ),
                                     ) {
                                         Text("Начать обход", fontSize = 14.sp)
                                     }
@@ -312,13 +314,11 @@ fun RoundsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
-            
-
-            
             // Информационная карточка
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF424242)) // Серый фон
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
@@ -327,16 +327,19 @@ fun RoundsScreen(
                         text = "Информация",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = Color(0xFFFFFFFF) // Белый текст
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "После начала обхода вы попадете в кабинет охранника, где сможете сканировать QR-коды чекпоинтов.",
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = Color(0xFFE0E0E0) // Серо-белый текст
                     )
                 }
             }
+
+            
+           
             
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -360,14 +363,16 @@ fun RoundsScreen(
             if (showGuardSelectionDialog && guardList.size > 1) {
                 AlertDialog(
                     onDismissRequest = { showGuardSelectionDialog = false },
-                    title = { Text("Кто будет проходить обход №${selectedRoundForGuardSelection.first}?") },
+                    title = { Text("Кто будет проходить обход №${selectedRoundForGuardSelection?.first}?") },
                     text = {
                         Column {
                             guardList.forEach { guard ->
                                 TextButton(
                                     onClick = {
                                         showGuardSelectionDialog = false
-                                        onStartRound(guard.name, selectedRoundForGuardSelection.first, selectedRoundForGuardSelection.second)
+                                        selectedRoundForGuardSelection?.let {
+                                            onStartRound(guard.name, it.first, it.second)
+                                        }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -509,7 +514,7 @@ fun RoundsScreen(
             // Через 3 секунды возвращаемся на экран выбора сотрудника
             LaunchedEffect(showGoodbyeAnimation) {
                 if (showGoodbyeAnimation) {
-                    kotlinx.coroutines.delay(3000)
+                    kotlinx.coroutines.delay(3.seconds)
                     if (showGoodbyeAnimation) {
                         showGoodbyeAnimation = false
                         onCloseShift()

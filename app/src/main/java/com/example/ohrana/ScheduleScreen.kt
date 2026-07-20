@@ -23,6 +23,7 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -205,7 +206,10 @@ fun ScheduleScreen(
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF616161) // Серый фон как у экрана
+                )
             )
         }
     ) { paddingValues ->
@@ -228,7 +232,7 @@ fun ScheduleScreen(
             // --- РАЗДЕЛ 1: КОЛИЧЕСТВО ОБХОДОВ ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("1. Обязательное количество обходов", fontSize = 16.sp, style = MaterialTheme.typography.titleMedium)
@@ -237,12 +241,28 @@ fun ScheduleScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Button(onClick = { if (roundsCount > 1) roundsCount-- }, elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)) {
-                            Text("-", fontSize = 20.sp)
+                        Button(
+                            onClick = { if (roundsCount > 1) roundsCount-- },
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF424242),
+                                contentColor = Color(0xFFFFFFFF)
+                            ),
+                            shape = RoundedCornerShape(50.dp)
+                        ) {
+                            Text("-", fontSize = 20.sp, color = Color(0xFFFFFFFF))
                         }
-                        Text("$roundsCount обходов за смену", fontSize = 18.sp)
-                        Button(onClick = { roundsCount++ }, elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)) {
-                            Text("+", fontSize = 20.sp)
+                        Text("$roundsCount обходов за смену", fontSize = 14.sp, color = Color(0xFFFFFFFF))
+                        Button(
+                            onClick = { roundsCount++ },
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF424242),
+                                contentColor = Color(0xFFFFFFFF)
+                            ),
+                            shape = RoundedCornerShape(50.dp)
+                        ) {
+                            Text("+", fontSize = 20.sp, color = Color(0xFFFFFFFF))
                         }
                     }
                 }
@@ -251,7 +271,7 @@ fun ScheduleScreen(
             // --- РАЗДЕЛ 2: ДИНАМИЧЕСКОЕ РАСПИСАНИЕ, ПЕРЕКЛЮЧАТЕЛИ И ДОПУСКИ ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("2. Расписание и временные рамки", fontSize = 16.sp, style = MaterialTheme.typography.titleMedium)
@@ -273,9 +293,18 @@ fun ScheduleScreen(
                                         this[index] = alarm.copy(time = formattedTime)
                                     }
                                 },
-                                label = { Text("Время обхода №${alarm.id} (например, 08:00)") },
+                                label = { Text("Время обхода №${alarm.id} (например, 08:00)", color = Color(0xFF000000)) },
                                 modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color(0xFFFFFFFF),
+                                    unfocusedTextColor = Color(0xFFFFFFFF),
+                                    focusedContainerColor = Color(0xFF424242),
+                                    unfocusedContainerColor = Color(0xFF424242),
+                                    disabledContainerColor = Color(0xFF424242),
+                                    focusedBorderColor = Color(0xFFFFFFFF),
+                                    unfocusedBorderColor = Color(0xFFFFFFFF)
+                                )
                             )
 
                             // Выпадающий список выбора маршрута (снизу)
@@ -295,10 +324,19 @@ fun ScheduleScreen(
                                         },
                                         onValueChange = {},
                                         readOnly = true,
-                                        label = { Text("Маршрут") },
+                                        label = { Text("Маршрут", color = Color(0xFF000000)) },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .menuAnchor(),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color(0xFFFFFFFF),
+                                            unfocusedTextColor = Color(0xFFFFFFFF),
+                                            focusedContainerColor = Color(0xFF424242),
+                                            unfocusedContainerColor = Color(0xFF424242),
+                                            disabledContainerColor = Color(0xFF424242),
+                                            focusedBorderColor = Color(0xFFFFFFFF),
+                                            unfocusedBorderColor = Color(0xFFFFFFFF)
+                                        ),
                                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
                                     )
                                     
@@ -308,7 +346,7 @@ fun ScheduleScreen(
                                     ) {
                                         // Опция "Без маршрута"
                                         DropdownMenuItem(
-                                            text = { Text("Без маршрута") },
+                                            text = { Text("Без маршрута", color = Color(0xFFFFFFFF)) },
                                             onClick = {
                                                 routeAlarms = routeAlarms.toMutableList().apply {
                                                     this[index] = alarm.copy(routeId = null)
@@ -320,7 +358,7 @@ fun ScheduleScreen(
                                         // Маршруты
                                         allRoutesList.forEach { route ->
                                             DropdownMenuItem(
-                                                text = { Text(route.name) },
+                                                text = { Text(route.name, color = Color(0xFFFFFFFF)) },
                                                 onClick = {
                                                     routeAlarms = routeAlarms.toMutableList().apply {
                                                         this[index] = alarm.copy(routeId = route.id)
@@ -336,12 +374,12 @@ fun ScheduleScreen(
                                 Column {
                                     Text(
                                         text = "Нет маршрутов",
-                                        color = MaterialTheme.colorScheme.error,
+                                        color = Color(0xFFFF0000),
                                         fontSize = 12.sp
                                     )
                                     Text(
                                         text = "Создайте маршруты в разделе «Маршруты»",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = Color(0xFFFFFFFF),
                                         fontSize = 10.sp
                                     )
                                 }
@@ -355,9 +393,8 @@ fun ScheduleScreen(
                             ) {
                                 Text(
                                     text = if (alarm.isEnabled) "Вкл" else "Игнор",
-                                    fontSize = 12.sp,
-                                    color = if (alarm.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                )
+                                    fontSize = 18.sp,
+                                    color = if (alarm.isEnabled) Color(0xFF050000) else Color(0xFF050000))
                                 Switch(
                                     checked = alarm.isEnabled,
                                     onCheckedChange = { isChecked ->
@@ -381,11 +418,11 @@ fun ScheduleScreen(
                                 val checkpointsCount = roundCheckpointCounts.getOrNull(index) ?: 0
                                 Text(
                                     text = if (checkpointsCount > 0) "📍 $checkpointsCount точек" else "⚠️ Маршрут не выбран",
-                                    fontSize = 11.sp,
+                                    fontSize = 16.sp,
                                     color = if (checkpointsCount > 0) 
-                                        MaterialTheme.colorScheme.onSurfaceVariant 
+                                        Color(0xFFFFFFFF) 
                                     else 
-                                        MaterialTheme.colorScheme.error
+                                        Color(0xFFFF0000)
                                 )
                             }
                         }
@@ -396,17 +433,35 @@ fun ScheduleScreen(
                     OutlinedTextField(
                         value = timeToleranceMinutes,
                         onValueChange = { timeToleranceMinutes = it },
-                        label = { Text("Допуск к началу обхода (+- минут)") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = { Text("Допуск к началу обхода (+- минут)", color = Color(0xFF000000)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFFFFFFF),
+                            unfocusedTextColor = Color(0xFFFFFFFF),
+                            focusedContainerColor = Color(0xFF424242),
+                            unfocusedContainerColor = Color(0xFF424242),
+                            disabledContainerColor = Color(0xFF424242),
+                            focusedBorderColor = Color(0xFFFFFFFF),
+                            unfocusedBorderColor = Color(0xFFFFFFFF)
+                        )
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = maxRoundDurationMinutes,
                         onValueChange = { maxRoundDurationMinutes = it },
-                        label = { Text("Максимальное время на обход (в минутах)") },
+                        label = { Text("Максимальное время на обход (в минутах)", color = Color(0xFF000000)) },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFFFFFFFF),
+                            unfocusedTextColor = Color(0xFFFFFFFF),
+                            focusedContainerColor = Color(0xFF424242),
+                            unfocusedContainerColor = Color(0xFF424242),
+                            disabledContainerColor = Color(0xFF424242),
+                            focusedBorderColor = Color(0xFFFFFFFF),
+                            unfocusedBorderColor = Color(0xFFFFFFFF)
+                        )
                     )
 
                     // 📊 Итоговое количество чекпоинтов за смену
@@ -423,7 +478,7 @@ fun ScheduleScreen(
                             text = "$totalScheduledCheckpoints",
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = Color(0xFFFFFFFF)
                         )
                     }
 
@@ -465,7 +520,11 @@ fun ScheduleScreen(
                     onBack()
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF424242),
+                    contentColor = Color(0xFFFFFFFF)
+                )
             ) {
                 Text("Сохранить расписание", fontSize = 16.sp)
             }

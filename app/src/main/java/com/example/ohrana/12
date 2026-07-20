@@ -1,0 +1,23 @@
+// Информационная карточка
+
+Card(
+modifier = Modifier.fillMaxWidth(),
+colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+) {
+    Column(
+        modifier = Modifier.padding(16.dp)
+    ) {
+        Text(
+            text = "Информация",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "После начала обхода вы попадете в кабинет охранника, где сможете сканировать QR-коды чекпоинтов.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    }
+}

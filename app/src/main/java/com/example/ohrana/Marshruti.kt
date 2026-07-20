@@ -218,7 +218,7 @@ fun MarshrutiScreen(
                                         modifier = Modifier.padding(end = 12.dp)
                                     )
                                     Text(
-                                        text = checkpoint.name,
+                                        text = checkpoint.name.take(15) + if (checkpoint.name.length > 15) "..." else "",
                                         fontSize = 12.sp,
                                         color = Color(0xFFE0E0E0),
                                         modifier = Modifier.padding(end = 12.dp)
