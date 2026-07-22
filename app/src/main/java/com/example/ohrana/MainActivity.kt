@@ -466,15 +466,8 @@ fun AppNavigation() {
         "ohrannik_cabinet" -> OhrannikCabinetScreen(
             employeeName = selectedEmployeeName,
             onBack = {
-                val guardsCount = prefsManager.getGuardsCount()
-                
-                // Для guardsCount > 1 возвращаемся в rounds
-                // Для guardsCount = 1 всегда возвращаемся в privet (так как убрали экран shift_control)
-                if (guardsCount > 1) {
-                    currentScreen = "rounds"
-                } else {
-                    currentScreen = "privet"
-                }
+                // Всегда возвращаемся в rounds
+                currentScreen = "rounds"
             },
             onLogout = {
                 selectedEmployeeName = ""

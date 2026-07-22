@@ -1,6 +1,7 @@
 package com.example.ohrana
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,12 +19,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.zIndex
+import com.example.ohrana.ui.components.OhranaOutlinedButton
+import com.example.ohrana.uielements.ButtonDesigns
+import com.example.ohrana.ui.components.OhranaButton
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,26 +115,121 @@ fun RoundsScreen(
         }
     }
 
-    Scaffold(
+    Scaffold (
         topBar = {
             TopAppBar(
-                title = { Text("Обходы за смену") },
+                title = { 
+                    Text(
+                        "Обходы за смену",
+                        color = Color(0xFFFFFFFF) // Белый текст заголовка
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { onNavigateBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack, 
+                            contentDescription = "Назад",
+                            tint = Color(0xFFFFFFFF) // Белый цвет иконки
+                        )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
+                )
             )
+        },
+        bottomBar = {
+            // Кнопка завершения смены (показывается только если смена активна)
+            if (isShiftActive) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    OhranaButton(
+                        text = "ЗАВЕРШИТЬ СМЕНУ (СТОП)",
+                        onClick = {
+                            // Показываем диалог подтверждения
+                            showConfirmCloseShiftDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        designId = ButtonDesigns.DESIGN_6_DESTRUCTIVE.id
+                    )
+                }
+            }
         }
     ) { paddingValues ->
-        Column(
+        val context = LocalContext.current
+        val bitmap = android.graphics.BitmapFactory.decodeResource(context.resources, com.example.ohrana.R.drawable.fon2)
+        
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(Color(0xFFF5F5F5))
         ) {
+            // Фоновая картинка fon2
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.White),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+            
+            // Анимация завершения смены (без кнопок) - поверх всех элементов
+            if (showGoodbyeAnimation) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFFFFFFFF))
+                        .zIndex(100f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        modifier = Modifier.padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .clip(RoundedCornerShape(50.dp))
+                                .background(Color(0xFF4CAF50)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Успех",
+                                modifier = Modifier.size(60.dp),
+                                tint = Color.White
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = "Смена успешно завершена",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Смена закрыта. До свидания!",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
             // Отображаем список охранников или одного сотрудника
             if (guardList.isNotEmpty()) {
                 if (guardList.size == 1) {
@@ -136,7 +237,7 @@ fun RoundsScreen(
                     Text(
                         text = "Сотрудник: ${guardList[0].name}",
                         fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = Color(0xFFFFFFFF),
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
@@ -153,13 +254,14 @@ fun RoundsScreen(
                                 text = "Сотрудники:",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFFFFF),
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
                             guardList.forEach { guard ->
                                 Text(
                                     text = "• ${guard.name} (${guard.role})",
                                     fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    color = Color(0xFFFFFFFF),
                                     modifier = Modifier.padding(bottom = 4.dp)
                                 )
                             }
@@ -246,68 +348,67 @@ fun RoundsScreen(
                         Column(
                             modifier = Modifier.padding(16.dp)
                         ) {
+                            // Тексты в одну строку сверху
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Обход №${alarm.id}",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
+                                Text(
+                                    text = "Обход №${alarm.id}",
+                                    fontSize = 16.sp,
+                                    color = Color(0xFFFFFFFF),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Время: ${alarm.time}",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFFFFFFFF)
+                                )
+                                Text(
+                                    text = "Маршрут: $routeName",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFFFFFFFF)    // Белый текст
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            // Кнопка снизу
+                            if (isRoundCompleted) {
+                                // Если обход завершен - неактивная красная кнопка с текстом "Завершен"
+                                Button(
+                                    onClick = { },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFE53935), // Красный фон
+                                        contentColor = Color(0xFF43A047)    // Белый текст
                                     )
-                                    Text(
-                                        text = "Время: ${alarm.time}",
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        text = "Маршрут: $routeName",
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF050000)    // Белый текст
-                                    )
+                                ) {
+                                    Text("Завершен", fontSize = 14.sp)
                                 }
-                                
-                                if (isRoundCompleted) {
-                                    // Если обход завершен - неактивная красная кнопка с текстом "Завершен"
-                                    Button(
-                                        onClick = { },
-                                        modifier = Modifier.width(150.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFFE53935), // Красный фон
-                                            contentColor = Color(0xFF43A047)    // Белый текст
-                                        )
-                                    ) {
-                                        Text("Завершен", fontSize = 14.sp)
-                                    }
-                                } else if (prefsManager.isRoundStarted(alarm.id)) {
-                                    // Если обход начат, но не завершен - показываем кнопку "Продолжить обход" красным
-                                    Button(
-                                        onClick = { handleStartRound(alarm.id, alarm.routeId, isContinuation = true) },
-                                        enabled = isShiftActive,
-                                        modifier = Modifier.width(150.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF424242), // Тёмно-серый
-                                            contentColor = Color(0xFFFFFFFF)    // Белый текст
-                                        ),
-                                    ) {
-                                        Text("Продолжить обход", fontSize = 14.sp, color = MaterialTheme.colorScheme.onError)
-                                    }
-                                } else {
-                                    // Кнопка "Начать обход" для незавершенных обходов
-                                    Button(
-                                        onClick = { handleStartRound(alarm.id, alarm.routeId) },
-                                        enabled = isShiftActive,
-                                        modifier = Modifier.width(150.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF424242), // Тёмно-серый
-                                            contentColor = Color(0xFFFFFFFF)    // Белый текст
-                                        ),
-                                    ) {
-                                        Text("Начать обход", fontSize = 14.sp)
-                                    }
+                            } else if (prefsManager.isRoundStarted(alarm.id)) {
+                                // Если обход начат, но не завершен - показываем кнопку "Продолжить обход" красным
+                                Button(
+                                    onClick = { handleStartRound(alarm.id, alarm.routeId, isContinuation = true) },
+                                    enabled = isShiftActive,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF7E7B7B), // Тёмно-серый
+                                        contentColor = Color(0xFFFFFFFF)    // Белый текст
+                                    ),
+                                ) {
+                                    Text("Продолжить обход", fontSize = 14.sp, color = MaterialTheme.colorScheme.onError)
                                 }
+                            } else {
+                                // Кнопка "Начать обход" для незавершенных обходов
+                                OhranaOutlinedButton(
+                                    text = "Начать обход",
+                                    onClick = { handleStartRound(alarm.id, alarm.routeId) },
+                                    enabled = isShiftActive,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                                    designId = 3
+                                )
                             }
                         }
                     }
@@ -331,32 +432,11 @@ fun RoundsScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "После начала обхода вы попадете в кабинет охранника, где сможете сканировать QR-коды чекпоинтов.",
+                        text = "Типа что то умное",
                         fontSize = 12.sp,
                         color = Color(0xFFE0E0E0) // Серо-белый текст
                     )
                 }
-            }
-
-            
-           
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Кнопка завершения смены (показывается только если смена активна)
-            if (isShiftActive) {
-                OutlinedButton(
-                    onClick = {
-                        // Показываем диалог подтверждения
-                        showConfirmCloseShiftDialog = true
-                    },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-                ) {
-                    Text("ЗАВЕРШИТЬ СМЕНУ (СТОП)", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(16.dp))
             }
             
             // Диалог выбора охранника для обхода (только если guardsCount > 1)
@@ -467,50 +547,6 @@ fun RoundsScreen(
                     }
                 )
             }
-        }
-        
-        // Анимация завершения смены (без кнопок) - поверх всего экрана
-        if (showGoodbyeAnimation) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFFFFFFFF))
-                    .zIndex(100f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .clip(RoundedCornerShape(50.dp))
-                            .background(Color(0xFF4CAF50)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Успех",
-                            modifier = Modifier.size(60.dp),
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = "Смена успешно завершена",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Смена закрыта. До свидания!",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
             // Через 3 секунды возвращаемся на экран выбора сотрудника
             LaunchedEffect(showGoodbyeAnimation) {
                 if (showGoodbyeAnimation) {
@@ -523,4 +559,4 @@ fun RoundsScreen(
             }
         }
     }
-}
+}}

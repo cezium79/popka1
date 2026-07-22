@@ -21,3 +21,16 @@ colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.seco
         )
     }
 }
+
+
+# 1. Остановить все процессы Java (включая Gradle daemon)
+Stop-Process -Name "java" -Force
+
+# 2. Остановить градле демонов напрямую
+./gradlew --stop
+
+# 3. Уничтожить все демоны Gradle
+./gradlew --stop --info
+
+# 4. Удалить папку build вручную (если файлы заблокированы)
+Remove-Item -Recurse -Force "app\build"

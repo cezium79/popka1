@@ -102,6 +102,33 @@
         <Execute>
           <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; ./gradlew assembleDebug --stacktrace 2&gt;&amp;1 | Select-String -Pattern &quot;error:&quot; -Context 0,3 | Select-Object -First 15" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git log --all --oneline -500 | Select-String &quot; Photo &quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git log --all --oneline -500 | Select-String &quot; PhotoOutside&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git log --all --oneline -500 | Select-String &quot;PhotoOutside&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git log --all --oneline -500 | Select-String &quot;screen&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git log --all --oneline -1000 | Select-String &quot;screen&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git log --all --oneline -1000 | Select-String &quot;Photo&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; git log --all --oneline -2000 | Select-String &quot; Photo&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; Select-String -Path &quot;app/src/main/java/com/example/ohrana&quot; -Pattern &quot;PhotoOutside|photo_outside|showPhotoOutside&quot; -SimpleMatch" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd C:/Android/Ohrana-c7953c45; .\gradlew.bat assembleDebug 2&gt;&amp;1 | Select-String -Pattern &quot;BUILD|SUCCESS|FAILED&quot; | Select-Object -Last 5" />
+        </Execute>
       </list>
     </option>
   </component>

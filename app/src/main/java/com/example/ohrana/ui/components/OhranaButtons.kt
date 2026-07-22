@@ -1,10 +1,10 @@
 package com.example.ohrana.ui.components
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ButtonElevation
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -12,12 +12,23 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import com.example.ohrana.uielements.ButtonDesign
+import com.example.ohrana.uielements.getButtonDesignById
 
 /**
- * Повторно используемая кнопка с тенями для всего приложения
- * По умолчанию использует ElevatedButton с тенями
+ * Обновленная кнопка с использованием централизованного дизайна
+ * @param text Текст кнопки
+ * @param onClick Обработчик нажатия
+ * @param modifier Модификатор
+ * @param enabled Доступна ли кнопка
+ * @param colors Цвета кнопки (если null, используется дизайн по ID)
+ * @param elevation Тени (если null, используется дизайн по ID)
+ * @param shape Форма (если null, используется дизайн по ID)
+ * @param style Стиль текста
+ * @param designId ID дизайна из ButtonDesigns (приоритетнее параметров цвета и теней)
  */
 @Composable
 fun OhranaButton(
@@ -25,24 +36,42 @@ fun OhranaButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: androidx.compose.material3.ButtonColors = ButtonDefaults.buttonColors(
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-        disabledContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-        disabledContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    ),
-    elevation: androidx.compose.material3.ButtonElevation = ButtonDefaults.buttonElevation(
-        defaultElevation = 4.dp,
-        pressedElevation = 8.dp,
-        disabledElevation = 0.dp
-    ),
-    style: TextStyle? = null
+    colors: ButtonColors? = null,
+    elevation: androidx.compose.material3.ButtonElevation? = null,
+    shape: Shape? = null,
+    style: TextStyle? = null,
+    designId: Int? = null
 ) {
+    val design = designId?.let { getButtonDesignById(it) }
+    
+    val finalColors = colors ?: design?.let {
+        ButtonDefaults.buttonColors(
+            containerColor = it.containerColor,
+            contentColor = it.contentColor,
+            disabledContainerColor = it.disabledContainerColor,
+            disabledContentColor = it.disabledContentColor
+        )
+    } ?: ButtonDefaults.buttonColors()
+    
+    val finalElevation = elevation ?: design?.let {
+        ButtonDefaults.buttonElevation(
+            defaultElevation = it.elevationDefault,
+            pressedElevation = it.elevationPressed,
+            disabledElevation = it.elevationDisabled
+        )
+    } ?: ButtonDefaults.buttonElevation()
+    
+    val finalShape = shape ?: design?.let {
+        RoundedCornerShape(it.shapeCorner)
+    } ?: RoundedCornerShape(8.dp)
+    
     ElevatedButton(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         enabled = enabled,
-        colors = colors,
-        elevation = elevation
+        colors = finalColors,
+        elevation = finalElevation,
+        shape = finalShape
     ) {
         Text(
             text = text,
@@ -52,7 +81,8 @@ fun OhranaButton(
 }
 
 /**
- * Кнопка-контейнер с тенями
+ * Обновленная контейнерная кнопка с использованием централизованного дизайна
+ * @param designId ID дизайна из ButtonDesigns
  */
 @Composable
 fun OhranaContainedButton(
@@ -60,24 +90,42 @@ fun OhranaContainedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: androidx.compose.material3.ButtonColors = ButtonDefaults.buttonColors(
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-        disabledContainerColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-        disabledContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    ),
-    elevation: androidx.compose.material3.ButtonElevation = ButtonDefaults.buttonElevation(
-        defaultElevation = 4.dp,
-        pressedElevation = 8.dp,
-        disabledElevation = 0.dp
-    ),
-    style: TextStyle? = null
+    colors: ButtonColors? = null,
+    elevation: androidx.compose.material3.ButtonElevation? = null,
+    shape: Shape? = null,
+    style: TextStyle? = null,
+    designId: Int? = null
 ) {
+    val design = designId?.let { getButtonDesignById(it) }
+    
+    val finalColors = colors ?: design?.let {
+        ButtonDefaults.buttonColors(
+            containerColor = it.containerColor,
+            contentColor = it.contentColor,
+            disabledContainerColor = it.disabledContainerColor,
+            disabledContentColor = it.disabledContentColor
+        )
+    } ?: ButtonDefaults.buttonColors()
+    
+    val finalElevation = elevation ?: design?.let {
+        ButtonDefaults.buttonElevation(
+            defaultElevation = it.elevationDefault,
+            pressedElevation = it.elevationPressed,
+            disabledElevation = it.elevationDisabled
+        )
+    } ?: ButtonDefaults.buttonElevation()
+    
+    val finalShape = shape ?: design?.let {
+        RoundedCornerShape(it.shapeCorner)
+    } ?: RoundedCornerShape(8.dp)
+    
     Button(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         enabled = enabled,
-        colors = colors,
-        elevation = elevation
+        colors = finalColors,
+        elevation = finalElevation,
+        shape = finalShape
     ) {
         Text(
             text = text,
@@ -87,7 +135,8 @@ fun OhranaContainedButton(
 }
 
 /**
- * Обычная текстовая кнопка с тенями
+ * Обновленная текстовая кнопка с использованием централизованного дизайна
+ * @param designId ID дизайна из ButtonDesigns
  */
 @Composable
 fun OhranaTextButton(
@@ -95,23 +144,42 @@ fun OhranaTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: androidx.compose.material3.ButtonColors = ButtonDefaults.buttonColors(
-        containerColor = Color.Transparent,
-        disabledContainerColor = Color.Transparent
-    ),
-    elevation: androidx.compose.material3.ButtonElevation = ButtonDefaults.buttonElevation(
-        defaultElevation = 2.dp,
-        pressedElevation = 4.dp,
-        disabledElevation = 0.dp
-    ),
-    style: TextStyle? = null
+    colors: ButtonColors? = null,
+    elevation: androidx.compose.material3.ButtonElevation? = null,
+    shape: Shape? = null,
+    style: TextStyle? = null,
+    designId: Int? = null
 ) {
+    val design = designId?.let { getButtonDesignById(it) }
+    
+    val finalColors = colors ?: design?.let {
+        ButtonDefaults.buttonColors(
+            containerColor = it.containerColor,
+            contentColor = it.contentColor,
+            disabledContainerColor = it.disabledContainerColor,
+            disabledContentColor = it.disabledContentColor
+        )
+    } ?: ButtonDefaults.buttonColors()
+    
+    val finalElevation = elevation ?: design?.let {
+        ButtonDefaults.buttonElevation(
+            defaultElevation = it.elevationDefault,
+            pressedElevation = it.elevationPressed,
+            disabledElevation = it.elevationDisabled
+        )
+    } ?: ButtonDefaults.buttonElevation()
+    
+    val finalShape = shape ?: design?.let {
+        RoundedCornerShape(it.shapeCorner)
+    } ?: RoundedCornerShape(8.dp)
+    
     TextButton(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         enabled = enabled,
-        colors = colors,
-        elevation = elevation
+        colors = finalColors,
+        elevation = finalElevation,
+        shape = finalShape
     ) {
         Text(
             text = text,
@@ -121,7 +189,8 @@ fun OhranaTextButton(
 }
 
 /**
- * Обведенная кнопка с тенями
+ * Обновленная обеченная кнопка с использованием централизованного дизайна
+ * @param designId ID дизайна из ButtonDesigns
  */
 @Composable
 fun OhranaOutlinedButton(
@@ -129,23 +198,42 @@ fun OhranaOutlinedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: ButtonColors = ButtonDefaults.buttonColors(
-        containerColor = Color.Transparent,
-        disabledContainerColor = Color.Transparent
-    ),
-    elevation: ButtonElevation = ButtonDefaults.buttonElevation(
-        defaultElevation = 2.dp,
-        pressedElevation = 4.dp,
-        disabledElevation = 0.dp
-    ),
-    style: TextStyle? = null
+    colors: ButtonColors? = null,
+    elevation: androidx.compose.material3.ButtonElevation? = null,
+    shape: Shape? = null,
+    style: TextStyle? = null,
+    designId: Int? = null
 ) {
+    val design = designId?.let { getButtonDesignById(it) }
+    
+    val finalColors = colors ?: design?.let {
+        ButtonDefaults.buttonColors(
+            containerColor = it.containerColor,
+            contentColor = it.contentColor,
+            disabledContainerColor = it.disabledContainerColor,
+            disabledContentColor = it.disabledContentColor
+        )
+    } ?: ButtonDefaults.buttonColors()
+    
+    val finalElevation = elevation ?: design?.let {
+        ButtonDefaults.buttonElevation(
+            defaultElevation = it.elevationDefault,
+            pressedElevation = it.elevationPressed,
+            disabledElevation = it.elevationDisabled
+        )
+    } ?: ButtonDefaults.buttonElevation()
+    
+    val finalShape = shape ?: design?.let {
+        RoundedCornerShape(it.shapeCorner)
+    } ?: RoundedCornerShape(8.dp)
+    
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         enabled = enabled,
-        colors = colors,
-        elevation = elevation
+        colors = finalColors,
+        elevation = finalElevation,
+        shape = finalShape
     ) {
         Text(
             text = text,

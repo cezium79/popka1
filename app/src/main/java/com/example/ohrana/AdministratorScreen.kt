@@ -40,7 +40,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import com.example.ohrana.ui.components.OhranaOutlinedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -181,77 +183,45 @@ fun AdministratorScreen(
                 verticalArrangement = Arrangement.Top,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Кнопки навигации (тёмно-серые с белым текстом)
+                // Кнопки навигации (дизайн №3)
                 OhranaOutlinedButton(
                     text = "Список сотрудников",
                     onClick = onNavigateToEmployeeList,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF424242), // Тёмно-серый
-                        contentColor = Color(0xFFFFFFFF)    // Белый текст
-                    ),
-                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 16.dp,
-                        disabledElevation = 8.dp
-                    ),
                     style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
-                    )
+                    ),
+                    designId = 3
                 )
 
                 OhranaOutlinedButton(
                     text = "Маршруты",
                     onClick = onNavigateToRoutes,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF424242), // Тёмно-серый
-                        contentColor = Color(0xFFFFFFFF)    // Белый текст
-                    ),
-                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 16.dp,
-                        disabledElevation = 8.dp
-                    ),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
-                    )
+                    ),
+                    designId = 3
                 )
 
                 OhranaOutlinedButton(
                     text = "Журналы",
                     onClick = onNavigateToLogs,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF424242), // Тёмно-серый
-                        contentColor = Color(0xFFFFFFFF)    // Белый текст
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 16.dp,
-                        disabledElevation = 8.dp
-                    ),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
-                    )
+                    ),
+                    designId = 3
                 )
 
                 OhranaOutlinedButton(
                     text = "Настройки облока",
                     onClick = onNavigateToCloudSettings,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF424242), // Тёмно-серый
-                        contentColor = Color(0xFFFFFFFF)    // Белый текст
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 16.dp,
-                        disabledElevation = 8.dp
-                    ),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
-                    )
+                    ),
+                    designId = 3
                 )
 
                 Spacer(modifier = Modifier.height(2.dp))
@@ -272,36 +242,20 @@ fun AdministratorScreen(
                         onClick = { showExportDialog = true },
                         text = "Экспорт",
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF424242),
-                            contentColor = Color(0xFFFFFFFF)
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(
-                            defaultElevation = 8.dp,
-                            pressedElevation = 16.dp,
-                            disabledElevation = 8.dp
-                        ),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 18.sp
-                        )
+                        ),
+                        designId = 3
                     )
 
                     OhranaOutlinedButton(
                         onClick = { showImportDialog = true },
                         text = "Импорт",
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.onSecondary
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(
-                            defaultElevation = 8.dp,
-                            pressedElevation = 16.dp,
-                            disabledElevation = 8.dp
-                        ),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 18.sp
-                        )
+                        ),
+                        designId = 3
                     )
                 }
 
@@ -438,18 +392,10 @@ fun AdministratorScreen(
                     text = "Настройки звука",
                     onClick = onNavigateToSoundSettings,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF424242),
-                        contentColor = Color(0xFFFFFFFF)
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 16.dp,
-                        disabledElevation = 8.dp
-                    ),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 18.sp
-                    )
+                    ),
+                    designId = 3
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -490,18 +436,10 @@ fun AdministratorScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF424242),
-                                contentColor = Color(0xFFFFFFFF)
-                            ),
-                            elevation = ButtonDefaults.buttonElevation(
-                                defaultElevation = 8.dp,
-                                pressedElevation = 16.dp,
-                                disabledElevation = 8.dp
-                            ),
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 16.sp
-                            )
+                            ),
+                            designId = 3
                         )
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -514,18 +452,10 @@ fun AdministratorScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF424242),
-                                contentColor = Color(0xFFFFFFFF)
-                            ),
-                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
-                                defaultElevation = 8.dp,
-                                pressedElevation = 16.dp,
-                                disabledElevation = 8.dp
-                            ),
-                            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                            style = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 16.sp
-                            )
+                            ),
+                            designId = 3
                         )
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -575,18 +505,10 @@ fun AdministratorScreen(
                                         3 -> "Старший и 2 охранника"
                                         else -> "Выберите количество"
                                     },
-                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF424242),
-                                        contentColor = Color(0xFFFFFFFF)
-                                    ),
-                                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
-                                        defaultElevation = 8.dp,
-                                        pressedElevation = 16.dp,
-                                        disabledElevation = 8.dp
-                                    ),
-                                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
+                                    style = MaterialTheme.typography.bodyLarge.copy(
                                         fontSize = 16.sp
-                                    )
+                                    ),
+                                    designId = 3
                                 )
                                 Icon(
                                     imageVector = Icons.Default.ArrowDropDown,
