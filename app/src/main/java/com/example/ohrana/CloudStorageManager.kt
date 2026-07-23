@@ -25,6 +25,9 @@ import android.content.Intent
 import android.net.Uri
 import android.content.SharedPreferences
 import com.example.ohrana.SharedPrefsManager
+import com.example.ohrana.ShiftRecord
+import com.example.ohrana.RoundRecord
+import com.example.ohrana.ShiftLogEntry
 
 /**
  * Класс для работы с облачным хранилищем Yandex Cloud
@@ -809,6 +812,26 @@ class CloudStorageManager(private val context: Context) {
             }
             reportJson.put("violations", violationsArray)
 
+            // Происшествия
+            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
+            if (incidents.isNotEmpty()) {
+                val incidentsArray = JSONArray()
+                incidents.forEach { incident ->
+                    val incidentObj = JSONObject()
+                    incidentObj.put("timestamp", incident.timestamp)
+                    incidentObj.put("shift_id", incident.shiftId)
+                    incidentObj.put("round_id", incident.roundId)
+                    incidentObj.put("employee_name", incident.employeeName)
+                    incidentObj.put("incident_type", incident.incidentType.name)
+                    incidentObj.put("description", incident.description)
+                    incidentObj.put("photo_path", incident.photoPath)
+                    incident.latitude?.let { incidentObj.put("latitude", it) }
+                    incident.longitude?.let { incidentObj.put("longitude", it) }
+                    incidentsArray.put(incidentObj)
+                }
+                reportJson.put("incidents", incidentsArray)
+            }
+
             // Сохраняем файл
             val fileName = "shift_report_${shift.id}_${jsonFormat.format(Date())}.json"
             val downloadDir =
@@ -831,6 +854,148 @@ class CloudStorageManager(private val context: Context) {
 
         } catch (e: Exception) {
             Log.e(TAG, "Error generating JSON report: ${e.message}", e)
+            return null
+        }
+    }
+
+    /**
+     * Генерирует текстовый отчет для смены (для текстового журнала)
+     * Возвращает путь к созданному файлу
+     */
+    fun generateTextReport(shiftId: String, shiftDatabase: ShiftDatabaseManager): String? {
+        try {
+            val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
+            if (shift == null) {
+                Log.e(TAG, "Shift not found: $shiftId")
+                return null
+            }
+
+            val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
+            val logs = shiftDatabase.loadLogsByShift(shiftId)
+            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
+
+            val text = StringBuilder()
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
+
+            // Заголовок
+            text.append("=".repeat(60)).append("\n")
+            text.append("ТЕКСТОВЫЙ ЖУРНАЛ ОБХОДОВ\n")
+            text.append("=".repeat(60)).append("\n\n")
+
+            // Информация о смене
+            text.append("СМЕНА №${shift.id.takeLast(3)}\n")
+            text.append("-".repeat(40)).append("\n")
+            text.append("Дата: ${shift.startTime.split(" ").firstOrNull() ?: "-"}\n")
+            text.append("Время начала: ${shift.startTime.split(" ").lastOrNull() ?: "-"}\n")
+            shift.endTime?.let { text.append("Время окончания: ${it.split(" ").lastOrNull() ?: "-"}\n") }
+            text.append("Охранник: ${shift.employeeName}\n")
+            text.append("Контроль последовательности: ${if (shift.strictSequenceEnabled) "ВКЛ" else "ВЫКЛ"}\n\n")
+
+            // Обходы
+            text.append("ОБХОДЫ\n")
+            text.append("-".repeat(40)).append("\n\n")
+
+            rounds.forEach { round ->
+                text.append("Обход №${round.id}\n")
+                text.append("  Маршрут: ${round.routeName ?: "не указан"}\n")
+                text.append("  Время начала: ${round.startTime.split(" ").lastOrNull() ?: "-"}\n")
+                round.endTime?.let { text.append("  Время окончания: ${it.split(" ").lastOrNull() ?: "-"}\n") }
+                text.append("  Чекпоинтов: ${round.checkpointsCount}\n")
+                text.append("  Пройдено: ${round.checkpointsPassed}\n")
+                text.append("  Нарушений: ${round.sequenceViolations}\n\n")
+            }
+
+            // Логи
+            text.append("ЛОГИ ОБХОДОВ\n")
+            text.append("-".repeat(40)).append("\n\n")
+
+            rounds.forEach { round ->
+                val roundLogs = logs.filter { it.roundId == round.id }
+                if (roundLogs.isNotEmpty()) {
+                    text.append("Обход №${round.id}:\n")
+                    roundLogs.forEach { log ->
+                        val status = if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"
+                        val timePart = log.timestamp.split(" ").lastOrNull() ?: "-"
+                        
+                        text.append("  [$timePart] ${log.checkpointName} - ${log.actionType} - $status\n")
+                        
+                        // Дополнительная информация по действиям
+                        log.questionText?.let { text.append("    Вопрос: $it\n") }
+                        log.answer?.let { text.append("    Ответ: $it\n") }
+                        log.inputTitle?.let { text.append("    Поле: $it\n") }
+                        log.inputValue?.let { text.append("    Ввод: $it\n") }
+                        log.photoPath?.let { text.append("    Фото: $it\n") }
+                        log.sequenceErrorType?.let { text.append("    Тип нарушения: ${it.name}\n") }
+                    }
+                    text.append("\n")
+                }
+            }
+
+            // Происшествия (текстовый журнал)
+            text.append("ПРОИСШЕСТВИЯ\n")
+            text.append("-".repeat(40)).append("\n\n")
+
+            if (incidents.isNotEmpty()) {
+                text.append("Всего зафиксировано происшествий: ${incidents.size}\n\n")
+
+                // Группируем по типам
+                val incidentsByType = incidents.groupBy { it.incidentType }
+                
+                incidentsByType.forEach { (type, typeIncidents) ->
+                    val typeText = when (type) {
+                        IncidentType.FOREIGN_ITEM -> "Посторонний предмет"
+                        IncidentType.MISSING_ITEM -> "Пропажа предмета"
+                        IncidentType.VANDALISM_DAMAGE -> "Последствия вандализма"
+                        IncidentType.BREAKDOWN -> "Поломка"
+                        IncidentType.OTHER -> "Другое"
+                    }
+                    
+                    text.append("$typeText (${typeIncidents.size} шт.):\n")
+                    
+                    typeIncidents.forEach { incident ->
+                        val timePart = incident.timestamp.split(" ").lastOrNull() ?: "-"
+                        text.append("  [$timePart] ${incident.employeeName}\n")
+                        text.append("    Описание: ${incident.description}\n")
+                        text.append("    Фото: ${incident.photoPath}\n")
+                        text.append("    Обход: ${incident.roundId}\n\n")
+                    }
+                    text.append("\n")
+                }
+            } else {
+                text.append("Происшествий не зафиксировано\n\n")
+            }
+
+            // Итоговая статистика
+            text.append("=".repeat(60)).append("\n")
+            text.append("ИТОГО\n")
+            text.append("-".repeat(40)).append("\n")
+            text.append("Всего обходов: ${rounds.size}\n")
+            text.append("Всего зафиксированных происшествий: ${incidents.size}\n")
+            text.append("Генератор: Ohrana Security System v1.0\n")
+            text.append("Время генерации: ${dateFormat.format(Date())}\n")
+            text.append("=".repeat(60)).append("\n")
+
+            // Сохраняем файл
+            val fileName = "shift_text_journal_${shift.id}_${jsonFormat.format(Date())}.txt"
+            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val ohranaDir = File(downloadDir, "Ohrana")
+            val reportsDir = File(ohranaDir, "Reports")
+
+            if (!reportsDir.exists()) {
+                reportsDir.mkdirs()
+            }
+
+            val outputFile = File(reportsDir, fileName)
+            FileOutputStream(outputFile).use { fos ->
+                fos.write(text.toString().toByteArray())
+            }
+
+            Log.i(TAG, "Text report saved to: ${outputFile.absolutePath}")
+
+            return outputFile.absolutePath
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating text report: ${e.message}", e)
             return null
         }
     }
@@ -1243,6 +1408,77 @@ class CloudStorageManager(private val context: Context) {
                 """.trimIndent()
                 )
             }
+            
+            // Происшествия за смену
+            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
+            if (incidents.isNotEmpty()) {
+                html.append(
+                    """
+                    <div class="section">
+                        <h2>📸 Происшествия</h2>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-value" style="font-size: 32px; color: #ff9800;">${incidents.size}</div>
+                                <div class="stat-label">Всего происшествий</div>
+                            </div>
+                        </div>
+                """.trimIndent()
+                )
+
+                incidents.forEach { incident ->
+                    val photoBase64 = try {
+                        val photoFile = File(incident.photoPath)
+                        if (photoFile.exists()) {
+                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                            if (bitmap != null) {
+                                val outputStream = ByteArrayOutputStream()
+                                bitmap.compress(
+                                    android.graphics.Bitmap.CompressFormat.JPEG,
+                                    80,
+                                    outputStream
+                                )
+                                val imageBytes = outputStream.toByteArray()
+                                Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                            } else {
+                                null
+                            }
+                        } else {
+                            null
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to load incident photo: ${incident.photoPath}", e)
+                        null
+                    }
+
+                    html.append(
+                        """
+                        <div class="photo-item">
+                            <h3>${incident.incidentType.name.replace('_', ' ')}</h3>
+                            <div class="photo-info">
+                                <strong>Время:</strong> ${incident.timestamp.substring(11)}<br>
+                                <strong>Охранник:</strong> ${incident.employeeName}<br>
+                                <strong>Обход:</strong> ${incident.roundId}
+                            </div>
+                            <div class="action-details">
+                                <span><label>Описание:</label> ${incident.description}</span>
+                            </div>
+                            ${
+                            if (photoBase64 != null)
+                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото происшествия\">"
+                            else
+                                "<p>Фото недоступно</p>"
+                        }
+                        </div>
+                    """.trimIndent()
+                    )
+                }
+
+                html.append(
+                    """
+                    </div>
+                """.trimIndent()
+                )
+            }
 
             // Футер
             html.append(
@@ -1409,7 +1645,7 @@ class CloudStorageManager(private val context: Context) {
         try {
             // Экспортируем в PDF с указанным путем сохранения (без предпросмотра)
             val generatedPath =
-                exportToPdf(shift, rounds, logs, context, pdfPath, showPreview = false)
+                exportToPdf(shift, rounds, logs, context, pdfPath, showPreview = false, shiftDatabase = shiftDatabase)
             if (generatedPath != null) {
                 pdfGenerated = true
             } else {
@@ -1737,6 +1973,10 @@ class CloudStorageManager(private val context: Context) {
                 totalCheckpointsPlan == null -> "⚠️ (NULL)"
                 else -> "⚠️"
             }
+            
+            // Загружаем происшествия для статистики
+            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
+            val incidentsCount = incidents.size
 
             // HTML заголовок
             html.append(

@@ -152,3 +152,39 @@ enum class SequenceErrorType {
     OUTSIDE_ROUTE,         // Вне маршрута
     OUT_OF_SEQUENCE        // Вне очереди
 }
+
+// ============================================
+// МОДЕЛИ ДЛЯ ФИКСАЦИИ ПРОИСШЕСТВИЙ
+// ============================================
+
+/**
+ * Тип происшествия
+ */
+enum class IncidentType(val ruName: String) {
+    FOREIGN_ITEM("Посторонний предмет"),        // Посторонний предмет
+    MISSING_ITEM("Сперли"),        // Пропажа предмета
+    VANDALISM_DAMAGE("Сломали уроды"),    // Последствия вандализма
+    BREAKDOWN("Поломка"),           // Поломка
+    OTHER("Другое")                // Другое
+}
+
+/**
+ * Модель записи о происшествии
+ * Хранит информацию о зафиксированном происшествии:
+ * - Тип происшествия
+ * - Описание
+ * - Путь к фото
+ * - Время и координаты
+ */
+data class IncidentRecord(
+    val id: String,              // Уникальный ID
+    val timestamp: String,       // Время регистрации
+    val shiftId: String,         // ID смены
+    val roundId: Int,            // ID обхода (если происшествие во время обхода)
+    val employeeName: String,    // Имя охранника
+    val incidentType: IncidentType,  // Тип происшествия
+    val description: String,     // Описание/пояснение
+    val photoPath: String,       // Путь к фото
+    val latitude: Double? = null, // Геоданные (опционально)
+    val longitude: Double? = null
+)

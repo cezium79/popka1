@@ -42,6 +42,8 @@ import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.ui.res.painterResource
+import com.example.ohrana.ShiftDatabaseManager
+import com.example.ohrana.IncidentType
 
 private const val TAG = "ShiftLogDetailScreen"
 
@@ -589,19 +591,32 @@ fun ShiftLogDetailScreen(
                 Column {
                     Text("Экспортировать отчет в PDF формат?")
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Также можно загрузить отчет в облачное хранилище (JSON/HTML)")
+                    Text("Также можно загрузить отчет в облачное хранилище (JSON/HTML/TEXT)")
                 }
             },
             confirmButton = {
                 Column {
                     Button(onClick = { 
                         showPdfExportDialog = false
-                        val pdfPath = exportToPdf(shift!!, rounds, sortedLogs, context, null)
+                        val pdfPath = exportToPdf(shift!!, rounds, sortedLogs, context, null, shiftDatabase = shiftDatabase)
                         if (pdfPath != null) {
                             android.widget.Toast.makeText(context, "PDF сохранен: $pdfPath", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }) {
                         Text("Экспорт в PDF")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = { 
+                        showPdfExportDialog = false
+                        val cloudManager = CloudStorageManager(context)
+                        val textPath = cloudManager.generateTextReport(shift!!.id, shiftDatabase)
+                        if (textPath != null) {
+                            android.widget.Toast.makeText(context, "Текстовый журнал сохранен: $textPath", android.widget.Toast.LENGTH_LONG).show()
+                        } else {
+                            android.widget.Toast.makeText(context, "Ошибка генерации текстового журнала", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }) {
+                        Text("📝 Генерировать текстовый журнал")
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     /*
@@ -658,7 +673,7 @@ fun ShiftLogDetailScreen(
 
 // Функция экспорта отчета в PDF
 // Возвращает путь к сохраненному файлу или null в случае ошибки
-fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftLogEntry>, context: android.content.Context, outputPath: String? = null, showPreview: Boolean = true): String? {
+fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftLogEntry>, context: android.content.Context, outputPath: String? = null, showPreview: Boolean = true, shiftDatabase: ShiftDatabaseManager? = null): String? {
     val shiftNumber = extractShiftSequenceNumber(shift.id)
     val fileName = "shift_report_${shift.id}_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())}.pdf"
     
@@ -979,6 +994,90 @@ fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftL
             canvas.drawText("✓ Отчет сформирован успешно", 30f, yPos, paint)
         } else {
             canvas.drawText("⚡ Завершенность отчета: $completionPercent%", 30f, yPos, paint)
+        }
+        
+        // === СЕКЦИЯ ПРОИСШЕСТВИЙ ===
+        // Загружаем происшествия для этой смены
+        val shiftId = shift.id
+        val incidents = shiftDatabase?.loadIncidentsByShift(shiftId) ?: emptyList()
+        
+        if (incidents.isNotEmpty()) {
+            // Проверяем место для секции происшествий
+            checkNewPage(100f)
+            
+            yPos += 20f
+            
+            // Заголовок секции с фоном
+            paint.color = backgroundColor
+            canvas.drawRect(20f, yPos - 5f, 575f, yPos + 60f, paint)
+            
+            yPos += 10f
+            
+            // Заголовок "ПРОИСШЕСТВИЯ"
+            paint.color = primaryDarkColor
+            paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+            canvas.drawText("ПРОИСШЕСТВИЯ:", 30f, yPos, paint)
+            
+            yPos += 20f
+            
+            // Статистика по происшествиям
+            paint.color = textColor
+            paint.typeface = android.graphics.Typeface.DEFAULT
+            paint.textSize = 12f
+            
+            canvas.drawText("Всего зафиксировано происшествий: ${incidents.size}", 30f, yPos, paint)
+            
+            yPos += 25f
+            
+            // Группируем происшествия по типам
+            val incidentsByType = incidents.groupBy { it.incidentType }
+            
+            incidentsByType.forEach { (type, typeIncidents) ->
+                // Рисуем разделитель
+                paint.color = dividerColor
+                canvas.drawLine(30f, yPos - 2f, 575f, yPos - 2f, paint)
+                yPos += 3f
+                
+                // Тип происшествия
+                val typeText = when (type) {
+                    IncidentType.FOREIGN_ITEM -> "Посторонний предмет"
+                    IncidentType.MISSING_ITEM -> "Пропажа предмета"
+                    IncidentType.VANDALISM_DAMAGE -> "Последствия вандализма"
+                    IncidentType.BREAKDOWN -> "Поломка"
+                    IncidentType.OTHER -> "Другое"
+                }
+                
+                paint.color = primaryColor
+                paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+                canvas.drawText("$typeText (${typeIncidents.size} шт.)", 30f, yPos, paint)
+                
+                yPos += 15f
+                
+                // Детали происшествий
+                typeIncidents.forEach { incident ->
+                    // Время
+                    val timePart = incident.timestamp.split(" ").getOrNull(1) ?: "-"
+                    paint.color = secondaryColor
+                    canvas.drawText("🕒 $timePart", 35f, yPos, paint)
+                    yPos += 12f
+                    
+                    // Описание
+                    paint.color = textColor
+                    paint.typeface = android.graphics.Typeface.DEFAULT
+                    canvas.drawText("📝 ${incident.description}", 35f, yPos, paint)
+                    yPos += 12f
+                    
+                    // Ссылка на фото
+                    paint.color = accentColor
+                    canvas.drawText("📷 Фото: ${incident.photoPath}", 35f, yPos, paint)
+                    yPos += 15f
+                }
+            }
+            
+            // Итоговая строка
+            yPos += 5f
+            paint.color = dividerColor
+            canvas.drawLine(30f, yPos - 2f, 575f, yPos - 2f, paint)
         }
         
         // Завершаем страницу

@@ -8,15 +8,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.ui.res.painterResource
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.text.font.FontWeight
 
 import android.os.Bundle
@@ -34,20 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
-import com.example.ohrana.ShiftDatabaseManager
-import com.example.ohrana.ShiftLogDetailScreen
-import com.example.ohrana.ShiftLogEntry
-import com.example.ohrana.CloudStorageManager
-import com.example.ohrana.CloudSettingsScreen
-import com.example.ohrana.GuardMember
-import com.example.ohrana.GuardNfcSelectionScreen
-import com.example.ohrana.JournalScreen
-import com.example.ohrana.HtmlReportViewerScreen
-import com.example.ohrana.SoundSettingsScreen
-import com.example.ohrana.SoundPlayer
 import com.example.ohrana.ui.theme.OhranaTheme
-import android.content.pm.ActivityInfo
-import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -139,6 +120,11 @@ fun AppNavigation() {
     // Состояние для 5-кликового механизма админ-кнопки
     var clickCount by remember { mutableStateOf(0) }
     var lastClickTime by remember { mutableStateOf(0L) }
+    
+    // Параметры для фиксации происшествия
+    var incidentRoundId by remember { mutableStateOf(0) }
+    var incidentShiftId by remember { mutableStateOf("") }
+    var incidentEmployeeName by remember { mutableStateOf("") }
 
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -279,6 +265,20 @@ fun AppNavigation() {
                     // Для guardsCount = 1 показываем текст про NFC
                     if (guardsCount == 1) {
                         Text(text = "Поднесите личную карту к телефону", fontSize = 18.sp, color = androidx.compose.ui.graphics.Color.White)
+                    }
+                }
+                
+                // Кнопка входа в панель администратора
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
+                ) {
+                    Button(
+                        onClick = { currentScreen = "admin" },
+                        modifier = Modifier.fillMaxWidth(0.8f).height(60.dp)
+                    ) {
+                        Text("Панель администратора", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 
@@ -478,6 +478,13 @@ fun AppNavigation() {
                 selectedCheckpointId = checkpointId
                 currentScreen = "photo_capture"
             },
+            onNavigateToIncident = { roundId, shiftId ->
+                // Переход на экран фиксации происшествия
+                incidentRoundId = roundId
+                incidentShiftId = shiftId
+                incidentEmployeeName = selectedEmployeeName
+                currentScreen = "incident_capture"
+            },
             onEndRound = {
                 currentScreen = "rounds"
             },
@@ -538,6 +545,13 @@ fun AppNavigation() {
                 }
                 
                 currentScreen = "ohrannik_cabinet"
+            },
+            onNavigateToIncident = { roundId, shiftId, employeeName ->
+                // Переход на экран фиксации происшествия
+                incidentRoundId = roundId
+                incidentShiftId = shiftId
+                incidentEmployeeName = employeeName
+                currentScreen = "incident_capture"
             }
         )
         
@@ -571,6 +585,20 @@ fun AppNavigation() {
             },
             prefsManager = prefsManager,
             employeeName = selectedEmployeeName
+        )
+        
+        "incident_capture" -> IncidentCaptureScreen(
+            roundId = incidentRoundId,
+            shiftId = incidentShiftId,
+            onIncidentSaved = {},
+            onBack = {
+                incidentRoundId = 0
+                incidentShiftId = ""
+                incidentEmployeeName = ""
+                currentScreen = "rounds"
+            },
+            prefsManager = prefsManager,
+            employeeName = incidentEmployeeName,
         )
         
         "spisok_otchetov" -> {

@@ -660,6 +660,116 @@ class ShiftDatabaseManager(private val context: Context) {
         
         return filtered
     }
+
+    // ============================================
+    // ПРОИСШЕСТВИЯ (INCIDENTS)
+    // ============================================
+
+    /**
+     * Добавить запись о происшествии
+     */
+    fun addIncident(
+        roundId: Int,
+        shiftId: String,
+        employeeName: String,
+        incidentType: IncidentType,
+        description: String,
+        photoPath: String,
+        latitude: Double? = null,
+        longitude: Double? = null
+    ): String {
+        val incidentId = "incident_${System.currentTimeMillis()}"
+        val timestamp = dateFormat.format(Date())
+
+        val incident = IncidentRecord(
+            id = incidentId,
+            timestamp = timestamp,
+            shiftId = shiftId,
+            roundId = roundId,
+            employeeName = employeeName,
+            incidentType = incidentType,
+            description = description,
+            photoPath = photoPath,
+            latitude = latitude,
+            longitude = longitude
+        )
+
+        saveIncident(incident)
+        return incidentId
+    }
+
+    /**
+     * Сохранить запись о происшествии
+     */
+    private fun saveIncident(incident: IncidentRecord) {
+        val json = JSONObject().apply {
+            put("id", incident.id)
+            put("timestamp", incident.timestamp)
+            put("shiftId", incident.shiftId)
+            put("roundId", incident.roundId)
+            put("employeeName", incident.employeeName)
+            put("incidentType", incident.incidentType.name)
+            put("description", incident.description)
+            put("photoPath", incident.photoPath)
+            incident.latitude?.let { put("latitude", it) }
+            incident.longitude?.let { put("longitude", it) }
+        }
+
+        prefs.edit().putString("incident_${incident.id}", json.toString()).apply()
+    }
+
+    /**
+     * Загрузить все происшествия
+     */
+    fun loadAllIncidents(): List<IncidentRecord> {
+        val all = prefs.all ?: return emptyList()
+        return all.filter { it.key.startsWith("incident_") }
+            .mapNotNull { 
+                try {
+                    val json = JSONObject(it.value as String)
+                    IncidentRecord(
+                        id = json.getString("id"),
+                        timestamp = json.getString("timestamp"),
+                        shiftId = json.getString("shiftId"),
+                        roundId = json.getInt("roundId"),
+                        employeeName = json.getString("employeeName"),
+                        incidentType = try {
+                            IncidentType.valueOf(json.optString("incidentType", "OTHER"))
+                        } catch (e: Exception) {
+                            IncidentType.OTHER
+                        },
+                        description = json.getString("description"),
+                        photoPath = json.getString("photoPath"),
+                        latitude = json.optDouble("latitude", Double.NaN).takeIf { !it.isNaN() },
+                        longitude = json.optDouble("longitude", Double.NaN).takeIf { !it.isNaN() }
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+    }
+
+    /**
+     * Загрузить происшествия по ID смены
+     */
+    fun loadIncidentsByShift(shiftId: String): List<IncidentRecord> {
+        return loadAllIncidents().filter { it.shiftId == shiftId }
+    }
+
+    /**
+     * Загрузить происшествия по ID обхода
+     */
+    fun loadIncidentsByRound(roundId: Int, shiftId: String? = null): List<IncidentRecord> {
+        val incidents = loadAllIncidents()
+        val filtered = incidents.filter { it.roundId == roundId }
+        
+        // Если указан shiftId, фильтруем по нему
+        if (shiftId != null) {
+            return filtered.filter { it.shiftId == shiftId }
+        }
+        
+        return filtered
+    }
     
     /**
      * Обновить последнюю запись SCAN на правильный тип действия

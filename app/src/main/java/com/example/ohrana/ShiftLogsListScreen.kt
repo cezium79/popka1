@@ -281,6 +281,59 @@ fun ShiftLogsListScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             OhranaOutlinedButton(
+                                text = "📝 Показать текстовый журнал",
+                                onClick = {
+                                    scope.launch {
+                                        val cloudManager = CloudStorageManager(context)
+                                        val textPath = withContext(Dispatchers.IO) {
+                                            cloudManager.generateTextReport(
+                                                selectedShift.id,
+                                                shiftDatabase
+                                            )
+                                        }
+
+                                        withContext(Dispatchers.Main) {
+                                            if (textPath != null) {
+                                                val textFile = File(textPath)
+                                                if (textFile.exists()) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Текстовый журнал сохранен: $textPath",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                } else {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Файл текстового журнала не найден",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Ошибка при генерации текстового журнала",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF424242),
+                                    contentColor = Color(0xFFFFFFFF)
+                                ),
+                                elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                                    defaultElevation = 4.dp,
+                                    pressedElevation = 8.dp,
+                                    disabledElevation = 0.dp
+                                ),
+                                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OhranaOutlinedButton(
                                 text = "📤 Загрузить HTML в Яндекс.Диск",
                                 onClick = {
                                     scope.launch {

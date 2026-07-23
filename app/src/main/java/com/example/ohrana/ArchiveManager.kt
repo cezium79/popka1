@@ -324,7 +324,7 @@ class ArchiveManager(private val context: Context) {
      */
     fun getArchiveSize(): Long {
         init()
-        return archiveDir.listFiles().sumOf { it.length() } ?: 0L
+        return archiveDir.listFiles()?.sumOf { it.length() } ?: 0L
     }
     
     /**

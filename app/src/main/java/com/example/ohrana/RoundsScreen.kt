@@ -32,12 +32,16 @@ import com.example.ohrana.uielements.ButtonDesigns
 import com.example.ohrana.ui.components.OhranaButton
 import kotlin.time.Duration.Companion.seconds
 
+// Для SharedPrefsManager
+import com.example.ohrana.SharedPrefsManager
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoundsScreen(
     onBack: () -> Unit,
     onCloseShift: () -> Unit, // Вызывается при завершении смены
-    onStartRound: (guardName: String, roundIndex: Int, routeId: String?) -> Unit
+    onStartRound: (guardName: String, roundIndex: Int, routeId: String?) -> Unit,
+    onNavigateToIncident: ((Int, String, String) -> Unit)? = null // Коллбэк для перехода на экран фиксации
 ) {
     val context = LocalContext.current
     val prefsManager = remember { SharedPrefsManager(context) }
@@ -60,6 +64,14 @@ fun RoundsScreen(
     var showGuardSelectionDialog by remember { mutableStateOf(false) }
     var showUnfinishedRoundWarning by remember { mutableStateOf(false) }
     var selectedRoundForGuardSelection by remember { mutableStateOf<Pair<Int, String?>?>(null) }
+    
+    // Параметры для фиксации происшествия
+    var incidentRoundId by remember { mutableStateOf(0) }
+    var incidentShiftId by remember { mutableStateOf("") }
+    var incidentEmployeeName by remember { mutableStateOf("") }
+    
+    // Получаем текущий экран (для перехода)
+    val currentScreen = "rounds"
     
     // Проверка: есть ли незавершённый обход
     fun hasUnfinishedRound(): Boolean {
@@ -556,6 +568,40 @@ fun RoundsScreen(
                         onCloseShift()
                     }
                 }
+            }
+            
+            // Кнопка зафиксировать происшествие (даже если смена не активна)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                OhranaOutlinedButton(
+                    text = "Зафиксировать происшествие",
+                    onClick = {
+                        // Получаем ID активной смены
+                        val activeShiftId = prefsManager.prefs.getString("active_shift_id", "")
+                        val activeRoundIndex = prefsManager.getActiveRoundIndex()
+                        val employeeName = guardList.firstOrNull()?.name ?: ""
+                        
+                        // Если есть активная смена - используем её
+                        if (activeShiftId != null && activeShiftId.isNotEmpty()) {
+                            if (activeRoundIndex != -1) {
+                                // Есть активная смена и активный обход
+                                onNavigateToIncident?.invoke(activeRoundIndex, activeShiftId, employeeName)
+                            } else {
+                                // Есть активная смена, но нет активного обхода - передаем -1
+                                onNavigateToIncident?.invoke(-1, activeShiftId, employeeName)
+                            }
+                        } else {
+                            // Нет активной смены - передаем "outside_shift" как shiftId и -1 как roundId
+                            onNavigateToIncident?.invoke(-1, "outside_shift", employeeName)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                    designId = 3
+                )
             }
         }
     }

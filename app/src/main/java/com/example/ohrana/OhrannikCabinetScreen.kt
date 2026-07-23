@@ -70,6 +70,7 @@ fun OhrannikCabinetScreen(
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToPhoto: (SharedPrefsManager, String) -> Unit,
+    onNavigateToIncident: (Int, String) -> Unit,
     onEndRound: () -> Unit,
     onCloseShift: () -> Unit
 ) {
@@ -507,7 +508,7 @@ fun OhrannikCabinetScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(employeeName) },
+                title = { Text(employeeName,color = Color(0xFFFFFFFF)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад",tint = Color(0xFFE0E0E0))
@@ -557,7 +558,7 @@ fun OhrannikCabinetScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
-            ) {
+            )  {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -584,12 +585,15 @@ fun OhrannikCabinetScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
                         .padding(bottom = 16.dp)
-
                 ) {
                     // Контейнер для вывода картинки с камеры смартфона
-                    AndroidView(
+                    Box(
+                        modifier = Modifier
+                            .size(width = 251.dp, height = 301.dp)
+                            .align(Alignment.Center)
+                    ) {
+                        AndroidView(
                         factory = { ctx ->
                             val previewView = PreviewView(ctx)
                             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
@@ -774,7 +778,8 @@ fun OhrannikCabinetScreen(
                             }, ContextCompat.getMainExecutor(ctx))
                             previewView
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .size(width = 250.dp, height = 300.dp)
                     )
 
                     // Рамка зеленого прицела по центру экрана
@@ -784,7 +789,39 @@ fun OhrannikCabinetScreen(
                             .align(Alignment.Center)
                             .border(BorderStroke(3.dp, Color.Green), RoundedCornerShape(16.dp))
                     )
+                    }
                 }
+            }
+
+            // Кнопка зафиксировать происшествие
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                OhranaOutlinedButton(
+                    text = "Зафиксировать происшествие",
+                    onClick = { 
+                        // Получаем ID активного обхода и смены
+                        val activeRoundIndex = manager.getActiveRoundIndex()
+                        val activeShiftId = manager.prefs.getString("active_shift_id", "unknown_shift")
+                        
+                        if (activeRoundIndex != -1 && activeShiftId != null) {
+                            // Вызываем коллбэк для перехода на экран фиксации
+                            onNavigateToIncident(activeRoundIndex, activeShiftId)
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Нет активного обхода",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    style = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+                    designId = 3
+                )
             }
 
             // Кнопка сканирования QR
@@ -800,7 +837,7 @@ fun OhrannikCabinetScreen(
                         isScanRequested = true
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    style = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+                    style = androidx.compose.ui.text.TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold),
                     designId = 3
                 )
             }
