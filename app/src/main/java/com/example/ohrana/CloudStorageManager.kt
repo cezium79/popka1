@@ -1460,7 +1460,7 @@ class CloudStorageManager(private val context: Context) {
                                 <strong>Обход:</strong> ${incident.roundId}
                             </div>
                             <div class="action-details">
-                                <span><label>Описание:</label> ${incident.description}</span>
+                                <span><label>Описание:</label> ${if (incident.description.isNullOrBlank()) "No Comments" else incident.description}</span>
                             </div>
                             ${
                             if (photoBase64 != null)

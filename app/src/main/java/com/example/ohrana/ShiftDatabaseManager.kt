@@ -678,6 +678,8 @@ class ShiftDatabaseManager(private val context: Context) {
         latitude: Double? = null,
         longitude: Double? = null
     ): String {
+        android.util.Log.d("ShiftDatabaseManager", "=== ADD INCIDENT START ===")
+        android.util.Log.d("ShiftDatabaseManager", "addIncident: roundId=$roundId, shiftId=$shiftId, photoPath=$photoPath, description=$description")
         val incidentId = "incident_${System.currentTimeMillis()}"
         val timestamp = dateFormat.format(Date())
 
@@ -694,7 +696,9 @@ class ShiftDatabaseManager(private val context: Context) {
             longitude = longitude
         )
 
+        android.util.Log.d("ShiftDatabaseManager", "About to call saveIncident...")
         saveIncident(incident)
+        android.util.Log.d("ShiftDatabaseManager", "saveIncident completed, incidentId=$incidentId")
         return incidentId
     }
 

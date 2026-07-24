@@ -590,13 +590,8 @@ fun AppNavigation() {
         "incident_capture" -> IncidentCaptureScreen(
             roundId = incidentRoundId,
             shiftId = incidentShiftId,
-            onIncidentSaved = {},
-            onBack = {
-                incidentRoundId = 0
-                incidentShiftId = ""
-                incidentEmployeeName = ""
-                currentScreen = "rounds"
-            },
+            onIncidentSaved = { currentScreen = "rounds" },
+            onBack = { currentScreen = "rounds" },
             prefsManager = prefsManager,
             employeeName = incidentEmployeeName,
         )

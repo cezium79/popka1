@@ -153,11 +153,46 @@ fun RoundsScreen(
         },
         bottomBar = {
             // Кнопка завершения смены (показывается только если смена активна)
+
             if (isShiftActive) {
+                Column() {
+                // Кнопка зафиксировать происшествие (даже если смена не активна)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(2.dp)
+                ) {
+                    OhranaOutlinedButton(
+                        text = "Зафиксировать происшествие",
+                        onClick = {
+                            // Получаем ID активной смены
+                            val activeShiftId = prefsManager.prefs.getString("active_shift_id", "")
+                            val activeRoundIndex = prefsManager.getActiveRoundIndex()
+                            val employeeName = guardList.firstOrNull()?.name ?: ""
+
+                            // Если есть активная смена - используем её
+                            if (activeShiftId != null && activeShiftId.isNotEmpty()) {
+                                if (activeRoundIndex != -1) {
+                                    // Есть активная смена и активный обход
+                                    onNavigateToIncident?.invoke(activeRoundIndex, activeShiftId, employeeName)
+                                } else {
+                                    // Есть активная смена, но нет активного обхода - передаем -1
+                                    onNavigateToIncident?.invoke(-1, activeShiftId, employeeName)
+                                }
+                            } else {
+                                // Нет активной смены - передаем "outside_shift" как shiftId и -1 как roundId
+                                onNavigateToIncident?.invoke(-1, "outside_shift", employeeName)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                        designId = 3
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(2.dp)
                 ) {
                     OhranaButton(
                         text = "ЗАВЕРШИТЬ СМЕНУ (СТОП)",
@@ -170,7 +205,7 @@ fun RoundsScreen(
                     )
                 }
             }
-        }
+        }}
     ) { paddingValues ->
         val context = LocalContext.current
         val bitmap = android.graphics.BitmapFactory.decodeResource(context.resources, com.example.ohrana.R.drawable.fon2)
@@ -189,50 +224,6 @@ fun RoundsScreen(
                     .background(Color.White),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
-            
-            // Анимация завершения смены (без кнопок) - поверх всех элементов
-            if (showGoodbyeAnimation) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFFFFFFFF))
-                        .zIndex(100f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        modifier = Modifier.padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(100.dp)
-                                .clip(RoundedCornerShape(50.dp))
-                                .background(Color(0xFF4CAF50)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Успех",
-                                modifier = Modifier.size(60.dp),
-                                tint = Color.White
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = "Смена успешно завершена",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Смена закрыта. До свидания!",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
             
             Column(
                 modifier = Modifier
@@ -559,6 +550,51 @@ fun RoundsScreen(
                     }
                 )
             }
+            
+            // Анимация завершения смены (без кнопок) - поверх всех элементов
+            if (showGoodbyeAnimation) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFFFFFFFF))
+                        .zIndex(100f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        modifier = Modifier.padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .clip(RoundedCornerShape(50.dp))
+                                .background(Color(0xFF4CAF50)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Успех",
+                                modifier = Modifier.size(60.dp),
+                                tint = Color.White
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = "Смена успешно завершена",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Смена закрыта. До свидания!",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            
             // Через 3 секунды возвращаемся на экран выбора сотрудника
             LaunchedEffect(showGoodbyeAnimation) {
                 if (showGoodbyeAnimation) {
@@ -570,39 +606,7 @@ fun RoundsScreen(
                 }
             }
             
-            // Кнопка зафиксировать происшествие (даже если смена не активна)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                OhranaOutlinedButton(
-                    text = "Зафиксировать происшествие",
-                    onClick = {
-                        // Получаем ID активной смены
-                        val activeShiftId = prefsManager.prefs.getString("active_shift_id", "")
-                        val activeRoundIndex = prefsManager.getActiveRoundIndex()
-                        val employeeName = guardList.firstOrNull()?.name ?: ""
-                        
-                        // Если есть активная смена - используем её
-                        if (activeShiftId != null && activeShiftId.isNotEmpty()) {
-                            if (activeRoundIndex != -1) {
-                                // Есть активная смена и активный обход
-                                onNavigateToIncident?.invoke(activeRoundIndex, activeShiftId, employeeName)
-                            } else {
-                                // Есть активная смена, но нет активного обхода - передаем -1
-                                onNavigateToIncident?.invoke(-1, activeShiftId, employeeName)
-                            }
-                        } else {
-                            // Нет активной смены - передаем "outside_shift" как shiftId и -1 как roundId
-                            onNavigateToIncident?.invoke(-1, "outside_shift", employeeName)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
-                    designId = 3
-                )
-            }
+
         }
     }
 }}
