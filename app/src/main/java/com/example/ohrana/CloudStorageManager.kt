@@ -1126,6 +1126,9 @@ class CloudStorageManager(private val context: Context) {
 
             // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
             val sortedLogs = logs.sortedBy { it.timestamp }
+            
+            // Загружаем происшествия
+            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
 
             // HTML заголовок
             html.append(
@@ -1173,6 +1176,62 @@ class CloudStorageManager(private val context: Context) {
                         .action-details { background: #f9f9f9; padding: 8px; border-radius: 4px; margin: 5px 0; font-size: 12px; }
                         .action-details span { display: block; margin: 2px 0; }
                         .action-details label { font-weight: bold; color: #667eea; }
+                        /* Сетка для происшествий */
+                        .incidents-grid {
+                            display: grid;
+                            grid-template-columns: repeat(3, 1fr);
+                            gap: 15px;
+                        }
+                        .incident-card {
+                            background: #fafafa;
+                            border: 1px solid #ddd;
+                            border-radius: 8px;
+                            padding: 12px;
+                        }
+                        .incident-card h3 {
+                            margin: 0 0 8px 0;
+                            color: #ff9800;
+                            font-size: 14px;
+                        }
+                        .incident-card img {
+                            max-width: 100%;
+                            max-height: 150px;
+                            border-radius: 4px;
+                            border: 1px solid #ddd;
+                        }
+                        /* Сетка для фотографий чекпоинтов */
+                        .checkpoint-grid {
+                            display: grid;
+                            grid-template-columns: repeat(3, 1fr);
+                            gap: 15px;
+                        }
+                        .checkpoint-card {
+                            background: #fafafa;
+                            border: 1px solid #ddd;
+                            border-radius: 8px;
+                            padding: 12px;
+                        }
+                        .checkpoint-card h3 {
+                            margin: 0 0 8px 0;
+                            color: #2196f3;
+                            font-size: 14px;
+                        }
+                        .checkpoint-card img {
+                            max-width: 100%;
+                            max-height: 150px;
+                            border-radius: 4px;
+                            border: 1px solid #ddd;
+                        }
+                        @media (max-width: 900px) {
+                            .incidents-grid {
+                                grid-template-columns: repeat(2, 1fr);
+                            }
+                        }
+                        @media (max-width: 600px) {
+                            .incidents-grid {
+                                grid-template-columns: 1fr;
+                            }
+                        }
                         .footer { margin-top: 20px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px; }
                     </style>
                 </head>
@@ -1222,6 +1281,10 @@ class CloudStorageManager(private val context: Context) {
                         <div class="stat-item">
                             <div class="stat-value violations">$totalViolations</div>
                             <div class="stat-label">Нарушений</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="font-size: 28px; color: #ff9800;">${incidents.size}</div>
+                            <div class="stat-label">Происшествий</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-value" style="font-size: 32px; color: ${if (shiftResult == "ПОЙДЕТ" || shiftResult == "✓") "#4caf50" else "#f44336"}">$shiftResult</div>
@@ -1345,6 +1408,7 @@ class CloudStorageManager(private val context: Context) {
                     """
                     <div class="section">
                         <h2>📷 Фотографии</h2>
+                        <div class="checkpoint-grid">
                 """.trimIndent()
                 )
 
@@ -1384,10 +1448,10 @@ class CloudStorageManager(private val context: Context) {
 
                     html.append(
                         """
-                        <div class="photo-item">
+                        <div class="checkpoint-card">
+                            <h3>${photoLog.checkpointName}</h3>
                             <div class="photo-info">
                                 <strong>Обход:</strong> ${photoLog.roundId}<br>
-                                <strong>Чекпоинт:</strong> ${photoLog.checkpointName}<br>
                                 <strong>Время:</strong> ${photoLog.timestamp.substring(11)}<br>
                                 <strong>Охранник:</strong> ${photoLog.employeeName}
                             </div>
@@ -1404,28 +1468,26 @@ class CloudStorageManager(private val context: Context) {
 
                 html.append(
                     """
+                        </div>
                     </div>
                 """.trimIndent()
                 )
             }
             
             // Происшествия за смену
-            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
             if (incidents.isNotEmpty()) {
+                // Сортируем происшествия по времени
+                val sortedIncidents = incidents.sortedBy { it.timestamp }
+                
                 html.append(
                     """
                     <div class="section">
                         <h2>📸 Происшествия</h2>
-                        <div class="stats-grid">
-                            <div class="stat-item">
-                                <div class="stat-value" style="font-size: 32px; color: #ff9800;">${incidents.size}</div>
-                                <div class="stat-label">Всего происшествий</div>
-                            </div>
-                        </div>
+                        <div class="incidents-grid">
                 """.trimIndent()
                 )
 
-                incidents.forEach { incident ->
+                sortedIncidents.forEach { incident ->
                     val photoBase64 = try {
                         val photoFile = File(incident.photoPath)
                         if (photoFile.exists()) {
@@ -1452,7 +1514,7 @@ class CloudStorageManager(private val context: Context) {
 
                     html.append(
                         """
-                        <div class="photo-item">
+                        <div class="incident-card">
                             <h3>${incident.incidentType.name.replace('_', ' ')}</h3>
                             <div class="photo-info">
                                 <strong>Время:</strong> ${incident.timestamp.substring(11)}<br>
@@ -1475,6 +1537,7 @@ class CloudStorageManager(private val context: Context) {
 
                 html.append(
                     """
+                        </div>
                     </div>
                 """.trimIndent()
                 )
@@ -2024,6 +2087,62 @@ class CloudStorageManager(private val context: Context) {
                         .action-details { background: #f9f9f9; padding: 8px; border-radius: 4px; margin: 5px 0; font-size: 12px; }
                         .action-details span { display: block; margin: 2px 0; }
                         .action-details label { font-weight: bold; color: #667eea; }
+                        /* Сетка для происшествий */
+                        .incidents-grid {
+                            display: grid;
+                            grid-template-columns: repeat(3, 1fr);
+                            gap: 15px;
+                        }
+                        .incident-card {
+                            background: #fafafa;
+                            border: 1px solid #ddd;
+                            border-radius: 8px;
+                            padding: 12px;
+                        }
+                        .incident-card h3 {
+                            margin: 0 0 8px 0;
+                            color: #ff9800;
+                            font-size: 14px;
+                        }
+                        .incident-card img {
+                            max-width: 100%;
+                            max-height: 150px;
+                            border-radius: 4px;
+                            border: 1px solid #ddd;
+                        }
+                        /* Сетка для фотографий чекпоинтов */
+                        .checkpoint-grid {
+                            display: grid;
+                            grid-template-columns: repeat(3, 1fr);
+                            gap: 15px;
+                        }
+                        .checkpoint-card {
+                            background: #fafafa;
+                            border: 1px solid #ddd;
+                            border-radius: 8px;
+                            padding: 12px;
+                        }
+                        .checkpoint-card h3 {
+                            margin: 0 0 8px 0;
+                            color: #2196f3;
+                            font-size: 14px;
+                        }
+                        .checkpoint-card img {
+                            max-width: 100%;
+                            max-height: 150px;
+                            border-radius: 4px;
+                            border: 1px solid #ddd;
+                        }
+                        @media (max-width: 900px) {
+                            .incidents-grid {
+                                grid-template-columns: repeat(2, 1fr);
+                            }
+                        }
+                        @media (max-width: 600px) {
+                            .incidents-grid {
+                                grid-template-columns: 1fr;
+                            }
+                        }
                         .footer { margin-top: 20px; text-align: center; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px; }
                     </style>
                 </head>
@@ -2073,6 +2192,10 @@ class CloudStorageManager(private val context: Context) {
                         <div class="stat-item">
                             <div class="stat-value violations">$totalViolations</div>
                             <div class="stat-label">Нарушений</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="font-size: 28px; color: #ff9800;">${incidents.size}</div>
+                            <div class="stat-label">Происшествий</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-value" style="font-size: 32px; color: ${if (shiftResult == "ПОЙДЕТ" || shiftResult == "✓") "#4caf50" else "#f44336"}">$shiftResult</div>
@@ -2196,6 +2319,7 @@ class CloudStorageManager(private val context: Context) {
                     """
                     <div class="section">
                         <h2>📷 Фотографии</h2>
+                        <div class="checkpoint-grid">
                 """.trimIndent()
                 )
 
@@ -2235,10 +2359,10 @@ class CloudStorageManager(private val context: Context) {
 
                     html.append(
                         """
-                        <div class="photo-item">
+                        <div class="checkpoint-card">
+                            <h3>${photoLog.checkpointName}</h3>
                             <div class="photo-info">
                                 <strong>Обход:</strong> ${photoLog.roundId}<br>
-                                <strong>Чекпоинт:</strong> ${photoLog.checkpointName}<br>
                                 <strong>Время:</strong> ${photoLog.timestamp.substring(11)}<br>
                                 <strong>Охранник:</strong> ${photoLog.employeeName}
                             </div>
@@ -2255,6 +2379,76 @@ class CloudStorageManager(private val context: Context) {
 
                 html.append(
                     """
+                        </div>
+                    </div>
+                """.trimIndent()
+                )
+            }
+            
+            // Происшествия за смену
+            if (incidents.isNotEmpty()) {
+                // Сортируем происшествия по времени
+                val sortedIncidents = incidents.sortedBy { it.timestamp }
+                
+                html.append(
+                    """
+                    <div class="section">
+                        <h2>📸 Происшествия</h2>
+                        <div class="incidents-grid">
+                """.trimIndent()
+                )
+
+                sortedIncidents.forEach { incident ->
+                    val photoBase64 = try {
+                        val photoFile = File(incident.photoPath)
+                        if (photoFile.exists()) {
+                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                            if (bitmap != null) {
+                                val outputStream = ByteArrayOutputStream()
+                                bitmap.compress(
+                                    android.graphics.Bitmap.CompressFormat.JPEG,
+                                    80,
+                                    outputStream
+                                )
+                                val imageBytes = outputStream.toByteArray()
+                                Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                            } else {
+                                null
+                            }
+                        } else {
+                            null
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to load incident photo: ${incident.photoPath}", e)
+                        null
+                    }
+
+                    html.append(
+                        """
+                        <div class="incident-card">
+                            <h3>${incident.incidentType.name.replace('_', ' ')}</h3>
+                            <div class="photo-info">
+                                <strong>Время:</strong> ${incident.timestamp.substring(11)}<br>
+                                <strong>Охранник:</strong> ${incident.employeeName}<br>
+                                <strong>Обход:</strong> ${incident.roundId}
+                            </div>
+                            <div class="action-details">
+                                <span><label>Описание:</label> ${if (incident.description.isNullOrBlank()) "No Comments" else incident.description}</span>
+                            </div>
+                            ${
+                            if (photoBase64 != null)
+                                "<img src=\"data:image/jpeg;base64,$photoBase64\" alt=\"Фото происшествия\">"
+                            else
+                                "<p>Фото недоступно</p>"
+                        }
+                        </div>
+                    """.trimIndent()
+                    )
+                }
+
+                html.append(
+                    """
+                        </div>
                     </div>
                 """.trimIndent()
                 )

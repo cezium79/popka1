@@ -83,6 +83,12 @@ dependencies {
     // ML Kit
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    
+    // PDF generation from HTML
+    implementation("com.itextpdf:itext7-core:7.2.6")
+    implementation("com.itextpdf:layout:7.2.6")
+    implementation("com.itextpdf:html2pdf:7.2.6")
+    
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.02"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

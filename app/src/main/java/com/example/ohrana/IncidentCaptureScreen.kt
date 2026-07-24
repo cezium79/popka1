@@ -684,8 +684,8 @@ fun IncidentCaptureScreen(
                             android.util.Log.w("IncidentCaptureScreen", "No active incident args found!")
                         }
                         
-                        android.util.Log.d("IncidentCaptureScreen", "About to call onBack()")
-                        onBack()
+                        android.util.Log.d("IncidentCaptureScreen", "Setting isIncidentComplete = true")
+                        isIncidentComplete = true
                     }
                 ) {
                     Text("OK")

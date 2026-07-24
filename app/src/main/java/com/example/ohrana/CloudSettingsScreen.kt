@@ -104,6 +104,9 @@ import androidx.compose.ui.tooling.preview.PreviewFontScale
         // Состояние цвета статуса
         var saveStatusColor by remember { mutableStateOf<Color>(Color.Unspecified) }
 
+        // Переключатель типа отчета (HTML или PDF)
+        var Opochki by remember { mutableStateOf(true) } // true = HTML, false = PDF
+
         // Состояние диалога выбора токена
         var showTokenDialog by remember { mutableStateOf(false) }
 
@@ -762,6 +765,33 @@ import androidx.compose.ui.tooling.preview.PreviewFontScale
                                 SharedPrefsManager.LinkAction.SAVE_TO_DEVICE -> {
                                     // Для сохранения на устройстве дополнительных полей не требуется
                                 }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Большой переключатель
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(24.dp)
+                                .fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "PDF", color = if (!Opochki) Color(0xFFFFFFFF) else Color(0xFF9E9E9E))
+                                Switch(
+                                    checked = Opochki,
+                                    onCheckedChange = { Opochki = it }
+                                )
+                                Text(text = "HTML", color = if (Opochki) Color(0xFFFFFFFF) else Color(0xFF9E9E9E))
                             }
                         }
                     }
