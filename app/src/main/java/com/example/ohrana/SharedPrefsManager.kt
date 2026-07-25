@@ -524,6 +524,10 @@ class SharedPrefsManager(private val context: Context) {
         Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Calling generateHtmlReportWithDesign with this@SharedPrefsManager")
         Log.d("SharedPrefsManager", "sendReportViaEmailAsync: isStrictSequenceEnabled=${this@SharedPrefsManager.isStrictSequenceEnabled()}")
         
+        // Проверяем формат отчета (HTML или PDF)
+        val isPdfFormat = isReportFormatPdf()
+        Log.d("SharedPrefsManager", "sendReportViaEmailAsync: isPdfFormat=$isPdfFormat")
+        
         // Генерируем HTML отчет (только полный дизайн)
         val (htmlPath, shiftResult) = withContext(Dispatchers.IO) {
             cloudManager.generateHtmlReportWithDesign(shiftId, shiftDatabase, this@SharedPrefsManager, context)
@@ -534,21 +538,68 @@ class SharedPrefsManager(private val context: Context) {
             return
         }
         
-        // Читаем HTML файл
-        val htmlContent = try {
-            withContext(Dispatchers.IO) {
+        // Если PDF режим - сохраняем HTML копию в отдельную папку
+        var htmlCopyPath: String? = null
+        if (isPdfFormat) {
+            htmlCopyPath = try {
+                val htmlFile = java.io.File(htmlPath)
+                val htmlReportsFolder = getHtmlReportsFolder()
+                val copyFileName = "${htmlFile.nameWithoutExtension}_${System.currentTimeMillis()}.html"
+                val copyFile = java.io.File(htmlReportsFolder, copyFileName)
+                
+                // Копируем файл
+                copyFile.parentFile?.mkdirs()
+                copyFile.writeText(htmlFile.readText(charset = StandardCharsets.UTF_8))
+                
+                // Сохраняем путь в список
+                saveHtmlReportPath(copyFile.absolutePath)
+                
+                Log.d("SharedPrefsManager", "sendReportViaEmailAsync: HTML copy saved to: ${copyFile.absolutePath}")
+                copyFile.absolutePath
+            } catch (e: Exception) {
+                Log.e("SharedPrefsManager", "sendReportViaEmailAsync: Failed to save HTML copy: ${e.message}", e)
+                null
+            }
+        }
+        
+        // Если PDF режим - конвертируем HTML в PDF
+        val (pdfPath, attachmentName, attachmentContent) = if (isPdfFormat) {
+            val converter = HtmlToPdfConverter(context)
+            val pdfPath = converter.convertHtmlToPdf(htmlPath)
+            
+            if (pdfPath != null) {
+                Log.d("SharedPrefsManager", "sendReportViaEmailAsync: PDF generated: $pdfPath")
+                
+                // Читаем PDF файл для отправки
+                val pdfFile = java.io.File(pdfPath)
+                val pdfBytes = pdfFile.readBytes()
+                
+                Triple(pdfPath, "shift_report_${shiftId}.pdf", pdfBytes)
+            } else {
+                Log.e("SharedPrefsManager", "sendReportViaEmailAsync: Failed to generate PDF, sending HTML instead")
+                
+                // Если конвертация не удалась, отправляем HTML
+                val htmlContent = withContext(Dispatchers.IO) {
+                    val file = java.io.File(htmlPath)
+                    file.readText(charset = StandardCharsets.UTF_8)
+                }
+                
+                Triple(htmlPath, "shift_report_${shiftId}.html", htmlContent)
+            }
+        } else {
+            // HTML режим - читаем HTML файл
+            val htmlContent = withContext(Dispatchers.IO) {
                 val file = java.io.File(htmlPath)
                 file.readText(charset = StandardCharsets.UTF_8)
             }
-        } catch (e: Exception) {
-            Log.e("SharedPrefsManager", "sendReportViaEmailAsync: Failed to read HTML file: ${e.message}", e)
-            return
+            
+            Triple(htmlPath, "shift_report_${shiftId}.html", htmlContent)
         }
         
         // Извлекаем shiftResult из HTML комментария
         val result = shiftResult ?: run {
             val pattern = Regex("<!--\\s*shift_result:(.*?)\\s*-->", RegexOption.DOT_MATCHES_ALL)
-            val match = pattern.find(htmlContent)
+            val match = pattern.find(attachmentContent as String)
             match?.groupValues?.get(1) ?: "?"
         }
         
@@ -563,13 +614,27 @@ class SharedPrefsManager(private val context: Context) {
         
         // Отправляем email с вложением
         val success = withContext(Dispatchers.IO) {
-            emailManager.sendEmailWithAttachment(
-                to = recipient,
-                subject = subject,
-                body = body,
-                attachmentHtml = htmlContent,
-                attachmentName = "shift_report_${shiftId}.html"
-            )
+            if (attachmentContent is ByteArray) {
+                // PDF режим
+                emailManager.sendEmailWithAttachment(
+                    to = recipient,
+                    subject = subject,
+                    body = body,
+                    attachmentHtml = null,
+                    attachmentPdfBytes = attachmentContent,
+                    attachmentName = attachmentName
+                )
+            } else {
+                // HTML режим
+                emailManager.sendEmailWithAttachment(
+                    to = recipient,
+                    subject = subject,
+                    body = body,
+                    attachmentHtml = attachmentContent as String,
+                    attachmentPdfBytes = null,
+                    attachmentName = attachmentName
+                )
+            }
         }
         
         if (success) {
@@ -2497,5 +2562,76 @@ class SharedPrefsManager(private val context: Context) {
     fun hasBlurredBackgroundBitmap(): Boolean {
         val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
         return localPrefs.contains("blurred_background_bitmap")
+    }
+    
+    // ==================================================
+    // 📄 МЕТОДЫ ДЛЯ РАБОТЫ С ФОРМАТОМ ОТЧЕТА (HTML/PDF)
+    // ==================================================
+    
+    /**
+     * Сохраняет выбор формата отчета (HTML или PDF)
+     * @param isPdf true если выбран PDF, false если HTML
+     */
+    fun setReportFormatPdf(isPdf: Boolean) {
+        prefs.edit().putBoolean("report_format_pdf", isPdf).apply()
+        Log.d("SharedPrefsManager", "Report format set to PDF: $isPdf")
+    }
+    
+    /**
+     * Получает текущий формат отчета
+     * @return true если выбран PDF, false если HTML
+     */
+    fun isReportFormatPdf(): Boolean {
+        return prefs.getBoolean("report_format_pdf", false)
+    }
+    
+    /**
+     * Получает путь к папке для сохранения HTML отчетов (копий)
+     * @return Путь к папке "HTML_Reports" в Download/Ohrana/
+     */
+    fun getHtmlReportsFolder(): File {
+        val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOWNLOADS
+        )
+        val ohranaDir = java.io.File(downloadDir, "Ohrana")
+        val htmlDir = java.io.File(ohranaDir, "HTML_Reports")
+        
+        if (!htmlDir.exists()) {
+            htmlDir.mkdirs()
+        }
+        
+        return htmlDir
+    }
+    
+    /**
+     * Сохраняет путь к HTML отчету в списке
+     */
+    fun saveHtmlReportPath(htmlPath: String): Boolean {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val savedPaths = localPrefs.getString("html_report_paths", "") ?: ""
+        val newPaths = if (savedPaths.isEmpty()) {
+            htmlPath
+        } else {
+            "$savedPaths|$htmlPath"
+        }
+        return localPrefs.edit().putString("html_report_paths", newPaths).commit()
+    }
+    
+    /**
+     * Получает список сохраненных HTML отчетов
+     */
+    fun getHtmlReportPaths(): List<String> {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val savedPaths = localPrefs.getString("html_report_paths", "") ?: ""
+        if (savedPaths.isEmpty()) return emptyList()
+        return savedPaths.split("|")
+    }
+    
+    /**
+     * Очищает список сохраненных HTML отчетов
+     */
+    fun clearHtmlReportPaths() {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        localPrefs.edit().remove("html_report_paths").apply()
     }
 }

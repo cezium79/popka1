@@ -104,8 +104,16 @@ import androidx.compose.ui.tooling.preview.PreviewFontScale
         // Состояние цвета статуса
         var saveStatusColor by remember { mutableStateOf<Color>(Color.Unspecified) }
 
+        // Состояние для действия со ссылкой (SMS, Email, Telegram) - объявляем раньше, чтобы использовать в переключателе формата
+        val prefsManager = remember { SharedPrefsManager(context) }
+        var linkAction by remember { mutableStateOf(prefsManager.getSmsAction()) }
+        var smsPhone by remember { mutableStateOf(prefsManager.getSmsPhone()) }
+        var email by remember { mutableStateOf(prefsManager.getFileIoEmail() ?: "") }
+        var telegram by remember { mutableStateOf(prefsManager.getFileIoTelegram() ?: "") }
+
         // Переключатель типа отчета (HTML или PDF)
-        var Opochki by remember { mutableStateOf(true) } // true = HTML, false = PDF
+        val isPdfFormat by remember { mutableStateOf(prefsManager.isReportFormatPdf()) }
+        var Opochki by remember { mutableStateOf(!isPdfFormat) } // true = HTML, false = PDF
 
         // Состояние диалога выбора токена
         var showTokenDialog by remember { mutableStateOf(false) }
@@ -117,13 +125,6 @@ import androidx.compose.ui.tooling.preview.PreviewFontScale
         var newTokenName by remember { mutableStateOf("") }
         var newTokenValue by remember { mutableStateOf("") }
         var newTokenPath by remember { mutableStateOf("") }
-
-        // Состояние для действия со ссылкой (SMS, Email, Telegram)
-        val prefsManager = remember { SharedPrefsManager(context) }
-        var linkAction by remember { mutableStateOf(prefsManager.getSmsAction()) }
-        var smsPhone by remember { mutableStateOf(prefsManager.getSmsPhone()) }
-        var email by remember { mutableStateOf(prefsManager.getFileIoEmail() ?: "") }
-        var telegram by remember { mutableStateOf(prefsManager.getFileIoTelegram() ?: "") }
 
         // SMTP настройки
         var smtpHost by remember { mutableStateOf(prefsManager.getSmtpHost() ?: "smtp.yandex.ru") }
@@ -789,7 +790,10 @@ import androidx.compose.ui.tooling.preview.PreviewFontScale
                                 Text(text = "PDF", color = if (!Opochki) Color(0xFFFFFFFF) else Color(0xFF9E9E9E))
                                 Switch(
                                     checked = Opochki,
-                                    onCheckedChange = { Opochki = it }
+                                    onCheckedChange = { 
+                                        Opochki = it
+                                        prefsManager.setReportFormatPdf(!it) // true=HTML, false=PDF
+                                    }
                                 )
                                 Text(text = "HTML", color = if (Opochki) Color(0xFFFFFFFF) else Color(0xFF9E9E9E))
                             }
@@ -930,8 +934,12 @@ private fun saveSettings(
     // Сохраняем email получателя для SMTP
     prefsManager.saveSmtpRecipient(smtpRecipient)
     
-    // Сохраняем дизайн отчета
-    // (дизайн уже сохраняется при выборе в UI)
+    // Сохраняем формат отчета (HTML или PDF)
+    // Opochki: true=HTML, false=PDF
+    // saveSettings принимает только string boolean для формата
+    // Нужно передать значение Opochki в эту функцию, но сейчас она не принимает это значение
+    // Поэтому сохраняем напрямую в SharedPrefsManager
+    // (формат будет определен из current state при отправке отчета)
     
     if (cloudTokenSaved && bucketSaved && pathSaved && diskTokenSaved && diskPathSaved) {
         onResult("Настройки сохранены успешно!", Color(76, 175, 80))

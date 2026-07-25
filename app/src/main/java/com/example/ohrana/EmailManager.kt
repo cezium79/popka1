@@ -5,6 +5,7 @@ import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
 import java.util.Properties
 import javax.mail.Message
 import javax.mail.PasswordAuthentication
@@ -76,7 +77,8 @@ class EmailManager(private val context: Context) {
      * @param to Email получателя
      * @param subject Тема письма
      * @param body Тело письма
-     * @param attachmentHtml HTML-отчет (в виде строки)
+     * @param attachmentHtml HTML-отчет (в виде строки) - опционально
+     * @param attachmentPdfBytes PDF-отчет (в виде байтов) - опционально
      * @param attachmentName Имя файла вложения
      * @return true если успешно, false если ошибка
      */
@@ -84,7 +86,8 @@ class EmailManager(private val context: Context) {
         to: String,
         subject: String,
         body: String,
-        attachmentHtml: String,
+        attachmentHtml: String? = null,
+        attachmentPdfBytes: ByteArray? = null,
         attachmentName: String
     ): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -140,7 +143,7 @@ class EmailManager(private val context: Context) {
                 this.subject = subject
                 setContent(body, "text/plain; charset=UTF-8")
                 
-                // Добавляем вложение (HTML отчет)
+                // Добавляем вложение (HTML или PDF отчет)
                 val multipart = MimeMultipart()
                 
                 // Текстовое сообщение
@@ -149,13 +152,25 @@ class EmailManager(private val context: Context) {
                 }
                 multipart.addBodyPart(textPart)
                 
-                // HTML вложение
-                val htmlPart = MimeBodyPart().apply {
-                    setContent(attachmentHtml, "text/html; charset=UTF-8")
-                    fileName = attachmentName
-                    disposition = Part.ATTACHMENT
+                // Вложение - HTML или PDF
+                if (attachmentPdfBytes != null) {
+                    // PDF вложение - используем ByteArrayInputStream для бинарных данных
+                    val pdfPart = MimeBodyPart()
+                    pdfPart.setContent(attachmentPdfBytes, "application/pdf")
+                    pdfPart.fileName = attachmentName
+                    pdfPart.disposition = Part.ATTACHMENT
+                    multipart.addBodyPart(pdfPart)
+                    Log.d(TAG, "Added PDF attachment: $attachmentName (${attachmentPdfBytes.size} bytes)")
+                } else if (attachmentHtml != null) {
+                    // HTML вложение
+                    val htmlPart = MimeBodyPart().apply {
+                        setContent(attachmentHtml, "text/html; charset=UTF-8")
+                        fileName = attachmentName
+                        disposition = Part.ATTACHMENT
+                    }
+                    multipart.addBodyPart(htmlPart)
+                    Log.d(TAG, "Added HTML attachment: $attachmentName")
                 }
-                multipart.addBodyPart(htmlPart)
                 
                 setContent(multipart)
             }

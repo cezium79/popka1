@@ -1606,36 +1606,93 @@ class CloudStorageManager(private val context: Context) {
     }
 
     /**
-     * Экспортирует отчет в оба формата и загружает в облако
+     * Экспортирует отчет в оба формата (HTML или PDF) и загружает в облако
      * @param shiftId ID смены
      * @param shiftDatabase Менеджер базы данных смен
      * @param uploadToCloud Флаг, нужно ли загружать в Yandex Cloud
      * @param uploadToDisk Флаг, нужно ли загружать в Яндекс.Диск
-     * @return Путь к HTML файлу, результаты загрузки в облако и диск
+     * @param context Контекст Android
+     * @param sharedPrefsManager Менеджер SharedPreferences для проверки формата отчета
+     * @return Путь к файлу (HTML или PDF), результаты загрузки в облако и диск
      */
     fun exportShiftReportWithCloud(
         shiftId: String,
         shiftDatabase: ShiftDatabaseManager,
         uploadToCloud: Boolean = false,
-        uploadToDisk: Boolean = false
+        uploadToDisk: Boolean = false,
+        context: Context? = null,
+        sharedPrefsManager: SharedPrefsManager? = null
     ): ExportResult {
         // Генерируем JSON
         val jsonPath = generateJsonReport(shiftId, shiftDatabase)
 
-        // Генерируем HTML
-        val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, null)
+        // Проверяем формат отчета (HTML или PDF)
+        val isPdfFormat = sharedPrefsManager?.isReportFormatPdf() ?: false
+        Log.i(TAG, "exportShiftReportWithCloud: isPdfFormat=$isPdfFormat")
+        
+        var htmlPath: String? = null
+        var pdfPath: String? = null
+        
+        if (isPdfFormat) {
+            // PDF режим - генерируем HTML, конвертируем в PDF
+            val (generatedHtmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
+            htmlPath = generatedHtmlPath
+            
+            if (htmlPath != null) {
+                // Сохраняем HTML копию в папку HTML_Reports
+                if (sharedPrefsManager != null) {
+                    try {
+                        val htmlFile = File(htmlPath)
+                        val htmlReportsFolder = sharedPrefsManager.getHtmlReportsFolder()
+                        val copyFileName = "${htmlFile.nameWithoutExtension}_${System.currentTimeMillis()}.html"
+                        val copyFile = File(htmlReportsFolder, copyFileName)
+                        
+                        copyFile.parentFile?.mkdirs()
+                        copyFile.writeText(htmlFile.readText(charset = java.nio.charset.StandardCharsets.UTF_8))
+                        sharedPrefsManager.saveHtmlReportPath(copyFile.absolutePath)
+                        
+                        Log.i(TAG, "exportShiftReportWithCloud: HTML copy saved to: ${copyFile.absolutePath}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "exportShiftReportWithCloud: Failed to save HTML copy: ${e.message}", e)
+                    }
+                }
+                
+                // Конвертируем HTML в PDF
+                val converter = HtmlToPdfConverter(context!!)
+                pdfPath = converter.convertHtmlToPdf(htmlPath)
+                if (pdfPath == null) {
+                    Log.e(TAG, "exportShiftReportWithCloud: Failed to convert HTML to PDF")
+                }
+            }
+        } else {
+            // HTML режим - просто генерируем HTML
+            val (generatedHtmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
+            htmlPath = generatedHtmlPath
+        }
 
         var jsonUploadResult: Result<String?> = Result.success(null)
         var htmlUploadResult: Result<String?> = Result.success(null)
+        var pdfUploadResult: Result<String?> = Result.success(null)
         var jsonDiskResult: Result<String?> = Result.success(null)
         var htmlDiskResult: Result<String?> = Result.success(null)
+        var pdfDiskResult: Result<String?> = Result.success(null)
 
         if (uploadToCloud && jsonPath != null) {
             jsonUploadResult = uploadFileToCloud(jsonPath, "shift_${shiftId}_report.json")
         }
 
         if (uploadToCloud && htmlPath != null) {
-            htmlUploadResult = uploadFileToCloud(htmlPath, "shift_${shiftId}_report.html")
+            if (isPdfFormat) {
+                // В PDF режиме загружаем HTML как резервную копию
+                htmlUploadResult = uploadFileToCloud(htmlPath, "shift_${shiftId}_report.html")
+            } else {
+                htmlUploadResult = uploadFileToCloud(htmlPath, "shift_${shiftId}_report.html")
+            }
+        }
+
+        if (uploadToCloud && pdfPath != null) {
+            // В PDF режиме также загружаем PDF
+            pdfUploadResult = uploadFileToCloud(pdfPath, "shift_${shiftId}_report.pdf")
         }
 
         if (uploadToDisk && jsonPath != null) {
@@ -1645,18 +1702,32 @@ class CloudStorageManager(private val context: Context) {
         }
 
         if (uploadToDisk && htmlPath != null) {
+            if (isPdfFormat) {
+                // В PDF режиме загружаем HTML как резервную копию
+                val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+                val diskPath = "$defaultDiskPath/shift_${shiftId}_report.html"
+                htmlDiskResult = uploadFileToDisk(htmlPath, diskPath)
+            } else {
+                val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+                val diskPath = "$defaultDiskPath/shift_${shiftId}_report.html"
+                htmlDiskResult = uploadFileToDisk(htmlPath, diskPath)
+            }
+        }
+
+        if (uploadToDisk && pdfPath != null) {
+            // В PDF режиме загружаем PDF
             val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
-            val diskPath = "$defaultDiskPath/shift_${shiftId}_report.html"
-            htmlDiskResult = uploadFileToDisk(htmlPath, diskPath)
+            val diskPath = "$defaultDiskPath/PDF/shift_${shiftId}_report.pdf"
+            pdfDiskResult = uploadFileToDisk(pdfPath, diskPath)
         }
 
         return ExportResult(
             jsonPath,
-            htmlPath,
+            if (isPdfFormat) pdfPath else htmlPath,
             jsonUploadResult,
-            htmlUploadResult,
+            if (isPdfFormat) pdfUploadResult else htmlUploadResult,
             jsonDiskResult,
-            htmlDiskResult
+            if (isPdfFormat) pdfDiskResult else htmlDiskResult
         )
     }
 
@@ -1737,11 +1808,13 @@ class CloudStorageManager(private val context: Context) {
     }
 
     /**
-     * Экспортирует отчет в HTML и загружает в Яндекс.Диск без сохранения на телефоне
+     * Экспортирует отчет в HTML или PDF и загружает в Яндекс.Диск без сохранения на телефоне
      * @param shiftId ID смены
      * @param shiftDatabase Менеджер базы данных смен
      * @param uploadToDisk Флаг, нужно ли загружать в Яндекс.Диск
-     * @return Результат загрузки (URL на Диске или ошибка)
+     * @param context Контекст Android
+     * @param sharedPrefsManager Менеджер SharedPreferences для проверки формата отчета
+     * @return Результат загрузки (URL на Диске или ошибка) и путь к файлу (HTML или PDF)
      */
     fun exportHtmlToDisk(
         shiftId: String,
@@ -1752,15 +1825,84 @@ class CloudStorageManager(private val context: Context) {
     ): HtmlExportResult {
         Log.i(TAG, "exportHtmlToDisk: shiftId=$shiftId, uploadToDisk=$uploadToDisk")
         
+        // Проверяем формат отчета (HTML или PDF)
+        val isPdfFormat = sharedPrefsManager?.isReportFormatPdf() ?: false
+        Log.i(TAG, "exportHtmlToDisk: isPdfFormat=$isPdfFormat")
+        
         // Если не нужно загружать в Диск, просто генерируем и возвращаем путь
         if (!uploadToDisk) {
-            val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
-            Log.i(TAG, "exportHtmlToDisk: Not uploading to disk, htmlPath=$htmlPath")
-            return HtmlExportResult(htmlPath, Result.success(null))
+            if (isPdfFormat) {
+                // PDF режим - генерируем HTML, потом конвертируем в PDF
+                val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
+                if (htmlPath != null) {
+                    val converter = HtmlToPdfConverter(context!!)
+                    val pdfPath = converter.convertHtmlToPdf(htmlPath)
+                    Log.i(TAG, "exportHtmlToDisk: PDF path=$pdfPath")
+                    return HtmlExportResult(pdfPath, Result.success(null))
+                }
+                return HtmlExportResult(null, Result.success(null))
+            } else {
+                // HTML режим - генерируем HTML
+                val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
+                Log.i(TAG, "exportHtmlToDisk: Not uploading to disk, htmlPath=$htmlPath")
+                return HtmlExportResult(htmlPath, Result.success(null))
+            }
         }
-
-        // Загружаем HTML напрямую в Яндекс.Диск без сохранения на телефоне
-        val diskResult = uploadHtmlToDiskDirect(shiftId, shiftDatabase, context)
+        
+        // Если PDF режим - генерируем HTML, конвертируем в PDF и загружаем PDF
+        if (isPdfFormat) {
+            Log.i(TAG, "exportHtmlToDisk: PDF mode - converting to PDF")
+            
+            // Генерируем HTML
+            val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
+            if (htmlPath == null) {
+                Log.e(TAG, "exportHtmlToDisk: Failed to generate HTML report")
+                return HtmlExportResult(null, Result.failure(Exception("Ошибка генерации HTML")))
+            }
+            
+            // Сохраняем HTML копию в папку HTML_Reports
+            if (sharedPrefsManager != null) {
+                try {
+                    val htmlFile = File(htmlPath)
+                    val htmlReportsFolder = sharedPrefsManager.getHtmlReportsFolder()
+                    val copyFileName = "${htmlFile.nameWithoutExtension}_${System.currentTimeMillis()}.html"
+                    val copyFile = File(htmlReportsFolder, copyFileName)
+                    
+                    copyFile.parentFile?.mkdirs()
+                    copyFile.writeText(htmlFile.readText(charset = java.nio.charset.StandardCharsets.UTF_8))
+                    sharedPrefsManager.saveHtmlReportPath(copyFile.absolutePath)
+                    
+                    Log.i(TAG, "exportHtmlToDisk: HTML copy saved to: ${copyFile.absolutePath}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "exportHtmlToDisk: Failed to save HTML copy: ${e.message}", e)
+                }
+            }
+            
+            // Конвертируем HTML в PDF
+            val converter = HtmlToPdfConverter(context!!)
+            val pdfPath = converter.convertHtmlToPdf(htmlPath)
+            if (pdfPath == null) {
+                Log.e(TAG, "exportHtmlToDisk: Failed to convert HTML to PDF")
+                return HtmlExportResult(null, Result.failure(Exception("Ошибка конвертации в PDF")))
+            }
+            
+            Log.i(TAG, "exportHtmlToDisk: PDF generated: $pdfPath")
+            
+            // Загружаем PDF в Яндекс.Диск
+            if (uploadToDisk) {
+                val defaultDiskPath = getDefaultDiskPath() ?: "Ohrana"
+                val pdfFileName = File(pdfPath).name
+                val diskPath = "$defaultDiskPath/PDF/$pdfFileName"
+                val diskResult = uploadFileToDisk(pdfPath, diskPath)
+                Log.i(TAG, "exportHtmlToDisk: PDF upload result: $diskResult")
+                return HtmlExportResult(pdfPath, diskResult)
+            }
+            
+            return HtmlExportResult(pdfPath, Result.success(null))
+        }
+        
+        // HTML режим - загружаем HTML напрямую в Яндекс.Диск без сохранения на телефоне
+        val diskResult = uploadHtmlToDiskDirect(shiftId, shiftDatabase, context, sharedPrefsManager)
         
         Log.i(TAG, "exportHtmlToDisk: diskResult=$diskResult")
         Log.i(TAG, "exportHtmlToDisk: isSuccess=${diskResult.isSuccess}")
@@ -1889,36 +2031,36 @@ class CloudStorageManager(private val context: Context) {
      */
     data class ExportResult(
         val jsonPath: String?,
-        val htmlPath: String?,
+        val reportPath: String?, // Путь к HTML или PDF файлу (в зависимости от формата отчета)
         val jsonUploadResult: Result<String?>,
-        val htmlUploadResult: Result<String?>,
+        val reportUploadResult: Result<String?>, // Результат загрузки HTML или PDF
         val jsonDiskResult: Result<String?> = Result.success(null),
-        val htmlDiskResult: Result<String?> = Result.success(null)
+        val reportDiskResult: Result<String?> = Result.success(null) // Результат загрузки HTML или PDF в Диск
     ) {
         fun isSuccess(): Boolean {
-            return jsonPath != null && htmlPath != null &&
-                    jsonUploadResult.isSuccess && htmlUploadResult.isSuccess
+            return jsonPath != null && reportPath != null &&
+                    jsonUploadResult.isSuccess && reportUploadResult.isSuccess
         }
 
         fun isDiskSuccess(): Boolean {
-            return jsonDiskResult.isSuccess && htmlDiskResult.isSuccess
+            return jsonDiskResult.isSuccess && reportDiskResult.isSuccess
         }
 
         fun getErrorMessage(): String {
             val errors = mutableListOf<String>()
             if (jsonPath == null) errors.add("Ошибка генерации JSON")
-            if (htmlPath == null) errors.add("Ошибка генерации HTML")
+            if (reportPath == null) errors.add("Ошибка генерации отчета (HTML/PDF)")
             if (!jsonUploadResult.isSuccess) errors.add("Ошибка загрузки JSON в облако: ${jsonUploadResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
-            if (!htmlUploadResult.isSuccess) errors.add("Ошибка загрузки HTML в облако: ${htmlUploadResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
+            if (!reportUploadResult.isSuccess) errors.add("Ошибка загрузки отчета в облако: ${reportUploadResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
             if (!jsonDiskResult.isSuccess) errors.add("Ошибка загрузки JSON в Диск: ${jsonDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
-            if (!htmlDiskResult.isSuccess) errors.add("Ошибка загрузки HTML в Диск: ${htmlDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
+            if (!reportDiskResult.isSuccess) errors.add("Ошибка загрузки отчета в Диск: ${reportDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
             return errors.joinToString("; ")
         }
 
         fun getDiskErrorMessage(): String {
             val errors = mutableListOf<String>()
             if (!jsonDiskResult.isSuccess) errors.add("Ошибка загрузки JSON в Диск: ${jsonDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
-            if (!htmlDiskResult.isSuccess) errors.add("Ошибка загрузки HTML в Диск: ${htmlDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
+            if (!reportDiskResult.isSuccess) errors.add("Ошибка загрузки отчета в Диск: ${reportDiskResult.exceptionOrNull()?.message ?: "неизвестная ошибка"}")
             return errors.joinToString("; ")
         }
     }
