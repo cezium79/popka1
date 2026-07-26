@@ -450,6 +450,12 @@ fun AppNavigation() {
             }
         }
         
+        "goodbye" -> GoodbyeScreen(
+            onCloseShift = {
+                currentScreen = "privet"
+            }
+        )
+        
         "admin" -> AdministratorScreen(
             onNavigateToEmployeeList = { currentScreen = "employee_list" },
             onNavigateToRoutes = { currentScreen = "routes" },
@@ -529,7 +535,7 @@ fun AppNavigation() {
             },
             onCloseShift = {
                 selectedEmployeeName = ""
-                currentScreen = "privet"
+                currentScreen = "goodbye"
             },
             onStartRound = { guardName, roundIndex, routeId ->
                 // Обновляем selectedEmployeeName с выбранным именем охранника

@@ -1,63 +1,286 @@
 package com.example.ohrana
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Bitmap.CompressFormat
+import android.graphics.BitmapFactory
+import android.media.MediaScannerConnection
+import android.os.Environment
+import android.util.Log
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageCapture.OutputFileOptions
-import androidx.camera.core.Preview as CameraPreview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import java.text.SimpleDateFormat
-import java.util.*
-import android.graphics.Bitmap
-import android.graphics.ImageFormat
-import android.media.MediaScannerConnection
-import android.os.Environment
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import android.graphics.BitmapFactory
-import android.graphics.YuvImage
 import java.io.ByteArrayOutputStream
-import android.provider.MediaStore
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.content.Context
-import androidx.core.content.FileProvider
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.util.Log
-import androidx.activity.compose.BackHandler
-import androidx.compose.ui.res.painterResource
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import androidx.camera.core.Preview as CameraPreview
+
+/**
+ * Сжимает и уменьшает изображение с использованием Downsample
+ * Сначала уменьшает разрешение (ресайз), затем сжимает качество
+ * @param sourceFile Исходный файл изображения
+ * @param targetWidth Максимальная ширина (по умолчанию 1200px)
+ * @param quality Качество сжатия JPEG (0-100, по умолчанию 75)
+ * @param destFile Файл назначения (если null, создается временный файл)
+ * @return Путь к сжатому файлу или null в случае ошибки
+ */
+fun compressAndResizeImage(
+    sourceFile: File,
+    targetWidth: Int = 1200,
+    quality: Int = 75,
+    destFile: File? = null
+): String? {
+    return try {
+        // 1. Декодируем только размеры фото (без загрузки в память)
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(sourceFile.absolutePath, options)
+        
+        val srcWidth = options.outWidth
+        val srcHeight = options.outHeight
+        
+        // 2. Вычисляем коэффициент уменьшения (inSampleSize) - должен быть степенью 2
+        var inSampleSize = 1
+        // Проверяем оба размера и выбираем максимальный коэффициент уменьшения
+        val widthRatio = if (srcWidth > targetWidth) srcWidth.toFloat() / targetWidth.toFloat() else 1f
+        val heightRatio = if (srcHeight > targetWidth) srcHeight.toFloat() / targetWidth.toFloat() else 1f
+        val maxRatio = Math.max(widthRatio, heightRatio)
+        
+        // Преобразуем в степень 2 (ceil to next power of 2)
+        if (maxRatio > 1) {
+            inSampleSize = 1 shl (32 - java.lang.Integer.numberOfLeadingZeros(maxRatio.toInt() - 1))
+        }
+        
+        // Логируем вычисления
+        Log.d("ImageCompression", "=== RESIZE CALCULATIONS ===")
+        Log.d("ImageCompression", "Source dimensions: ${srcWidth}x${srcHeight}")
+        Log.d("ImageCompression", "Target width: $targetWidth")
+        Log.d("ImageCompression", "Width ratio: ${widthRatio.format(2)}")
+        Log.d("ImageCompression", "Height ratio: ${heightRatio.format(2)}")
+        Log.d("ImageCompression", "Max ratio: ${maxRatio.format(2)}")
+        Log.d("ImageCompression", "Final inSampleSize (power of 2): $inSampleSize")
+        
+        Log.d("ImageCompression", "=== SOURCE FILE INFO ===")
+        Log.d("ImageCompression", "File path: ${sourceFile.absolutePath}")
+        Log.d("ImageCompression", "File size: ${sourceFile.length()} bytes (${sourceFile.length() / 1024} KB)")
+        
+        // Ограничиваем до 8x уменьшения
+        inSampleSize = inSampleSize.coerceIn(1, 8)
+        
+        Log.d("ImageCompression", "=== VALUE CHECK ===")
+        Log.d("ImageCompression", "inSampleSize after coerceIn: $inSampleSize")
+        
+        // Присваиваем в переменную, чтобы избежать конфликта имён в apply
+        val sampleSizeValue = if (inSampleSize > 1) inSampleSize else 1
+        
+        // 3. Загружаем изображение в память (с inSampleSize если он > 1)
+        val bitmapOptions = BitmapFactory.Options().apply {
+            inJustDecodeBounds = false
+            inPreferredConfig = Bitmap.Config.RGB_565
+            // Используем this для явного указания на свойство Options
+            this.inSampleSize = sampleSizeValue
+        }
+        
+        Log.d("ImageCompression", "=== DECODING WITH OPTIONS ===")
+        Log.d("ImageCompression", "inSampleSize in bitmapOptions: ${bitmapOptions.inSampleSize}")
+        Log.d("ImageCompression", "inPreferredConfig: ${bitmapOptions.inPreferredConfig}")
+        
+        val loadedBitmap = BitmapFactory.decodeFile(sourceFile.absolutePath, bitmapOptions)
+        
+        if (loadedBitmap == null) {
+            Log.e("ImageCompression", "Failed to decode bitmap from: ${sourceFile.absolutePath}")
+            return null
+        }
+        
+        Log.d("ImageCompression", "=== LOADED BITMAP ===")
+        Log.d("ImageCompression", "Loaded dimensions: ${loadedBitmap.width}x${loadedBitmap.height}")
+        Log.d("ImageCompression", "Expected with inSampleSize $inSampleSize: ${srcWidth / inSampleSize}x${srcHeight / inSampleSize}")
+        
+        // 4. Если inSampleSize > 1 и размер не изменился, используем createScaledBitmap
+        var finalBitmap = loadedBitmap
+        var actualWidth = loadedBitmap.width
+        var actualHeight = loadedBitmap.height
+        
+        // Проверяем, применился ли inSampleSize
+        val expectedWidth = if (inSampleSize > 1) srcWidth / inSampleSize else srcWidth
+        val expectedHeight = if (inSampleSize > 1) srcHeight / inSampleSize else srcHeight
+        
+        if (bitmapOptions.inSampleSize > 1 && (actualWidth != expectedWidth || actualHeight != expectedHeight)) {
+            Log.d("ImageCompression", "inSampleSize ignored! Using createScaledBitmap...")
+            
+            // Вычисляем целевые размеры
+            val targetHeight = if (srcHeight > targetWidth) srcHeight / inSampleSize else srcHeight
+            val scale = targetWidth.toFloat() / srcWidth.toFloat()
+            val scaledWidth = (srcWidth * scale).toInt()
+            val scaledHeight = (srcHeight * scale).toInt()
+            
+            finalBitmap = Bitmap.createScaledBitmap(loadedBitmap, scaledWidth, scaledHeight, true)
+            loadedBitmap.recycle()
+            
+            actualWidth = finalBitmap.width
+            actualHeight = finalBitmap.height
+            
+            Log.d("ImageCompression", "=== RESIZED WITH createScaledBitmap ===")
+            Log.d("ImageCompression", "Scaled dimensions: ${actualWidth}x${actualHeight}")
+        }
+        
+        val originalWidth = finalBitmap.width
+        val originalHeight = finalBitmap.height
+        
+        // 4. Создаем файл назначения, если не указан
+        val targetFile = destFile ?: File.createTempFile(
+            "compressed_${System.currentTimeMillis()}",
+            ".jpg",
+            sourceFile.parentFile
+        )
+        
+        // 5. Сжимаем в JPEG с заданным качеством
+        ByteArrayOutputStream().use { baos ->
+            finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+            
+            // Записываем в файл
+            targetFile.outputStream().use { output ->
+                baos.writeTo(output)
+            }
+            
+            // Логируем результаты
+            val originalSize = sourceFile.length()
+            val compressedSize = targetFile.length()
+            val compressionRatio = (1f - (compressedSize.toFloat() / originalSize.toFloat())) * 100f
+            
+            Log.d("ImageCompression", "=== COMPRESSION RESULTS ===")
+            Log.d("ImageCompression", "Original: ${srcWidth}x${srcHeight}, ${originalSize} bytes (${originalSize / 1024} KB)")
+            Log.d("ImageCompression", "Resized: ${originalWidth}x${originalHeight} (${actualWidth}x${actualHeight} after scaling)")
+            Log.d("ImageCompression", "Compressed: ${compressedSize} bytes (${compressedSize / 1024} KB)")
+            Log.d("ImageCompression", "Compression ratio: ${compressionRatio.format(1)}%")
+            Log.d("ImageCompression", "Quality: $quality%")
+        }
+        
+        // Освобождаем память
+        finalBitmap.recycle()
+        
+        targetFile.absolutePath
+    } catch (e: Exception) {
+        Log.e("ImageCompression", "Error compressing image: ${e.message}", e)
+        null
+    }
+}
+
+/**
+ * Форматирует число с заданным количеством знаков после запятой
+ */
+fun Float.format(decimals: Int): String {
+    return String.format("%.${decimals}f", this)
+}
+
+/**
+ * Конвертирует изображение в JPEG с заданным качеством сжатия (устаревшая версия)
+ * @param sourceFile Исходный файл изображения
+ * @param quality Качество сжатия (0-100, где 100 - максимальное качество)
+ * @param destFile Файл назначения (если null, создается временный файл)
+ * @return Путь к сжатому файлу или null в случае ошибки
+ */
+fun compressImageToJPEG(
+    sourceFile: File,
+    quality: Int = 80,
+    destFile: File? = null
+): String? {
+    return try {
+        // Декодируем изображение как Bitmap
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = false
+            inSampleSize = 1
+        }
+        
+        val bitmap = BitmapFactory.decodeFile(sourceFile.absolutePath, options)
+        
+        if (bitmap == null) {
+            Log.e("ImageCompression", "Failed to decode bitmap from: ${sourceFile.absolutePath}")
+            return null
+        }
+        
+        // Создаем файл назначения, если не указан
+        val targetFile = destFile ?: File.createTempFile(
+            "compressed_${System.currentTimeMillis()}",
+            ".jpg",
+            sourceFile.parentFile
+        )
+        
+        // Сжимаем в JPEG с заданным качеством
+        ByteArrayOutputStream().use { baos ->
+            bitmap.compress(CompressFormat.JPEG, quality, baos)
+            
+            // Записываем в файл
+            targetFile.outputStream().use { output ->
+                baos.writeTo(output)
+            }
+            
+            Log.d("ImageCompression", "Compressed image from ${sourceFile.length()} bytes to ${targetFile.length()} bytes (quality: $quality%)")
+        }
+        
+        // Освобождаем память
+        bitmap.recycle()
+        
+        targetFile.absolutePath
+    } catch (e: Exception) {
+        Log.e("ImageCompression", "Error compressing image: ${e.message}", e)
+        null
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -522,6 +745,20 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
             return null
         }
         
+        android.util.Log.d("PhotoCaptureScreen", "=== SAVE PHOTO TO GALLERY START ===")
+        android.util.Log.d("PhotoCaptureScreen", "savePhotoToGallery: sourceFile.size=${sourceFile.length()} bytes (${sourceFile.length() / 1024} KB)")
+        
+        // Пытаемся получить размеры изображения ДО сжатия
+        try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(sourceFile.absolutePath, options)
+            android.util.Log.d("PhotoCaptureScreen", "Source image dimensions: ${options.outWidth}x${options.outHeight}")
+        } catch (e: Exception) {
+            android.util.Log.d("PhotoCaptureScreen", "Could not read image dimensions: ${e.message}")
+        }
+        
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val destFileName = "${checkpointId.replace(" ", "_")}_${timestamp}.jpg"
         
@@ -534,19 +771,21 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
         
         val destFile = File(ohranaDir, destFileName)
         
-        // Копируем файл
-        sourceFile.inputStream().use { input ->
-            destFile.outputStream().use { output ->
-                input.copyTo(output)
-            }
-        }
+        // Сжимаем изображение с ресайзом и качеством 75%
+        android.util.Log.d("PhotoCaptureScreen", "Compressing and resizing image (targetWidth: 1200px, quality: 75%)...")
+        val compressedPath = compressAndResizeImage(sourceFile, targetWidth = 1200, quality = 75, destFile = destFile)
         
-        // Проверяем, что файл скопирован
-        if (destFile.exists()) {
+        if (compressedPath != null) {
+            val compressedFile = File(compressedPath)
+            android.util.Log.d("PhotoCaptureScreen", "=== FINAL RESULT ===")
+            android.util.Log.d("PhotoCaptureScreen", "Original: ${sourceFile.length()} bytes (${sourceFile.length() / 1024} KB)")
+            android.util.Log.d("PhotoCaptureScreen", "Compressed: ${compressedFile.length()} bytes (${compressedFile.length() / 1024} KB)")
+            android.util.Log.d("PhotoCaptureScreen", "Compression ratio: ${(1f - (compressedFile.length().toFloat() / sourceFile.length().toFloat())) * 100f}%")
+            
             // Обновляем галерею через MediaScannerConnection
             MediaScannerConnection.scanFile(
                 context,
-                arrayOf(destFile.absolutePath),
+                arrayOf(compressedFile.absolutePath),
                 arrayOf("image/jpeg"),
                 null
             )
@@ -554,11 +793,13 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
             // Удаляем временный файл из private папки
             sourceFile.delete()
             
-            return destFile.absolutePath
+            return compressedFile.absolutePath
         } else {
+            android.util.Log.e("PhotoCaptureScreen", "Failed to compress image!")
             return null
         }
     } catch (e: Exception) {
+        android.util.Log.e("PhotoCaptureScreen", "Error in savePhotoToGallery: ${e.message}", e)
         e.printStackTrace()
         return null
     }

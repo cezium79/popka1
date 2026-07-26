@@ -33,6 +33,8 @@ import androidx.compose.runtime.Composable
 import com.example.ohrana.ui.components.OhranaOutlinedButton
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap.CompressFormat
+import java.io.ByteArrayOutputStream
 import android.media.MediaScannerConnection
 import android.os.Environment
 import java.io.File
@@ -716,7 +718,7 @@ fun IncidentCaptureScreen(
 fun saveIncidentPhotoToGallery(sourceFile: File, context: Context): String? {
     try {
         android.util.Log.d("IncidentCaptureScreen", "=== SAVE INCIDENT PHOTO TO GALLERY START ===")
-        android.util.Log.d("IncidentCaptureScreen", "saveIncidentPhotoToGallery: sourceFile.exists()=${sourceFile.exists()}, path=${sourceFile.absolutePath}")
+        android.util.Log.d("IncidentCaptureScreen", "saveIncidentPhotoToGallery: sourceFile.exists()=${sourceFile.exists()}, path=${sourceFile.absolutePath}, size=${sourceFile.length()} bytes")
         
         if (!sourceFile.exists()) {
             android.util.Log.e("IncidentCaptureScreen", "saveIncidentPhotoToGallery: Source file does not exist!")
@@ -736,34 +738,36 @@ fun saveIncidentPhotoToGallery(sourceFile: File, context: Context): String? {
         }
 
         val destFile = File(ohranaIncidentsDir, destFileName)
-        android.util.Log.d("IncidentCaptureScreen", "Copying from ${sourceFile.absolutePath} to ${destFile.absolutePath}")
-
-        // Копируем файл
-        sourceFile.inputStream().use { input ->
-            destFile.outputStream().use { output ->
-                input.copyTo(output)
+        
+        // Сжимаем изображение с ресайзом и качеством 75%
+        android.util.Log.d("IncidentCaptureScreen", "Compressing and resizing image (targetWidth: 1200px, quality: 75%)...")
+        val compressedPath = compressAndResizeImage(sourceFile, targetWidth = 1200, quality = 75, destFile = destFile)
+        
+        if (compressedPath != null) {
+            val compressedFile = File(compressedPath)
+            android.util.Log.d("IncidentCaptureScreen", "=== FINAL RESULT ===")
+            android.util.Log.d("IncidentCaptureScreen", "Original: ${sourceFile.length()} bytes (${sourceFile.length() / 1024} KB)")
+            android.util.Log.d("IncidentCaptureScreen", "Compressed: ${compressedFile.length()} bytes (${compressedFile.length() / 1024} KB)")
+            android.util.Log.d("IncidentCaptureScreen", "Compression ratio: ${(1f - (compressedFile.length().toFloat() / sourceFile.length().toFloat())) * 100f}%")
+            
+            // Удаляем временный файл из private папки
+            if (sourceFile.exists()) {
+                sourceFile.delete()
+                android.util.Log.d("IncidentCaptureScreen", "Source file deleted")
             }
-        }
-
-        // Проверяем, что файл скопирован
-        if (destFile.exists()) {
-            android.util.Log.d("IncidentCaptureScreen", "File copied successfully, size=${destFile.length()} bytes")
+            
             // Обновляем галерею через MediaScannerConnection
             MediaScannerConnection.scanFile(
                 context,
-                arrayOf(destFile.absolutePath),
+                arrayOf(compressedFile.absolutePath),
                 arrayOf("image/jpeg"),
                 null
             )
             android.util.Log.d("IncidentCaptureScreen", "MediaScannerConnection.scanFile called")
 
-            // Удаляем временный файл из private папки
-            sourceFile.delete()
-            android.util.Log.d("IncidentCaptureScreen", "Source file deleted")
-
-            return destFile.absolutePath
+            return compressedFile.absolutePath
         } else {
-            android.util.Log.e("IncidentCaptureScreen", "saveIncidentPhotoToGallery: Destination file does not exist after copy!")
+            android.util.Log.e("IncidentCaptureScreen", "saveIncidentPhotoToGallery: Failed to compress image!")
             return null
         }
     } catch (e: Exception) {

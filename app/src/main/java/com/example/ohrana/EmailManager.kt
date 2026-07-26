@@ -6,6 +6,7 @@ import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
+import java.nio.charset.StandardCharsets
 import java.util.Properties
 import javax.mail.Message
 import javax.mail.PasswordAuthentication
@@ -160,7 +161,7 @@ class EmailManager(private val context: Context) {
                     pdfPart.fileName = attachmentName
                     pdfPart.disposition = Part.ATTACHMENT
                     multipart.addBodyPart(pdfPart)
-                    Log.d(TAG, "Added PDF attachment: $attachmentName (${attachmentPdfBytes.size} bytes)")
+                    Log.d(TAG, "Added PDF attachment: $attachmentName (${attachmentPdfBytes.size} bytes, ${attachmentPdfBytes.size / 1024} KB)")
                 } else if (attachmentHtml != null) {
                     // HTML вложение
                     val htmlPart = MimeBodyPart().apply {
@@ -169,7 +170,8 @@ class EmailManager(private val context: Context) {
                         disposition = Part.ATTACHMENT
                     }
                     multipart.addBodyPart(htmlPart)
-                    Log.d(TAG, "Added HTML attachment: $attachmentName")
+                    val htmlBytes = attachmentHtml.toByteArray(charset = StandardCharsets.UTF_8)
+                    Log.d(TAG, "Added HTML attachment: $attachmentName (${htmlBytes.size} bytes, ${htmlBytes.size / 1024} KB)")
                 }
                 
                 setContent(multipart)

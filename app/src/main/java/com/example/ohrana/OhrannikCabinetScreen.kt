@@ -59,6 +59,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.activity.compose.BackHandler
 import com.example.ohrana.ui.components.OhranaOutlinedButton
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val TAG = "OhrannikCabinetScreen"
 
@@ -339,7 +340,7 @@ fun OhrannikCabinetScreen(
                                     shiftId = shiftId,
                                     expectedCheckpointId = if (sequenceErrorType == SequenceErrorType.OUTSIDE_ROUTE) "" else expectedCheckpointName
                                         ?: "",
-                                    expectedCheckpointName = expectedCheckpointName ?: "",
+                                    expectedCheckpointName = expectedCheckpointName,
                                     actualCheckpointId = checkpoint.id,
                                     actualCheckpointName = checkpoint.name,
                                     sequenceErrorType = sequenceErrorType,
@@ -557,29 +558,57 @@ fun OhrannikCabinetScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .padding(bottom = 16.dp),
+                contentAlignment = Alignment.Center
             )  {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Box {
-                        Text(
-                            text = "Следующая точка:",
-                            fontSize = 18.sp,
-                            color = Color(0xFFE0E0E0)
-                        )
-                    }
-                    Box {
-                        Text(
-                            text = "$nextCheckpointName",
-                            fontSize = 18.sp,
-                            color = Color(0xFFE0E0E0)
-                        )
-                    }
+                    Text(
+                        text = "Следующая точка:",
+                        fontSize = 18.sp,
+                        color = Color(0xFFE0E0E0)
+                    )
+                    Text(
+                        text = nextCheckpointName,
+                        fontSize = 18.sp,
+                        color = Color(0xFFE0E0E0)
+                    )
                 }
             }
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Кнопка зафиксировать происшествие
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    OhranaOutlinedButton(
+                        text = "Зафиксировать происшествие",
+                        onClick = { 
+                            // Получаем ID активного обхода и смены
+                            val activeRoundIndex = manager.getActiveRoundIndex()
+                            val activeShiftId = manager.prefs.getString("active_shift_id", "unknown_shift")
+                            
+                            if (activeRoundIndex != -1 && activeShiftId != null) {
+                                // Вызываем коллбэк для перехода на экран фиксации
+                                onNavigateToIncident(activeRoundIndex, activeShiftId)
+                            } else {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Нет активного обхода",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+                        designId = 3
+                    )
+                }
 
             if (hasCameraPermission) {
                 Box(
@@ -791,38 +820,7 @@ fun OhrannikCabinetScreen(
                     )
                     }
                 }
-            }
-
-            // Кнопка зафиксировать происшествие
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                OhranaOutlinedButton(
-                    text = "Зафиксировать происшествие",
-                    onClick = { 
-                        // Получаем ID активного обхода и смены
-                        val activeRoundIndex = manager.getActiveRoundIndex()
-                        val activeShiftId = manager.prefs.getString("active_shift_id", "unknown_shift")
-                        
-                        if (activeRoundIndex != -1 && activeShiftId != null) {
-                            // Вызываем коллбэк для перехода на экран фиксации
-                            onNavigateToIncident(activeRoundIndex, activeShiftId)
-                        } else {
-                            android.widget.Toast.makeText(
-                                context,
-                                "Нет активного обхода",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    style = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                    designId = 3
-                )
-            }
 
             // Кнопка сканирования QR
             Box(
@@ -899,8 +897,8 @@ fun OhrannikCabinetScreen(
 
                 LaunchedEffect(showCheckpointPassedDialog) {
                     autoCloseTrigger = false
-                    kotlinx.coroutines.delay(100) // Небольшая задержка перед началом отсчета
-                    kotlinx.coroutines.delay(3000) // Ждем 3 секунды
+                    kotlinx.coroutines.delay(100.milliseconds) // Небольшая задержка перед началом отсчета
+                    kotlinx.coroutines.delay(3000.milliseconds) // Ждем 3 секунды
 
                     // Обновляем индекс при закрытии диалога
                     val activeRoundIndex = manager.getActiveRoundIndex()

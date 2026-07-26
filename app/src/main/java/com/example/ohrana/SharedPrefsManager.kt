@@ -574,6 +574,9 @@ class SharedPrefsManager(private val context: Context) {
                 val pdfFile = java.io.File(pdfPath)
                 val pdfBytes = pdfFile.readBytes()
                 
+                // Логируем размер PDF файла
+                Log.d("ImageCompression", "PDF attachment size: ${pdfBytes.size} bytes (${pdfBytes.size / 1024} KB)")
+                
                 Triple(pdfPath, "shift_report_${shiftId}.pdf", pdfBytes)
             } else {
                 Log.e("SharedPrefsManager", "sendReportViaEmailAsync: Failed to generate PDF, sending HTML instead")
@@ -590,7 +593,12 @@ class SharedPrefsManager(private val context: Context) {
             // HTML режим - читаем HTML файл
             val htmlContent = withContext(Dispatchers.IO) {
                 val file = java.io.File(htmlPath)
-                file.readText(charset = StandardCharsets.UTF_8)
+                val htmlBytes = file.readBytes()
+                
+                // Логируем размер HTML файла
+                Log.d("ImageCompression", "HTML attachment size: ${htmlBytes.size} bytes (${htmlBytes.size / 1024} KB)")
+                
+                htmlBytes
             }
             
             Triple(htmlPath, "shift_report_${shiftId}.html", htmlContent)
