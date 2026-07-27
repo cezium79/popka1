@@ -10,18 +10,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Sms
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,34 +29,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Checkbox
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardDefaults
 import com.example.ohrana.ui.components.OhranaOutlinedButton
 import android.widget.Toast
-import android.content.Intent
-import android.net.Uri
-import com.example.ohrana.SharedPrefsManager
-import com.example.ohrana.CloudStorageManager
 import androidx.activity.compose.BackHandler
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewFontScale
 
 
-
-    @OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun CloudSettingsScreen(
         onBack: () -> Unit
@@ -420,7 +398,7 @@ import androidx.compose.ui.tooling.preview.PreviewFontScale
                         ),
                         style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 20.sp
-                        )
+                        ),
                     )
 
                     // Внутренний блок для выбора токена
@@ -842,7 +820,7 @@ import androidx.compose.ui.tooling.preview.PreviewFontScale
                         ),
                         style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 18.sp
-                        )
+                        ),
                     )
 
                     if (saveStatus != null) {

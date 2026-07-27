@@ -1,13 +1,8 @@
 package com.example.ohrana
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
-import android.net.Uri
 import android.nfc.NfcAdapter
-import android.os.Build
-import android.provider.MediaStore
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,7 +28,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,19 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.ohrana.Checkpoint
-import com.example.ohrana.CheckpointAction
-import com.example.ohrana.ShiftDatabaseManager
-import com.example.ohrana.QrHandler
-import com.example.ohrana.QrResult
-import com.example.ohrana.SharedPrefsManager
-import com.example.ohrana.SoundPlayer
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
 import java.util.concurrent.Executors
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import androidx.activity.compose.BackHandler
 import com.example.ohrana.ui.components.OhranaOutlinedButton
 import kotlin.time.Duration.Companion.milliseconds
@@ -609,7 +591,7 @@ fun OhrannikCabinetScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         style = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                        designId = 3
+                        designId = 3,
                     )
                 }
 
@@ -841,7 +823,7 @@ fun OhrannikCabinetScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     style = androidx.compose.ui.text.TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold),
-                    designId = 3
+                    designId = 3,
                 )
             }
 

@@ -3,7 +3,6 @@ package com.example.ohrana.uielements
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -345,7 +344,7 @@ fun ButtonDesignsPreview() {
         OhranaOutlinedButton(
             text = "Outlined Button",
             onClick = {},
-            designId = 3
+            designId = 3,
         )
         Spacer(modifier = Modifier.height(16.dp))
         

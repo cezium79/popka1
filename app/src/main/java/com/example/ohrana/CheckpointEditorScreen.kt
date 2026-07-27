@@ -89,7 +89,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.example.ohrana.ui.components.OhranaOutlinedButton
+
+/**
+ * Копирует изображение из URI в filesDir приложения
+ * Возвращает имя файла (относительный путь) или null в случае ошибки
+ */
+fun copyImageToFilesDir(uri: android.net.Uri, context: Context): String? {
+    return try {
+        val fileName = "checkpoint_image_${System.currentTimeMillis()}.jpg"
+        val destFile = File(context.filesDir, fileName)
+        
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            destFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        
+        if (destFile.exists() && destFile.length() > 0) {
+            android.util.Log.d("CheckpointEditor", "Image copied to: ${destFile.absolutePath}")
+            fileName // Возвращаем только имя файла, не полный путь
+        } else {
+            android.util.Log.e("CheckpointEditor", "Failed to copy image to filesDir")
+            null
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("CheckpointEditor", "Error copying image: ${e.message}", e)
+        null
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,9 +168,16 @@ fun CheckpointEditorScreen(
 
     LaunchedEffect(imageUri) {
         if (imageUri.isNotEmpty()) {
-            val uri = Uri.parse(imageUri)
+            // imageUri теперь содержит только имя файла (без пути)
+            val file = File(context.filesDir, imageUri)
             bitmapState.value = runCatching {
-                BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+                if (file.exists()) {
+                    BitmapFactory.decodeFile(file.absolutePath)
+                } else {
+                    // Если файл не найден, пробуем интерпретировать как URI (старый формат)
+                    val uri = Uri.parse(imageUri)
+                    BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+                }
             }.getOrNull()
         } else {
             bitmapState.value = null
@@ -148,9 +188,14 @@ fun CheckpointEditorScreen(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
             uri?.let {
-                val uriString = uri.toString()
-                Toast.makeText(context, "Выбран URI: $uriString", Toast.LENGTH_SHORT).show()
-                imageUri = uriString
+                // Копируем изображение в filesDir для долгосрочного хранения
+                val copiedFilePath = copyImageToFilesDir(uri, context)
+                if (copiedFilePath != null) {
+                    Toast.makeText(context, "Картинка сохранена", Toast.LENGTH_SHORT).show()
+                    imageUri = copiedFilePath
+                } else {
+                    Toast.makeText(context, "Ошибка сохранения картинки", Toast.LENGTH_SHORT).show()
+                }
             } ?: run {
                 Toast.makeText(context, "URI не выбран", Toast.LENGTH_SHORT).show()
             }

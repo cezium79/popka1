@@ -31,18 +31,12 @@ import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.os.Build
 import android.content.Context
-import android.app.ActivityManager
-import android.app.Service
-import android.content.ComponentName
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import com.example.ohrana.ui.components.OhranaOutlinedButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -191,7 +185,7 @@ fun AdministratorScreen(
                     style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
                     ),
-                    designId = 3
+                    designId = 3,
                 )
 
                 OhranaOutlinedButton(
@@ -201,7 +195,7 @@ fun AdministratorScreen(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
                     ),
-                    designId = 3
+                    designId = 3,
                 )
 
                 OhranaOutlinedButton(
@@ -211,7 +205,7 @@ fun AdministratorScreen(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
                     ),
-                    designId = 3
+                    designId = 3,
                 )
 
                 OhranaOutlinedButton(
@@ -221,7 +215,7 @@ fun AdministratorScreen(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
                     ),
-                    designId = 3
+                    designId = 3,
                 )
 
                 Spacer(modifier = Modifier.height(2.dp))
@@ -239,23 +233,23 @@ fun AdministratorScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OhranaOutlinedButton(
-                        onClick = { showExportDialog = true },
                         text = "Экспорт",
+                        onClick = { showExportDialog = true },
                         modifier = Modifier.weight(1f).height(48.dp),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 18.sp
                         ),
-                        designId = 3
+                        designId = 3,
                     )
 
                     OhranaOutlinedButton(
-                        onClick = { showImportDialog = true },
                         text = "Импорт",
+                        onClick = { showImportDialog = true },
                         modifier = Modifier.weight(1f).height(48.dp),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 18.sp
                         ),
-                        designId = 3
+                        designId = 3,
                     )
                 }
 
@@ -395,7 +389,7 @@ fun AdministratorScreen(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 18.sp
                     ),
-                    designId = 3
+                    designId = 3,
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -439,7 +433,7 @@ fun AdministratorScreen(
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 16.sp
                             ),
-                            designId = 3
+                            designId = 3,
                         )
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -455,7 +449,7 @@ fun AdministratorScreen(
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 16.sp
                             ),
-                            designId = 3
+                            designId = 3,
                         )
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -497,18 +491,18 @@ fun AdministratorScreen(
 
                             Box {
                                 OhranaOutlinedButton(
-                                    onClick = { showGuardDropdown = true },
-                                    modifier = Modifier.width(260.dp).height(48.dp),
                                     text = when (guardsCount) {
                                         1 -> "1 охранник (старший)"
                                         2 -> "Старший и 1 охранник"
                                         3 -> "Старший и 2 охранника"
                                         else -> "Выберите количество"
                                     },
+                                    onClick = { showGuardDropdown = true },
+                                    modifier = Modifier.width(260.dp).height(48.dp),
                                     style = MaterialTheme.typography.bodyLarge.copy(
                                         fontSize = 16.sp
                                     ),
-                                    designId = 3
+                                    designId = 3,
                                 )
                                 Icon(
                                     imageVector = Icons.Default.ArrowDropDown,

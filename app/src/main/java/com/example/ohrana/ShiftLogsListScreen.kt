@@ -15,18 +15,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import androidx.activity.compose.BackHandler
-import com.example.ohrana.CloudStorageManager
-import com.example.ohrana.SharedPrefsManager
-import com.example.ohrana.BlurredBackground
 import com.example.ohrana.ui.components.OhranaOutlinedButton
 
 private const val TAG = "ShiftLogsListScreen"
@@ -194,7 +188,7 @@ fun ShiftLogsListScreen(
                                             pressedElevation = 8.dp,
                                             disabledElevation = 0.dp
                                         ),
-                                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+                                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                                     )
                                 }
                             }
@@ -275,7 +269,7 @@ fun ShiftLogsListScreen(
                                     pressedElevation = 8.dp,
                                     disabledElevation = 0.dp
                                 ),
-                                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+                                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -328,7 +322,7 @@ fun ShiftLogsListScreen(
                                     pressedElevation = 8.dp,
                                     disabledElevation = 0.dp
                                 ),
-                                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+                                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -403,7 +397,7 @@ fun ShiftLogsListScreen(
                                     pressedElevation = 8.dp,
                                     disabledElevation = 0.dp
                                 ),
-                                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+                                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
                             )
                         }
                     }
@@ -487,7 +481,7 @@ fun ShiftCardPreview() {
                     pressedElevation = 8.dp,
                     disabledElevation = 0.dp
                 ),
-                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+                style = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
             )
         }
     }

@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,9 +57,15 @@ fun CheckpointPropertiesScreen(
         onResult = { uri ->
             uri?.let {
                 val checkpointId = selectedCheckpointIdForImage ?: return@let
-                localProperties[checkpointId] = uri.toString()
-                prefsManager.saveCheckpointImageUri(checkpointId, uri.toString())
-                android.widget.Toast.makeText(context, "Картинка привязана к чекпоинту '$checkpointId'", android.widget.Toast.LENGTH_SHORT).show()
+                // Копируем изображение в filesDir для долгосрочного хранения
+                val copiedFilePath = copyImageToFilesDir(uri, context)
+                if (copiedFilePath != null) {
+                    localProperties[checkpointId] = copiedFilePath
+                    prefsManager.saveCheckpointImageUri(checkpointId, copiedFilePath)
+                    android.widget.Toast.makeText(context, "Картинка привязана к чекпоинту '$checkpointId'", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    android.widget.Toast.makeText(context, "Ошибка сохранения картинки", android.widget.Toast.LENGTH_SHORT).show()
+                }
                 selectedCheckpointIdForImage = null
             }
         }
@@ -145,14 +152,21 @@ fun CheckpointPropertiesScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             if (currentImageUri != null) {
-                                val uri = android.net.Uri.parse(currentImageUri)
-                                // Используем LaunchedEffect для загрузки bitmap при изменении URI
-                                val bitmapState = remember(uri) {
+                                // Проверяем, является ли currentImageUri путем к файлу в filesDir или URI
+                                val file = File(context.filesDir, currentImageUri)
+                                val bitmapState = remember(currentImageUri) {
                                     androidx.compose.runtime.mutableStateOf<android.graphics.Bitmap?>(null)
                                 }
-                                LaunchedEffect(uri) {
+                                LaunchedEffect(currentImageUri) {
                                     bitmapState.value = runCatching {
-                                        android.graphics.BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+                                        if (file.exists()) {
+                                            // Файл находится в filesDir
+                                            android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                                        } else {
+                                            // Старый формат - URI
+                                            val uri = android.net.Uri.parse(currentImageUri)
+                                            android.graphics.BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+                                        }
                                     }.getOrNull()
                                 }
                                 

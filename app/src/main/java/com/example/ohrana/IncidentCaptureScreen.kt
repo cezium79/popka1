@@ -26,15 +26,12 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.Composable
 import com.example.ohrana.ui.components.OhranaOutlinedButton
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Bitmap.CompressFormat
-import java.io.ByteArrayOutputStream
 import android.media.MediaScannerConnection
 import android.os.Environment
 import java.io.File
@@ -337,7 +334,7 @@ fun IncidentCaptureScreen(
                                 },
                                 modifier = Modifier.width(200.dp).height(56.dp),
                                 style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                                designId = 3
+                                designId = 3,
                             )
                         }
                     }
@@ -375,7 +372,7 @@ fun IncidentCaptureScreen(
                                             .fillMaxWidth()
                                             .height(56.dp),
                                         style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                                        designId = 3
+                                        designId = 3,
                                     )
                                 }
                                 
@@ -411,7 +408,7 @@ fun IncidentCaptureScreen(
                                             .fillMaxWidth()
                                             .height(56.dp),
                                         style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                                        designId = 3
+                                        designId = 3,
                                     )
                                 }
                             }
@@ -493,7 +490,7 @@ fun IncidentCaptureScreen(
                                             .fillMaxWidth()
                                             .height(56.dp),
                                         style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold),
-                                        designId = 3
+                                        designId = 3,
                                     )
                                 }
                             }

@@ -585,13 +585,13 @@ fun AppNavigation() {
             //     // Увеличиваем индекс при завершении фото (чекпоинт пройден)
             //     prefsManager.updateCurrentCheckpointIndex(prefsManager.getCurrentCheckpointIndex() + 1)
             // },
-            onCheckpointComplete = {},
             onBack = {
                 selectedCheckpointId = null
                 currentScreen = "ohrannik_cabinet"
             },
+            onCheckpointComplete = {},
             prefsManager = prefsManager,
-            employeeName = selectedEmployeeName
+            employeeName = selectedEmployeeName,
         )
         
         "incident_capture" -> IncidentCaptureScreen(
