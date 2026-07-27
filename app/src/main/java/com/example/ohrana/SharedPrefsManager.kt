@@ -269,6 +269,17 @@ class SharedPrefsManager(private val context: Context) {
         prefs.edit().putInt("active_route_current_index", index).apply()
     }
 
+    // Откатить индекс чекпоинта на 1 назад (для отмены фото)
+    fun rollbackCheckpointIndex() {
+        val activeRoundIndex = getActiveRoundIndex()
+        if (activeRoundIndex != -1) {
+            val currentIndex = getRoundCheckpointIndex(activeRoundIndex)
+            if (currentIndex > 0) {
+                prefs.edit().putInt("round_${activeRoundIndex}_checkpoint_index", currentIndex - 1).apply()
+            }
+        }
+    }
+
     fun resetRouteProgress() {
         prefs.edit().putInt("active_route_current_index", 0).apply()
     }
@@ -775,6 +786,8 @@ class SharedPrefsManager(private val context: Context) {
                 putBoolean("round_${alarm.id}_is_completed", false)
                 putString("round_${alarm.id}_end_time", "-")
                 remove("round_${alarm.id}_scanned_points")
+                // ДОБАВЛЕНО: сбрасываем индекс чекпоинта при сбросе обхода
+                putInt("round_${alarm.id}_checkpoint_index", 0)
             }
             // Сбрасываем индекс активного обхода
             putInt("active_shift_current_round_index", -1)

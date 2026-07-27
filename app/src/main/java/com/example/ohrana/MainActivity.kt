@@ -581,10 +581,11 @@ fun AppNavigation() {
                 }
                 // Индекс будет увеличен при закрытии экрана
             },
-            onCheckpointComplete = {
-                // Увеличиваем индекс при завершении фото (чекпоинт пройден)
-                prefsManager.updateCurrentCheckpointIndex(prefsManager.getCurrentCheckpointIndex() + 1)
-            },
+            // onCheckpointComplete = {
+            //     // Увеличиваем индекс при завершении фото (чекпоинт пройден)
+            //     prefsManager.updateCurrentCheckpointIndex(prefsManager.getCurrentCheckpointIndex() + 1)
+            // },
+            onCheckpointComplete = {},
             onBack = {
                 selectedCheckpointId = null
                 currentScreen = "ohrannik_cabinet"

@@ -35,6 +35,15 @@ val QrResult.CheckpointPassed.nfcCheckpointId: String get() = checkpointId
 private class PatrolRoute(val routeName: String, private val checkpoints: List<String>) {
     var currentIndex = 0
         private set
+    
+    /**
+     * Уменьшает currentIndex на 1 (для отката при возврате из PhotoCaptureScreen)
+     */
+    fun rollback() {
+        if (currentIndex > 0) {
+            currentIndex--
+        }
+    }
 
     /**
      * Проверяет ID чекпоинта и, если он верный, продвигает обход к следующей точке.
@@ -439,6 +448,17 @@ object QrHandler {
             }
         } else {
             println("Завершение обхода: обход не был активен.")
+        }
+    }
+
+    /**
+     * Уменьшает currentIndex на 1 в активном маршруте (для отката при возврате из PhotoCaptureScreen)
+     * Вызывается при нажатии "Назад" в PhotoCaptureScreen до сохранения фото
+     */
+    fun rollback() {
+        val activeKey = getActiveRouteKey()
+        if (activeKey != null) {
+            activeRounds[activeKey]?.rollback()
         }
     }
 

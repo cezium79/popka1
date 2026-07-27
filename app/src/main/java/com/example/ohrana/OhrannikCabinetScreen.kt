@@ -105,6 +105,9 @@ fun OhrannikCabinetScreen(
 
     // Триггер для принудительного обновления имени чекпоинта после сканирования
     var checkpointScanTrigger by remember { mutableStateOf(0L) }
+    
+    // Флаг для отслеживания, что диалог показан после фото (чтобы избежать двойного увеличения индекса)
+    var isPhotoCheckpointPassed by remember { mutableStateOf(false) }
 
     // Отслеживаем изменения индексов через derivedStateOf
     val activeRoundIndex by remember { derivedStateOf { manager.getActiveRoundIndex() } }
@@ -766,6 +769,8 @@ fun OhrannikCabinetScreen(
                                                                         // Запоминаем ID чекпоинта и переходим на экран фото
                                                                         photoCheckpointId =
                                                                             qrResult.checkpointId
+                                                                        // Устанавливаем флаг, что это фото-чекпоинт
+                                                                        isPhotoCheckpointPassed = true
                                                                     }
 
                                                                     is QrResult.Error -> {
@@ -899,23 +904,27 @@ fun OhrannikCabinetScreen(
                     autoCloseTrigger = false
                     kotlinx.coroutines.delay(100.milliseconds) // Небольшая задержка перед началом отсчета
                     kotlinx.coroutines.delay(3000.milliseconds) // Ждем 3 секунды
-
-                    // Обновляем индекс при закрытии диалога
-                    val activeRoundIndex = manager.getActiveRoundIndex()
-                    if (activeRoundIndex != -1) {
-                        // Получаем последнюю запись SCAN
-                        val lastScanEntry =
-                            manager.shiftDatabase.loadLogsByRound(activeRoundIndex).asReversed()
-                                .find { it.actionType == "SCAN" }
-                        manager.shiftDatabase.updateLastScanEntry(
-                            roundId = activeRoundIndex,
-                            actionType = "CHECKPOINT"
-                            // questionText и inputTitle не передаются - они будут взяты из чекпоинта
-                        )
-                        val newCheckpointIndex =
-                            manager.getRoundCheckpointIndex(activeRoundIndex) + 1
-                        manager.updateCurrentCheckpointIndex(newCheckpointIndex)
+                    
+                    // Увеличиваем индекс ТОЛЬКО для QR/NFC (не для фото, так как фото увеличивает индекс в PhotoCaptureScreen)
+                    if (!isPhotoCheckpointPassed) {
+                        val activeRoundIndex = manager.getActiveRoundIndex()
+                        if (activeRoundIndex != -1) {
+                            // Получаем последнюю запись SCAN
+                            val lastScanEntry =
+                                manager.shiftDatabase.loadLogsByRound(activeRoundIndex).asReversed()
+                                    .find { it.actionType == "SCAN" }
+                            manager.shiftDatabase.updateLastScanEntry(
+                                roundId = activeRoundIndex,
+                                actionType = "CHECKPOINT"
+                                // questionText и inputTitle не передаются - они будут взяты из чекпоинта
+                            )
+                            val newCheckpointIndex =
+                                manager.getRoundCheckpointIndex(activeRoundIndex) + 1
+                            manager.updateCurrentCheckpointIndex(newCheckpointIndex)
+                        }
                     }
+                    // Сбрасываем флаг фото-чекпоинта после проверки
+                    isPhotoCheckpointPassed = false
                     // Обновляем имя следующего чекпоинта
                     checkpointScanTrigger = System.currentTimeMillis()
 
@@ -1053,13 +1062,8 @@ fun OhrannikCabinetScreen(
                                         }
 
                                         showQuestionDialog = null
-                                        // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
-                                        val activeRoundIndexQ = manager.getActiveRoundIndex()
-                                        if (activeRoundIndexQ != -1) {
-                                            val newCheckpointIndex =
-                                                manager.getRoundCheckpointIndex(activeRoundIndexQ) + 1
-                                            manager.updateCurrentCheckpointIndex(newCheckpointIndex)
-                                        }
+                                        // Увеличиваем индекс при показе диалога "Точка зафиксирована"
+                                        // manager.updateCurrentCheckpointIndex(...)
                                         // Обновляем имя следующего чекпоинта
                                         checkpointScanTrigger = System.currentTimeMillis()
 
@@ -1068,11 +1072,11 @@ fun OhrannikCabinetScreen(
 
                                         // Получаем количество чекпоинтов в маршруте
                                         var isLastCheckpoint = false
-                                        if (activeRoundIndexQ != -1) {
-                                            val routeId = manager.getRoundRouteId(activeRoundIndexQ)
+                                        if (activeRoundIndex != -1) {
+                                            val routeId = manager.getRoundRouteId(activeRoundIndex)
                                             val route = routeId?.let { manager.getRouteById(it) }
                                             val checkpointIndex =
-                                                manager.getRoundCheckpointIndex(activeRoundIndexQ)
+                                                manager.getRoundCheckpointIndex(activeRoundIndex)
                                             if (route != null && checkpointIndex >= route.checkpointIds.size) {
                                                 isLastCheckpoint = true
                                             }
@@ -1186,9 +1190,8 @@ fun OhrannikCabinetScreen(
                                     }
 
                                     showInputDialog = null
-                                    // Увеличиваем индекс при закрытии диалога (чекпоинт пройден)
-                                    val newCheckpointIndex = manager.getCurrentCheckpointIndex() + 1
-                                    manager.updateCurrentCheckpointIndex(newCheckpointIndex)
+                                    // Увеличиваем индекс при показе диалога "Точка зафиксирована"
+                                    // manager.updateCurrentCheckpointIndex(...)
                                     // Обновляем имя следующего чекпоинта
                                     checkpointScanTrigger = System.currentTimeMillis()
 

@@ -337,14 +337,19 @@ fun PhotoCaptureScreen(
             isPhotoComplete = false
         }
     }
-    
-    // Обрабатываем закрытие диалога и переход к следующему экрану
+
     LaunchedEffect(showCheckpointPassedDialog) {
-        if (showCheckpointPassedDialog == false && capturedBitmap != null) {
-            // Показали диалог - теперь завершаем чекпоинт
-            onCheckpointComplete()
+        // Срабатывает ТОЛЬКО при смене флага на true
+        if (showCheckpointPassedDialog && capturedBitmap != null) {
+            val activeRoundIndex = prefsManager.getActiveRoundIndex()
+            if (activeRoundIndex != -1) {
+                val nextIndex = prefsManager.getRoundCheckpointIndex(activeRoundIndex) + 1
+                prefsManager.updateCurrentCheckpointIndex(nextIndex)
+            }
             isPhotoComplete = false
-            // Закрываем экран после завершения
+
+            // Закрываем диалог и уходим с экрана
+            showCheckpointPassedDialog = false
             onBack()
         }
     }
@@ -459,7 +464,11 @@ fun PhotoCaptureScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        // Уменьшаем currentIndex в QrHandler при возврате, чтобы можно было повторно сканировать тот же QR-код
+                        QrHandler.rollback()
+                        onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 }
@@ -650,8 +659,8 @@ fun PhotoCaptureScreen(
                                 savedFileName?.let { 
                                     onPhotoTaken(it)
                                 }
-                                // Увеличиваем индекс при подтверждении
-                                isPhotoComplete = true
+                                // Увеличиваем индекс при показе диалога (не здесь!)
+                                // isPhotoComplete = true - перенесено в LaunchedEffect
                             },
                             modifier = Modifier.width(140.dp).height(56.dp),
                             shape = RoundedCornerShape(28.dp)
@@ -735,7 +744,11 @@ fun PhotoCaptureScreen(
     }
     
     // Обработка системной кнопки "Назад"
-    BackHandler(onBack = onBack)
+    BackHandler(onBack = {
+        // Уменьшаем currentIndex в QrHandler при возврате, чтобы можно было повторно сканировать тот же QR-код
+        QrHandler.rollback()
+        onBack()
+    })
 }
 
 // Функция для сохранения фото в галерею
