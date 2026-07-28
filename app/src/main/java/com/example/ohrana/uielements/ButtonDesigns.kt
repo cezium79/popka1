@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.ohrana.ui.components.OhranaButton
 import com.example.ohrana.ui.components.OhranaContainedButton
 import com.example.ohrana.ui.components.OhranaOutlinedButton
@@ -38,7 +39,7 @@ object ButtonDesigns {
         elevationDefault = 4.dp,          // Тень в обычном состоянии
         elevationPressed = 8.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 8.dp                // Радиус закругления углов
+        shapeCorner = 8.dp               // Радиус закругления углов
     )
 
     /**
@@ -56,7 +57,7 @@ object ButtonDesigns {
         elevationDefault = 4.dp,          // Тень в обычном состоянии
         elevationPressed = 8.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 8.dp                // Радиус закругления углов
+        shapeCorner = 8.dp               // Радиус закругления углов
     )
 
     /**
@@ -74,7 +75,7 @@ object ButtonDesigns {
         elevationDefault = 4.dp,          // Тень в обычном состоянии
         elevationPressed = 8.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 20.dp                // Радиус закругления углов
+        shapeCorner = 20.dp              // Радиус закругления углов
     )
 
     /**
@@ -92,7 +93,7 @@ object ButtonDesigns {
         elevationDefault = 2.dp,          // Тень в обычном состоянии
         elevationPressed = 4.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 20.dp                // Радиус закругления углов
+        shapeCorner = 20.dp              // Радиус закругления углов
     )
 
     /**
@@ -110,7 +111,7 @@ object ButtonDesigns {
         elevationDefault = 8.dp,          // Сильная тень в обычном состоянии
         elevationPressed = 12.dp,         // Ещё сильная тень при нажатии
         elevationDisabled = 2.dp,         // Небольшая тень в отключенном состоянии
-        shapeCorner = 8.dp                // Радиус закругления углов
+        shapeCorner = 8.dp               // Радиус закругления углов
     )
 
     /**
@@ -128,7 +129,7 @@ object ButtonDesigns {
         elevationDefault = 4.dp,          // Тень в обычном состоянии
         elevationPressed = 8.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 20.dp                // Радиус закругления углов
+        shapeCorner = 20.dp              // Радиус закругления углов
     )
 
     /**
@@ -146,7 +147,7 @@ object ButtonDesigns {
         elevationDefault = 5.dp,          // Тень в обычном состоянии
         elevationPressed = 8.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 8.dp                // Радиус закругления углов
+        shapeCorner = 8.dp               // Радиус закругления углов
     )
 
     /**
@@ -164,7 +165,7 @@ object ButtonDesigns {
         elevationDefault = 4.dp,          // Тень в обычном состоянии
         elevationPressed = 8.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 8.dp                // Радиус закругления углов
+        shapeCorner = 8.dp               // Радиус закругления углов
     )
 
     /**
@@ -177,12 +178,12 @@ object ButtonDesigns {
         name = "Gold",                    // Название дизайна
         containerColor = Color(0xFFFFD700),  // Золотой цвет фона кнопки
         contentColor = Color(0xFF333333),  // Темный текст на золотом фоне
-        disabledContainerColor = Color(0xFFBDBDBD),  // Серый фона в отключенном состоянии
+        disabledContainerColor = Color(0xFFBDBDBD),  // Серый фона в отключенном состоян��и
         disabledContentColor = Color(0xFF9E9E9E),  // Светло-серый текст
         elevationDefault = 6.dp,          // Тень в обычном состоянии
         elevationPressed = 10.dp,         // Тень при нажатии
         elevationDisabled = 2.dp,         // Небольшая тень в отключенном состоянии
-        shapeCorner = 8.dp                // Радиус закругления углов
+        shapeCorner = 8.dp               // Радиус закругления углов
     )
 
     /**
@@ -200,7 +201,7 @@ object ButtonDesigns {
         elevationDefault = 4.dp,          // Тень в обычном состоянии
         elevationPressed = 8.dp,          // Тень при нажатии
         elevationDisabled = 0.dp,         // Тень в отключенном состоянии
-        shapeCorner = 8.dp                // Радиус закругления углов
+        shapeCorner = 8.dp               // Радиус закругления углов
     )
 }
 
@@ -230,7 +231,7 @@ data class ButtonDesign(
     val elevationDefault: androidx.compose.ui.unit.Dp,  // Тень в обычном состоянии
     val elevationPressed: androidx.compose.ui.unit.Dp,  // Тень при нажатии
     val elevationDisabled: androidx.compose.ui.unit.Dp, // Тень в отключенном состоянии
-    val shapeCorner: androidx.compose.ui.unit.Dp        // Радиус закругления углов
+    val shapeCorner: androidx.compose.ui.unit.Dp       // Радиус закругления углов
 )
 
 // ============================================
@@ -332,7 +333,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №2 - Contained", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaContainedButton(
-            text = "Contained Button",
+            text = "Contained",
             onClick = {},
             designId = 2
         )
@@ -342,7 +343,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №3 - Outlined (Recommended)", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaOutlinedButton(
-            text = "Outlined Button",
+            text = "Outlined",
             onClick = {},
             designId = 3,
         )
@@ -352,7 +353,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №4 - Text", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaTextButton(
-            text = "Text Button",
+            text = "Text",
             onClick = {},
             designId = 4
         )
@@ -362,7 +363,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №5 - Elevated", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaButton(
-            text = "Elevated Button",
+            text = "Elevated",
             onClick = {},
             designId = 5
         )
@@ -372,7 +373,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №6 - Destructive", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaButton(
-            text = "Destructive Button",
+            text = "Destructive",
             onClick = {},
             designId = 6
         )
@@ -382,7 +383,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №7 - Success", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaButton(
-            text = "Success Button",
+            text = "Success",
             onClick = {},
             designId = 7
         )
@@ -392,7 +393,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №8 - Info", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaButton(
-            text = "Info Button",
+            text = "Info",
             onClick = {},
             designId = 8
         )
@@ -402,7 +403,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №9 - Gold", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaButton(
-            text = "Gold Button",
+            text = "Gold ",
             onClick = {},
             designId = 9
         )
@@ -412,7 +413,7 @@ fun ButtonDesignsPreview() {
         Text(text = "Дизайн №10 - Dark", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(8.dp))
         OhranaButton(
-            text = "Dark Button",
+            text = "Dark",
             onClick = {},
             designId = 10
         )

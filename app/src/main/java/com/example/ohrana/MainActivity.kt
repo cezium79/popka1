@@ -648,8 +648,7 @@ fun AppNavigation() {
             onBack = { 
                 selectedCheckpointId = null
                 currentScreen = "routes" 
-            },
-            onSave = { /* Обновление списка происходит внутри редактора */ }
+            }
         )
         
         "route_editor" -> RouteEditorScreen(

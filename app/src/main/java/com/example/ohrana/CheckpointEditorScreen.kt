@@ -5,20 +5,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.nfc.NfcAdapter
-import android.nfc.NfcManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,39 +23,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -75,32 +57,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.io.File
-import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import com.example.ohrana.ui.components.OhranaOutlinedButton
 
 /**
  * Копирует изображение из URI в filesDir приложения
  * Возвращает имя файла (относительный путь) или null в случае ошибки
  */
-fun copyImageToFilesDir(uri: android.net.Uri, context: Context): String? {
+fun copyImageToFilesDir(uri: Uri, context: Context): String? {
     return try {
         val fileName = "checkpoint_image_${System.currentTimeMillis()}.jpg"
         val destFile = File(context.filesDir, fileName)
@@ -128,8 +100,7 @@ fun copyImageToFilesDir(uri: android.net.Uri, context: Context): String? {
 @Composable
 fun CheckpointEditorScreen(
     checkpointId: String? = null,
-    onBack: () -> Unit,
-    onSave: () -> Unit
+    onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? ComponentActivity
@@ -148,7 +119,6 @@ fun CheckpointEditorScreen(
     }
 
     var idNumberField by remember { mutableStateOf(existingCheckpoint?.let { extractIdNumber(it.id) } ?: "") }
-    var idField by remember { mutableStateOf(existingCheckpoint?.id ?: "") }
     var nameField by remember { mutableStateOf(existingCheckpoint?.name ?: "") }
 
     var showSaveDialog by remember { mutableStateOf(false) }
@@ -227,8 +197,8 @@ fun CheckpointEditorScreen(
             questionText = if (actionField == CheckpointAction.QUESTION) questionText else null,
             answers = answers.filter { it.isNotBlank() }.toList(),
             inputTitle = if (actionField == CheckpointAction.INPUT) inputTitle else null,
-            imageUri = if (imageUri.isNotEmpty()) imageUri else null,
-            nfcId = if (nfcId.isNotEmpty()) nfcId else null
+            imageUri = imageUri.ifEmpty { null },
+            nfcId = nfcId.ifEmpty { null }
         )
 
         Toast.makeText(context, "Сохранение: imageUri=${checkpoint.imageUri}", Toast.LENGTH_LONG).show()
@@ -244,7 +214,7 @@ fun CheckpointEditorScreen(
     LaunchedEffect(Unit) {
         try {
             nfcAdapter = NfcAdapter.getDefaultAdapter(context)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // NFC не поддерживается
         }
     }
@@ -261,13 +231,13 @@ fun CheckpointEditorScreen(
                     NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B,
                     null
                 )
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Error handling
             }
         } else {
             try {
                 nfcAdapter?.disableReaderMode(activity)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Ignore
             }
         }
@@ -287,7 +257,7 @@ fun CheckpointEditorScreen(
             if (nfcScanningEnabled && nfcAdapter != null) {
                 try {
                     nfcAdapter?.disableReaderMode(activity)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Ignore
                 }
             }
@@ -403,7 +373,7 @@ fun CheckpointEditorScreen(
 
                 OutlinedTextField(
                     value = "CP-$idNumberField",
-                    onValueChange = {
+                    onValueChange = { it ->
                         val input = it.replace("CP-", "")
                         val numericValue = input.filter { it.isDigit() }
                         idNumberField = numericValue
@@ -473,7 +443,7 @@ fun CheckpointEditorScreen(
                         onDismissRequest = { expanded = false },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        CheckpointAction.values().forEach { action ->
+                        CheckpointAction.entries.forEach { action ->
                             DropdownMenuItem(
                                 text = { Text(action.name.lowercase().replace('_', ' '), color = Color(0xFFFFFFFF)) },
                                 onClick = {
@@ -600,7 +570,7 @@ fun CheckpointEditorScreen(
                                 containerColor = Color(0xFF424242), // Тёмно-серый
                                 contentColor = Color(0xFFFFFFFF)    // Белый текст
                             ),
-                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                            elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 8.dp,
                                 pressedElevation = 16.dp,
                                 disabledElevation = 8.dp
@@ -663,7 +633,7 @@ fun CheckpointEditorScreen(
                             containerColor = Color(0xFF424242), // Тёмно-серый
                             contentColor = Color(0xFFFFFFFF)    // Белый текст
                         ),
-                        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                        elevation = ButtonDefaults.buttonElevation(
                             defaultElevation = 8.dp,
                             pressedElevation = 16.dp,
                             disabledElevation = 8.dp
@@ -686,7 +656,7 @@ fun CheckpointEditorScreen(
                         containerColor = Color(0xFF424242), // Синий
                         contentColor = Color(0xFFFFFFFF)    // Белый текст
                     ),
-                    elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
+                    elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 8.dp,
                         pressedElevation = 16.dp,
                         disabledElevation = 8.dp

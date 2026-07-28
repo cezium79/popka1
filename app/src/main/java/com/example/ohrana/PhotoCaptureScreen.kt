@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -165,7 +166,6 @@ fun compressAndResizeImage(
             Log.d("ImageCompression", "inSampleSize ignored! Using createScaledBitmap...")
             
             // Вычисляем целевые размеры
-            val targetHeight = if (srcHeight > targetWidth) srcHeight / inSampleSize else srcHeight
             val scale = targetWidth.toFloat() / srcWidth.toFloat()
             val scaledWidth = (srcWidth * scale).toInt()
             val scaledHeight = (srcHeight * scale).toInt()
@@ -192,7 +192,7 @@ fun compressAndResizeImage(
         
         // 5. Сжимаем в JPEG с заданным качеством
         ByteArrayOutputStream().use { baos ->
-            finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+            finalBitmap.compress(CompressFormat.JPEG, quality, baos)
             
             // Записываем в файл
             targetFile.outputStream().use { output ->
@@ -302,7 +302,7 @@ fun savePhotoToGallery(sourceFile: File, checkpointId: String, context: Context)
             BitmapFactory.decodeFile(sourceFile.absolutePath, options)
             android.util.Log.d("PhotoCaptureScreen", "Source image dimensions: ${options.outWidth}x${options.outHeight}")
         } catch (e: Exception) {
-            android.util.Log.d("PhotoCaptureScreen", "Could not read image dimensions: ${e.message}")
+            Log.d("PhotoCaptureScreen", "Could not read image dimensions: ${e.message}")
         }
         
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -404,28 +404,20 @@ fun PhotoCaptureScreen(
     val fileName = "${checkpointId.replace(" ", "_")}_${timestamp}.jpg"
     val imageFile = File(filesDir, fileName)
 
-    // Вызываем onCheckpointComplete при завершении съемки
+    // Показ диалога при завершении съемки
     LaunchedEffect(isPhotoComplete) {
         if (isPhotoComplete) {
-            // Сначала показываем диалог успешного прохождения
             showCheckpointPassedDialog = true
-            isPhotoComplete = false
         }
     }
 
     LaunchedEffect(showCheckpointPassedDialog) {
-        // Срабатывает ТОЛЬКО при смене флага на true
-        if (showCheckpointPassedDialog && capturedBitmap != null) {
+        if (showCheckpointPassedDialog) {
             val activeRoundIndex = prefsManager.getActiveRoundIndex()
             if (activeRoundIndex != -1) {
                 val nextIndex = prefsManager.getRoundCheckpointIndex(activeRoundIndex) + 1
                 prefsManager.updateCurrentCheckpointIndex(nextIndex)
             }
-            isPhotoComplete = false
-
-            // Закрываем диалог и уходим с экрана
-            showCheckpointPassedDialog = false
-            onBack()
         }
     }
 
@@ -570,7 +562,8 @@ fun PhotoCaptureScreen(
         containerColor = Color.Transparent
     ) { paddingValues ->
         Box(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
         ) {
             // Фоновая картинка fon2 - на весь экран
             Image(
@@ -699,23 +692,32 @@ fun PhotoCaptureScreen(
                     }
                 } else {
                     // Предпросмотр
-                    if (capturedBitmap != null) {
-                        Image(
-                            bitmap = capturedBitmap!!.asImageBitmap(),
-                            contentDescription = "Предпросмотр фото",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Black)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.LightGray),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Нет изображения")
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.6f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (capturedBitmap != null) {
+                            Spacer(modifier = Modifier.height(50.dp))
+                            Image(
+                                bitmap = capturedBitmap!!.asImageBitmap(),
+                                contentDescription = "Предпросмотр фото",
+                                modifier = Modifier
+                                    .width(270.dp)
+                                    .height(360.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.Black)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.LightGray),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Нет изображения")
+                            }
                         }
                     }
 
@@ -727,11 +729,10 @@ fun PhotoCaptureScreen(
                             .padding(bottom = 48.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.padding(8.dp)
-                        ) {
-                            Button(
+                        Column(modifier = Modifier.padding(8.dp))
+                        {
+                            OhranaOutlinedButton(
+                                text = "Сделать заново",
                                 onClick = {
                                     // Сделать заново - возвращаемся к камере
                                     isPreviewMode = false
@@ -742,38 +743,27 @@ fun PhotoCaptureScreen(
                                         imageFile.delete()
                                     }
                                 },
-                                modifier = Modifier.width(140.dp).height(56.dp),
-                                shape = RoundedCornerShape(28.dp)
-                            ) {
-                                Text(
-                                    text = "Сделать заново",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
-                                )
-                            }
-
-                            Button(
+                                modifier = Modifier.width(380.dp).height(56.dp),
+                                designId = 3
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OhranaOutlinedButton(
+                                text = "Сохранить",
                                 onClick = {
                                     // Сохраняем фото и возвращаемся в cabinet
                                     // Сохраняем фото в галерею
                                     val savedFileName =
                                         savePhotoToGallery(imageFile, checkpointId, context)
-                                    savedFileName?.let {
-                                        onPhotoTaken(it)
+                                    if (savedFileName != null) {
+                                        onPhotoTaken(savedFileName)
+                                        isPhotoComplete = true
                                     }
-                                    // Увеличиваем индекс при показе диалога (не здесь!)
-                                    // isPhotoComplete = true - перенесено в LaunchedEffect
                                 },
-                                modifier = Modifier.width(140.dp).height(56.dp),
-                                shape = RoundedCornerShape(28.dp)
-                            ) {
-                                Text(
-                                    text = "Сохранить",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
-                                )
-                            }
+                                modifier = Modifier.width(380.dp).height(56.dp),
+                                designId = 3
+                            )
                         }
+                    
                     }
                 }
             }
@@ -789,13 +779,12 @@ fun PhotoCaptureScreen(
             }
 
             // Таймер для автоматического закрытия диалога
-            var autoCloseTrigger by remember { mutableStateOf(false) }
-
             LaunchedEffect(showCheckpointPassedDialog) {
-                autoCloseTrigger = false
-                kotlinx.coroutines.delay(100)
-                kotlinx.coroutines.delay(3000) // Ждем 3 секунды
-                showCheckpointPassedDialog = false
+                if (showCheckpointPassedDialog) {
+                    kotlinx.coroutines.delay(3000) // Ждем 3 секунды
+                    showCheckpointPassedDialog = false
+                    onBack()
+                }
             }
 
             AlertDialog(
@@ -806,20 +795,18 @@ fun PhotoCaptureScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Большая зеленая галочка
+                        // Иконка успешного прохождения
                         Box(
-                            modifier = Modifier
-                                .size(100.dp)
-                                .clip(RoundedCornerShape(50.dp))
-                                .background(Color(0xFF4CAF50))
-                                .align(Alignment.CenterHorizontally),
+                            modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
+                            Image(
+                                bitmap = android.graphics.BitmapFactory.decodeResource(
+                                    context.resources,
+                                    com.example.ohrana.R.drawable.vokak
+                                ).asImageBitmap(),
                                 contentDescription = "Успех",
-                                modifier = Modifier.size(60.dp),
-                                tint = Color.White
+                                modifier = Modifier.size(100.dp)
                             )
                         }
 

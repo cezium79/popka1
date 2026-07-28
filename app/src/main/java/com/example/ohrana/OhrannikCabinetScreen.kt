@@ -842,20 +842,18 @@ fun OhrannikCabinetScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            // Зеленая иконка успеха
+                            // Иконка успешного прохождения
                             Box(
-                                modifier = Modifier
-                                    .size(100.dp)
-                                    .clip(RoundedCornerShape(50.dp))
-                                    .background(Color(0xFF4CAF50))
-                                    .align(Alignment.CenterHorizontally),
+                                modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
+                                Image(
+                                    bitmap = android.graphics.BitmapFactory.decodeResource(
+                                        context.resources,
+                                        com.example.ohrana.R.drawable.vokak
+                                    ).asImageBitmap(),
                                     contentDescription = "Успех",
-                                    modifier = Modifier.size(60.dp),
-                                    tint = Color.White
+                                    modifier = Modifier.size(100.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.height(24.dp))
@@ -962,20 +960,18 @@ fun OhrannikCabinetScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            // Большая зеленая галочка
+                            // Иконка успешного прохождения
                             Box(
-                                modifier = Modifier
-                                    .size(100.dp)
-                                    .clip(RoundedCornerShape(50.dp))
-                                    .background(Color(0xFF4CAF50))
-                                    .align(Alignment.CenterHorizontally),
+                                modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
+                                Image(
+                                    bitmap = android.graphics.BitmapFactory.decodeResource(
+                                        context.resources,
+                                        com.example.ohrana.R.drawable.vokak
+                                    ).asImageBitmap(),
                                     contentDescription = "Успех",
-                                    modifier = Modifier.size(60.dp),
-                                    tint = Color.White
+                                    modifier = Modifier.size(100.dp)
                                 )
                             }
 

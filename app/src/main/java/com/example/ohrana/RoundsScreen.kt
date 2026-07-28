@@ -185,7 +185,7 @@ fun RoundsScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                            style = androidx.compose.ui.text.TextStyle(fontSize = 18.sp),
                             designId = 3,
                         )
                     }
@@ -201,7 +201,7 @@ fun RoundsScreen(
                                 showConfirmCloseShiftDialog = true
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            designId = ButtonDesigns.DESIGN_6_DESTRUCTIVE.id
+                            designId = 6
                         )
                     }
                 }
@@ -387,8 +387,8 @@ fun RoundsScreen(
                                         onClick = { },
                                         modifier = Modifier.fillMaxWidth(),
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFFE53935), // Красный фон
-                                            contentColor = Color(0xFF43A047)    // Белый текст
+                                            containerColor = Color(0xFF4AEC10), // Красный фон
+                                            contentColor = Color(0xFFEE0937)    // Белый текст
                                         )
                                     ) {
                                         Text("Завершен", fontSize = 14.sp)
