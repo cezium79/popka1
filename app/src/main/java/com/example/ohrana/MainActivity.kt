@@ -267,21 +267,7 @@ fun AppNavigation() {
                         Text(text = "Поднесите личную карту к телефону", fontSize = 18.sp, color = androidx.compose.ui.graphics.Color.White)
                     }
                 }
-                
-                // Кнопка входа в панель администратора
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp)
-                ) {
-                    Button(
-                        onClick = { currentScreen = "admin" },
-                        modifier = Modifier.fillMaxWidth(0.8f).height(60.dp)
-                    ) {
-                        Text("Панель администратора", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                
+
                 // Кнопка "ОТКРЫТЬ СМЕНУ" для групповой работы (только если смена закрыта)
                 if (guardsCount > 1 && !isShiftActive) {
                     Box(
@@ -567,19 +553,8 @@ fun AppNavigation() {
                 val logText = "Фото прибора: $selectedCheckpointId -> Файл: $fileName"
                 prefsManager.saveScanResult(employeeName = selectedEmployeeName, qrContent = logText)
                 
-                val activeRoundIndex = prefsManager.getActiveRoundIndex()
-                android.util.Log.d("MainActivity", "onPhotoTaken: checkpoint=$selectedCheckpointId, round=$activeRoundIndex, file=$fileName")
-                if (activeRoundIndex != -1) {
-                    val result = prefsManager.shiftDatabase.updateLastScanEntry(
-                        roundId = activeRoundIndex,
-                        actionType = "PHOTO",
-                        photoPath = fileName
-                    )
-                    android.util.Log.d("MainActivity", "updateLastScanEntry result: $result")
-                } else {
-                    android.util.Log.d("MainActivity", "No active round - skip update")
-                }
-                // Индекс будет увеличен при закрытии экрана
+                // photoPath будет установлен CheckpointPassedDialog при закрытии диалога
+                android.util.Log.d("MainActivity", "onPhotoTaken: checkpoint=$selectedCheckpointId, file=$fileName (photoPath will be set by CheckpointPassedDialog)")
             },
             // onCheckpointComplete = {
             //     // Увеличиваем индекс при завершении фото (чекпоинт пройден)

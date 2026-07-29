@@ -33,34 +33,29 @@ val QrResult.CheckpointPassed.nfcCheckpointId: String get() = checkpointId
  * Внутренний класс, представляющий маршрут обхода.
  */
 private class PatrolRoute(val routeName: String, private val checkpoints: List<String>) {
-    var currentIndex = 0
-        private set
-    
-    /**
-     * Уменьшает currentIndex на 1 (для отката при возврате из PhotoCaptureScreen)
-     */
-    fun rollback() {
-        if (currentIndex > 0) {
-            currentIndex--
-        }
-    }
-
     /**
      * Проверяет ID чекпоинта и, если он верный, продвигает обход к следующей точке.
+     * Использует SharedPrefsManager как источник истины для текущего индекса чекпоинта.
      * Возвращает Pair(валидность, следующий ожидаемый ID или null если маршрут завершен)
      */
-    fun validateAndAdvance(checkpointId: String): Pair<Boolean, String?> {
+    fun validateAndAdvance(checkpointId: String, prefsManager: SharedPrefsManager): Pair<Boolean, String?> {
+        // Берём актуальный индекс из SharedPrefsManager — это источник истины
+        val activeRoundIndex = prefsManager.getActiveRoundIndex()
+        val currentIndex = if (activeRoundIndex != -1) {
+            prefsManager.getRoundCheckpointIndex(activeRoundIndex)
+        } else {
+            0
+        }
+
         // Проверяем, совпадает ли отсканированный ID с ожидаемым
         if (currentIndex < checkpoints.size && checkpoints[currentIndex] == checkpointId) {
-            currentIndex++
-
-            // Если достигли конца маршрута, возвращаем success с null (маршрут завершен)
-            if (currentIndex >= checkpoints.size) {
+            // Проверяем, следующий ли это чекпоинт
+            if (currentIndex + 1 >= checkpoints.size) {
                 return Pair(true, null)
             }
 
             // Возвращаем следующий ожидаемый ID
-            val nextExpectedId = checkpoints[currentIndex]
+            val nextExpectedId = checkpoints[currentIndex + 1]
             return Pair(true, nextExpectedId)
 
         } else {
@@ -93,12 +88,73 @@ object QrHandler {
 
     // Список логов завершенных или текущих смен
     private val shiftLogs = mutableListOf<CheckpointEntry>()
+    
+    // Буфер состояния чекпоинта (в памяти) — используется для сбора данных до сохранения в БД
+    private var lastCheckpointState: CheckpointState? = null
 
     /**
      * Очищает shiftLogs - вызывается при открытии/закрытии смены
      */
     fun clearShiftLogs() {
         shiftLogs.clear()
+    }
+    
+    /**
+     * Очищает буфер состояний чекпоинтов
+     */
+    fun clearCheckpointState() {
+        lastCheckpointState = null
+    }
+    
+    /**
+     * Получить последнее состояние чекпоинта из буфера
+     */
+    fun getLastCheckpointState(): CheckpointState? {
+        return lastCheckpointState
+    }
+    
+    /**
+     * Отменить прохождение чекпоинта (нажата кнопка "Назад")
+     * Устанавливает hasAborted = true и сохраняет запись в БД
+     */
+    fun abortLastCheckpointState(prefsManager: SharedPrefsManager) {
+        val state = lastCheckpointState ?: return
+        
+        if (state.hasAborted) return
+        
+        state.hasAborted = true
+        
+        val activeRoundIndex = prefsManager.getActiveRoundIndex()
+        val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
+        
+        android.util.Log.d("QrHandler", "abortLastCheckpointState: roundIndex=$activeRoundIndex, shiftId=$activeShiftId, checkpoint=${state.checkpointName}")
+        
+        activeShiftId?.let { shiftId ->
+            if (activeRoundIndex != -1) {
+                prefsManager.shiftDatabase.addLogEntry(
+                    checkpointName = state.checkpointName,
+                    checkpointId = state.checkpointId,
+                    employeeName = state.employeeName,
+                    roundId = activeRoundIndex,
+                    routeName = "Маршрут обхода",
+                    sequenceIndex = state.sequenceIndex,
+                    isSequenceCorrect = state.isSequenceCorrect,
+                    scanType = state.scanType,
+                    actionType = "SCAN",
+                    questionText = state.questionText,
+                    inputTitle = state.inputTitle,
+                    hasAborted = true
+                )
+                android.util.Log.d("QrHandler", "Checkpoint aborted: ${state.checkpointName}")
+            } else {
+                android.util.Log.e("QrHandler", "Cannot abort checkpoint: activeRoundIndex is -1")
+            }
+        } ?: run {
+            android.util.Log.e("QrHandler", "Cannot abort checkpoint: activeShiftId is null")
+        }
+        
+        prefsManager.removeCheckpointState(state.checkpointId)
+        lastCheckpointState = null
     }
 
     // Активные маршруты обхода. Ключ - уникальное имя смены/маршрута.
@@ -177,7 +233,17 @@ object QrHandler {
             
             // НЕСТРОГИЙ РЕЖИМ: просто сохраняем факт прохода, без проверки последовательности
             if (!prefsManager.isStrictSequenceEnabled()) {
-                saveCheckpointToLog(DEFAULT_ROUND_KEY, checkpointId, name, currentTime, prefsManager)
+                // Создаем CheckpointState вместо SCAN записи
+                createCheckpointState(
+                    prefsManager = prefsManager,
+                    checkpointId = checkpointId,
+                    checkpointName = name,
+                    checkpointAction = action,
+                    roundId = prefsManager.getActiveRoundIndex(),
+                    sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                    isSequenceCorrect = true,
+                    scanType = "QR"
+                )
                 
                 // НЕ обновляем индекс при сканировании - обновление будет при подтверждении прохождения
                 // Индекс будет увеличен в OhrannikCabinetScreen при закрытии диалога
@@ -218,9 +284,9 @@ object QrHandler {
             // Если маршрута нет - создаем и сразу проверяем первую точку
             val (isValid, expectedId) = if (activeRoute == null) {
                 startNewRound(DEFAULT_ROUND_KEY, routeCheckpoints)
-                activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId)
+                activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId, prefsManager)
             } else {
-                activeRoute.validateAndAdvance(checkpointId)
+                activeRoute.validateAndAdvance(checkpointId, prefsManager)
             }
             
             if (!isValid) {
@@ -299,8 +365,17 @@ object QrHandler {
                 )
             }
 
-            // Если проверка пройдена, сохраняем факт
-            saveCheckpointToLog(DEFAULT_ROUND_KEY, checkpointId, name, currentTime, prefsManager)
+            // Если проверка пройдена, создаем CheckpointState
+            createCheckpointState(
+                prefsManager = prefsManager,
+                checkpointId = checkpointId,
+                checkpointName = name,
+                checkpointAction = action,
+                roundId = prefsManager.getActiveRoundIndex(),
+                sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                isSequenceCorrect = true,
+                scanType = "QR"
+            )
             
             // НЕ обновляем индекс при сканировании - обновление будет при подтверждении прохождения
             // Индекс будет увеличен в OhrannikCabinetScreen при закрытии диалога
@@ -341,98 +416,54 @@ object QrHandler {
         activeRounds[roundName] = PatrolRoute(roundName, checkpointIds)
     }
 
-    private fun saveCheckpointToLog(
-        routeName: String,
-        id: String,
-        name: String,
-        timestamp: String,
+    /**
+     * Создает CheckpointState и сохраняет его в буфер.
+     * Данные будут сохранены в БД позже через CheckpointPassedDialog.
+     */
+    fun createCheckpointState(
         prefsManager: SharedPrefsManager,
-        isSequenceCorrect: Boolean = true,
-        scanType: String = "QR"
-    ) {
-        shiftLogs.add(
-            CheckpointEntry(
-                type = "Обход",
-                titleOrLocation = name,
-                userResult = "Пройдено",
-                timestamp = timestamp
-            )
-        )
-        
-        // Добавляем запись в новую базу данных с типом SCAN (для аудита сканирований)
-        // Эта запись не будет отображаться в отчете, но будет сохранена для истории
-        val activeRoundIndex = prefsManager.getActiveRoundIndex()
+        checkpointId: String,
+        checkpointName: String,
+        checkpointAction: CheckpointAction,
+        roundId: Int,
+        sequenceIndex: Int,
+        isSequenceCorrect: Boolean,
+        scanType: String = "QR",
+        routeName: String = "Маршрут обхода"
+    ): CheckpointState? {
         val activeShiftId = prefsManager.prefs.getString("active_shift_id", null)
         val activeEmployeeName = prefsManager.getActiveShiftEmployeeName()
         
-        activeShiftId?.let { shiftId ->
-            if (activeRoundIndex != -1) {
-                // Загружаем чекпоинт для получения вопроса и заголовка
-                val checkpoint = prefsManager.getCheckpointById(id)
-                
-                // Сохраняем факт сканирования
-                prefsManager.shiftDatabase.addLogEntry(
-                    checkpointName = name,
-                    checkpointId = id,
-                    employeeName = activeEmployeeName,
-                    roundId = activeRoundIndex,
-                    routeName = routeName,
-                    sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
-                    isSequenceCorrect = isSequenceCorrect,
-                    scanType = scanType,
-                    actionType = "SCAN",
-                    questionText = if (checkpoint?.action == CheckpointAction.QUESTION) checkpoint.questionText else null,
-                    inputTitle = if (checkpoint?.action == CheckpointAction.INPUT) checkpoint.inputTitle else null
-                )
-            }
-        }
+        activeShiftId ?: return null
+        if (roundId == -1) return null
         
-        // Сохраняем лог в SharedPreferences для Excel-отчета
-        val logText = "Чекпоинт: $name"
-        prefsManager.saveScanResult("Маршрут", logText)
-    }
-    
-    /**
-     * Возвращает ключ активного обхода, если он существует.
-     */
-    fun getActiveRouteKey(): String? {
-        return if (activeRounds.containsKey(DEFAULT_ROUND_KEY)) {
-            DEFAULT_ROUND_KEY
-        } else {
-            null
-        }
-    }
-
-    /**
-     * Добавляет запись в shiftLogs и новую базу данных
-     */
-    fun addCheckpointToLog(
-        type: String,
-        titleOrLocation: String,
-        userResult: String,
-        timestamp: String,
-        checkpointId: String = "",
-        checkpointName: String = "",
-        roundId: Int = -1,
-        routeName: String = "",
-        isSequenceCorrect: Boolean = true,
-        scanType: String = "QR",
-        answer: String? = null,
-        inputValue: String? = null,
-        photoPath: String? = null
-    ) {
-        shiftLogs.add(
-            CheckpointEntry(
-                type = type,
-                titleOrLocation = titleOrLocation,
-                userResult = userResult,
-                timestamp = timestamp
-            )
+        // Загружаем чекпоинт для получения вопроса и заголовка
+        val checkpoint = prefsManager.getCheckpointById(checkpointId)
+        
+        // Создаем состояние чекпоинта
+        val state = CheckpointState(
+            checkpointId = checkpointId,
+            checkpointName = checkpointName,
+            checkpointAction = checkpointAction,
+            roundId = roundId,
+            scanType = scanType,
+            scanTimestamp = dateFormat.format(Date()),
+            sequenceIndex = sequenceIndex,
+            isSequenceCorrect = isSequenceCorrect,
+            employeeName = activeEmployeeName,
+            questionText = checkpoint?.questionText,
+            inputTitle = checkpoint?.inputTitle
         )
         
-        // Добавляем запись в новую базу данных (если доступна)
-        // Это будет реализовано при передаче менеджера в вызывающий код
-        // Пока что просто добавляем запись в shiftLogs
+        // Сохраняем в буфер
+        lastCheckpointState = state
+        prefsManager.setCheckpointState(state)
+        
+        // Сохраняем лог в SharedPreferences для Excel-отчета
+        val logText = "Чекпоинт: $checkpointName"
+        prefsManager.saveScanResult("Маршрут", logText)
+        
+        return state
     }
     
     /**
@@ -452,13 +483,13 @@ object QrHandler {
     }
 
     /**
-     * Уменьшает currentIndex на 1 в активном маршруте (для отката при возврате из PhotoCaptureScreen)
-     * Вызывается при нажатии "Назад" в PhotoCaptureScreen до сохранения фото
+     * Возвращает ключ активного обхода, если он существует.
      */
-    fun rollback() {
-        val activeKey = getActiveRouteKey()
-        if (activeKey != null) {
-            activeRounds[activeKey]?.rollback()
+    fun getActiveRouteKey(): String? {
+        return if (activeRounds.containsKey(DEFAULT_ROUND_KEY)) {
+            DEFAULT_ROUND_KEY
+        } else {
+            null
         }
     }
 
@@ -509,7 +540,17 @@ object QrHandler {
         
         // НЕСТРОГИЙ РЕЖИМ: просто сохраняем факт прохода, без проверки последовательности
         if (!prefsManager.isStrictSequenceEnabled()) {
-            saveCheckpointToLog(DEFAULT_ROUND_KEY, checkpointId, name, currentTime, prefsManager)
+            // Создаем CheckpointState вместо SCAN записи
+            createCheckpointState(
+                prefsManager = prefsManager,
+                checkpointId = checkpointId,
+                checkpointName = name,
+                checkpointAction = action,
+                roundId = prefsManager.getActiveRoundIndex(),
+                sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+                isSequenceCorrect = true,
+                scanType = "NFC"
+            )
             
             // НЕ обновляем индекс при сканировании - обновление будет при подтверждении прохождения
             // Индекс будет увеличен в OhrannikCabinetScreen при закрытии диалога
@@ -550,9 +591,9 @@ object QrHandler {
         // Если маршрута нет - создаем и сразу проверяем первую точку
         val (isValid, expectedId) = if (activeRoute == null) {
             startNewRound(DEFAULT_ROUND_KEY, routeCheckpoints)
-            activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId)
+            activeRounds[DEFAULT_ROUND_KEY]!!.validateAndAdvance(checkpointId, prefsManager)
         } else {
-            activeRoute.validateAndAdvance(checkpointId)
+            activeRoute.validateAndAdvance(checkpointId, prefsManager)
         }
         
         if (!isValid) {
@@ -636,11 +677,20 @@ object QrHandler {
             )
         }
 
-        // Если проверка пройдена, сохраняем факт
-        saveCheckpointToLog(DEFAULT_ROUND_KEY, checkpointId, name, currentTime, prefsManager)
+        // Если проверка пройдена, создаем CheckpointState
+        createCheckpointState(
+            prefsManager = prefsManager,
+            checkpointId = checkpointId,
+            checkpointName = name,
+            checkpointAction = action,
+            roundId = prefsManager.getActiveRoundIndex(),
+            sequenceIndex = prefsManager.getCurrentCheckpointIndex(),
+            isSequenceCorrect = true,
+            scanType = "NFC"
+        )
         
         // Сохраняем индекс следующего чекпоинта в SharedPreferences
-        activeRoute?.let { prefsManager.updateCurrentCheckpointIndex(it.currentIndex) }
+        // activeRoute?.let { prefsManager.updateCurrentCheckpointIndex(it.currentIndex) }
 
         // Если маршрут завершен, сбрасываем его
         if (expectedId == null) {

@@ -502,7 +502,7 @@ fun RoundsScreen(
                     AlertDialog(
                         onDismissRequest = { showConfirmCloseShiftDialog = false },
                         title = { Text("Завершить смену?") },
-                        text = { Text("Вы уверены, что хотите завершить текущую смену? После завершения смены отчет будет сформирован и вы вернетесь на экран выбора сотрудника.") },
+                        text = { Text("Вы уверены, что хотите завершить текущую смену? После завершения смены отчет о смене будет направлен руководству.") },
                         confirmButton = {
                             TextButton(
                                 onClick = {

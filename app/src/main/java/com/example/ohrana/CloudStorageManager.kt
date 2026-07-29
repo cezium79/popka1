@@ -1168,8 +1168,10 @@ class CloudStorageManager(private val context: Context) {
                         .logs-table th, .logs-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
                         .logs-table th { background: #667eea; color: white; font-size: 12px; }
                         .logs-table tr:hover { background: #f9f9f9; }
+                        .logs-table tr.aborted { background: #fff3cd; border-left: 3px solid #ff9800; }
                         .violation { color: #f44336; font-weight: bold; }
                         .success { color: #4caf50; }
+                        .aborted { color: #ff9800; font-weight: bold; }
                         .photo-item { margin: 10px 0; }
                         .photo-item img { max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #ddd; }
                         .photo-info { font-size: 12px; color: #666; margin-top: 5px; }
@@ -1351,9 +1353,10 @@ class CloudStorageManager(private val context: Context) {
                     )
 
                     sortedRoundLogs.forEach { log ->
-                        val statusClass = if (log.isSequenceCorrect) "success" else "violation"
-                        val statusIcon = if (log.isSequenceCorrect) "✓" else "⚠️"
-                        val statusText = when (log.actionType) {
+                        val isAborted = log.hasAborted
+                        val statusClass = if (isAborted) "aborted" else if (log.isSequenceCorrect) "success" else "violation"
+                        val statusIcon = if (isAborted) "⏸" else if (log.isSequenceCorrect) "✓" else "⚠️"
+                        val statusText = if (isAborted) "Прерван" else when (log.actionType) {
                             "CHECKPOINT" -> "Пройден"
                             "QUESTION" -> "Вопрос"
                             "INPUT" -> "Ввод"
@@ -1369,13 +1372,15 @@ class CloudStorageManager(private val context: Context) {
                             log.inputValue?.let { append("<span><label>Ввод:</label> ${it}</span>") }
                         }
 
+                        val rowClass = if (isAborted) " class=\"aborted\"" else ""
+
                         html.append(
                             """
-                            <tr>
+                            <tr$rowClass>
                                 <td>${log.checkpointName}</td>
                                 <td>${log.timestamp.substring(11)}</td>
                                 <td>${log.employeeName}</td>
-                                <td class="$statusClass">$statusIcon ${if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}</td>
+                                <td class="$statusClass">$statusIcon ${if (isAborted) "ПРЕРН" else if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}</td>
                                 <td>
                                     $statusText
                                     ${if (actionDetails.isNotBlank()) "<div class=\"action-details\">$actionDetails</div>" else ""}
@@ -2221,8 +2226,10 @@ class CloudStorageManager(private val context: Context) {
                         .logs-table th, .logs-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
                         .logs-table th { background: #667eea; color: white; font-size: 12px; }
                         .logs-table tr:hover { background: #f9f9f9; }
+                        .logs-table tr.aborted { background: #fff3cd; border-left: 3px solid #ff9800; }
                         .violation { color: #f44336; font-weight: bold; }
                         .success { color: #4caf50; }
+                        .aborted { color: #ff9800; font-weight: bold; }
                         .photo-item { margin: 10px 0; }
                         .photo-item img { max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #ddd; }
                         .photo-info { font-size: 12px; color: #666; margin-top: 5px; }
@@ -2404,9 +2411,10 @@ class CloudStorageManager(private val context: Context) {
                     )
 
                     sortedRoundLogs.forEach { log ->
-                        val statusClass = if (log.isSequenceCorrect) "success" else "violation"
-                        val statusIcon = if (log.isSequenceCorrect) "✓" else "⚠️"
-                        val statusText = when (log.actionType) {
+                        val isAborted = log.hasAborted
+                        val statusClass = if (isAborted) "aborted" else if (log.isSequenceCorrect) "success" else "violation"
+                        val statusIcon = if (isAborted) "⏸" else if (log.isSequenceCorrect) "✓" else "⚠️"
+                        val statusText = if (isAborted) "Прерван" else when (log.actionType) {
                             "CHECKPOINT" -> "Пройден"
                             "QUESTION" -> "Вопрос"
                             "INPUT" -> "Ввод"
@@ -2422,13 +2430,15 @@ class CloudStorageManager(private val context: Context) {
                             log.inputValue?.let { append("<span><label>Ввод:</label> ${it}</span>") }
                         }
 
+                        val rowClass = if (isAborted) " class=\"aborted\"" else ""
+
                         html.append(
                             """
-                            <tr>
+                            <tr$rowClass>
                                 <td>${log.checkpointName}</td>
                                 <td>${log.timestamp.substring(11)}</td>
                                 <td>${log.employeeName}</td>
-                                <td class="$statusClass">$statusIcon ${if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}</td>
+                                <td class="$statusClass">$statusIcon ${if (isAborted) "ПРЕРН" else if (log.isSequenceCorrect) "OK" else "НАРУШЕНИЕ"}</td>
                                 <td>
                                     $statusText
                                     ${if (actionDetails.isNotBlank()) "<div class=\"action-details\">$actionDetails</div>" else ""}

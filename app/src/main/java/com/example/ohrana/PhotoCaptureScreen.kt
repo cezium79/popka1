@@ -64,6 +64,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.ohrana.ui.components.OhranaOutlinedButton
+import com.example.ohrana.ui.components.CheckpointPassedDialog
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
@@ -388,9 +389,12 @@ fun PhotoCaptureScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     // Флаг для отслеживания завершения
     var isPhotoComplete by remember { mutableStateOf(false) }
+    // Храним путь к сохранённому фото для передачи в диалог
+    var savedPhotoPath by remember { mutableStateOf<String?>(null) }
 
     // Для показа диалога успешного прохождения чекпоинта
     var showCheckpointPassedDialog by remember { mutableStateOf(false) }
+    var checkpointNameForDialog by remember { mutableStateOf("") }
 
     // Загрузка фоновой картинки fon2
     val bitmap = android.graphics.BitmapFactory.decodeResource(
@@ -407,17 +411,8 @@ fun PhotoCaptureScreen(
     // Показ диалога при завершении съемки
     LaunchedEffect(isPhotoComplete) {
         if (isPhotoComplete) {
+            checkpointNameForDialog = "Фото прибора: $checkpointId"
             showCheckpointPassedDialog = true
-        }
-    }
-
-    LaunchedEffect(showCheckpointPassedDialog) {
-        if (showCheckpointPassedDialog) {
-            val activeRoundIndex = prefsManager.getActiveRoundIndex()
-            if (activeRoundIndex != -1) {
-                val nextIndex = prefsManager.getRoundCheckpointIndex(activeRoundIndex) + 1
-                prefsManager.updateCurrentCheckpointIndex(nextIndex)
-            }
         }
     }
 
@@ -544,8 +539,7 @@ fun PhotoCaptureScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        // Уменьшаем currentIndex в QrHandler при возврате, чтобы можно было повторно сканировать тот же QR-код
-                        QrHandler.rollback()
+                        QrHandler.abortLastCheckpointState(prefsManager)
                         onBack()
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = Color.White)
@@ -755,6 +749,15 @@ fun PhotoCaptureScreen(
                                     val savedFileName =
                                         savePhotoToGallery(imageFile, checkpointId, context)
                                     if (savedFileName != null) {
+                                        savedPhotoPath = savedFileName
+                                        
+                                        // Заполняем буфер CheckpointState photoPath
+                                        QrHandler.getLastCheckpointState()?.let { state ->
+                                            if (state.checkpointId == checkpointId) {
+                                                state.photoPath = savedFileName
+                                            }
+                                        }
+                                        
                                         onPhotoTaken(savedFileName)
                                         isPhotoComplete = true
                                     }
@@ -778,73 +781,20 @@ fun PhotoCaptureScreen(
                 }
             }
 
-            // Таймер для автоматического закрытия диалога
-            LaunchedEffect(showCheckpointPassedDialog) {
-                if (showCheckpointPassedDialog) {
-                    kotlinx.coroutines.delay(3000) // Ждем 3 секунды
-                    showCheckpointPassedDialog = false
-                    onBack()
-                }
-            }
-
-            AlertDialog(
-                onDismissRequest = { }, // Запрещаем закрытие кликом вне
-                title = { Text("Точка зафиксирована") },
-                text = {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // Иконка успешного прохождения
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Image(
-                                bitmap = android.graphics.BitmapFactory.decodeResource(
-                                    context.resources,
-                                    com.example.ohrana.R.drawable.vokak
-                                ).asImageBitmap(),
-                                contentDescription = "Успех",
-                                modifier = Modifier.size(100.dp)
-                            )
-                        }
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Фото прибора: $checkpointId",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "Файл сохранен в галерею",
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "Время: ${
-                                    java.text.SimpleDateFormat(
-                                        "HH:mm:ss dd.MM.yyyy",
-                                        java.util.Locale.getDefault()
-                                    ).format(java.util.Date())
-                                }",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                confirmButton = {}  // Пустой confirmButton для компиляции
+            CheckpointPassedDialog(
+                checkpointName = checkpointNameForDialog,
+                checkpointId = checkpointId,
+                manager = prefsManager,
+                onDismiss = { showCheckpointPassedDialog = false; onBack() },
+                onCheckLastCheckpoint = { /* Индекс увеличивается внутри диалога */ },
+                photoPath = savedPhotoPath,
+                checkpointAction = CheckpointAction.PHOTO
             )
         }
 
         // Обработка системной кнопки "Назад"
         BackHandler(onBack = {
-            // Уменьшаем currentIndex в QrHandler при возврате, чтобы можно было повторно сканировать тот же QR-код
-            QrHandler.rollback()
+            QrHandler.abortLastCheckpointState(prefsManager)
             onBack()
         })
     }

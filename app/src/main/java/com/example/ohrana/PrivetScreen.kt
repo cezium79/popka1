@@ -21,8 +21,6 @@ fun PrivetScreen(
         Text(text = "Добро пожаловать в наше новое приложение!", fontSize = 24.sp)
         Text(text = "Поднесите личную карту", fontSize = 18.sp)
         Spacer(modifier = Modifier.height(32.dp))
-        Button(onClick = onAdminClick) {
-            Text("Панель администратора")
-        }
+
     }
 }

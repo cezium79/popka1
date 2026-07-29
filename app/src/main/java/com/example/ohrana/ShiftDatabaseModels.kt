@@ -45,7 +45,8 @@ data class ShiftLogEntry(
     val photoPath: String? = null,       // Путь к фото (если есть)
     val latitude: Double? = null,        // Широта (опционально)
     val longitude: Double? = null,       // Долгота (опционально)
-    val sequenceErrorType: SequenceErrorType = SequenceErrorType.NONE  // Тип ошибки последовательности
+    val sequenceErrorType: SequenceErrorType = SequenceErrorType.NONE,  // Тип ошибки последовательности
+    val hasAborted: Boolean = false      // Чекпоинт был прерван (нажата кнопка "Назад")
 )
 
 /**

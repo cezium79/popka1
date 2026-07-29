@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.util.concurrent.Executors
 import androidx.activity.compose.BackHandler
 import com.example.ohrana.ui.components.OhranaOutlinedButton
+import com.example.ohrana.ui.components.CheckpointPassedDialog
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val TAG = "OhrannikCabinetScreen"
@@ -362,21 +363,17 @@ fun OhrannikCabinetScreen(
                             SoundPlayer.playSuccess(context)
                         }
 
-                        // Сохраняем факт сканирования (для аудита)
-                        val activeRoundIndex = manager.getActiveRoundIndex()
-                        if (activeRoundIndex != -1) {
-                            manager.shiftDatabase.addLogEntry(
-                                checkpointName = checkpoint.name,
-                                checkpointId = checkpoint.id,
-                                employeeName = employeeName,
-                                roundId = activeRoundIndex,
-                                routeName = "Маршрут обхода",
-                                sequenceIndex = manager.getCurrentCheckpointIndex(),
-                                isSequenceCorrect = true,
-                                scanType = "NFC",
-                                actionType = "SCAN"
-                            )
-                        }
+                        // Создаем CheckpointState
+                        QrHandler.createCheckpointState(
+                            prefsManager = manager,
+                            checkpointId = checkpoint.id,
+                            checkpointName = checkpoint.name,
+                            checkpointAction = checkpoint.action,
+                            roundId = manager.getActiveRoundIndex(),
+                            sequenceIndex = manager.getCurrentCheckpointIndex(),
+                            isSequenceCorrect = true,
+                            scanType = "NFC"
+                        )
 
                         // Сохраняем в логи SharedPreferences
                         val logText = "NFC-чекпоинт: ${checkpoint.name} -> ID: ${checkpoint.id}"
@@ -393,22 +390,17 @@ fun OhrannikCabinetScreen(
                     }
 
                     CheckpointAction.QUESTION -> {
-                        // Сохраняем факт сканирования (для аудита)
-                        val activeRoundIndex = manager.getActiveRoundIndex()
-                        if (activeRoundIndex != -1) {
-                            manager.shiftDatabase.addLogEntry(
-                                checkpointName = checkpoint.name,
-                                checkpointId = checkpoint.id,
-                                employeeName = employeeName,
-                                roundId = activeRoundIndex,
-                                routeName = "Маршрут обхода",
-                                sequenceIndex = manager.getCurrentCheckpointIndex(),
-                                isSequenceCorrect = true,
-                                scanType = "NFC",
-                                actionType = "SCAN"
-                                // questionText не сохраняем - он будет взят из чекпоинта по checkpointId
-                            )
-                        }
+                        // Создаем CheckpointState
+                        QrHandler.createCheckpointState(
+                            prefsManager = manager,
+                            checkpointId = checkpoint.id,
+                            checkpointName = checkpoint.name,
+                            checkpointAction = checkpoint.action,
+                            roundId = manager.getActiveRoundIndex(),
+                            sequenceIndex = manager.getCurrentCheckpointIndex(),
+                            isSequenceCorrect = true,
+                            scanType = "NFC"
+                        )
 
                         // Диалог с вопросом сохранит результат при выборе ответа
                         showQuestionDialog = QrResult.QuestionFormat(
@@ -420,22 +412,17 @@ fun OhrannikCabinetScreen(
                     }
 
                     CheckpointAction.INPUT -> {
-                        // Сохраняем факт сканирования (для аудита)
-                        val activeRoundIndex = manager.getActiveRoundIndex()
-                        if (activeRoundIndex != -1) {
-                            manager.shiftDatabase.addLogEntry(
-                                checkpointName = checkpoint.name,
-                                checkpointId = checkpoint.id,
-                                employeeName = employeeName,
-                                roundId = activeRoundIndex,
-                                routeName = "Маршрут обхода",
-                                sequenceIndex = manager.getCurrentCheckpointIndex(),
-                                isSequenceCorrect = true,
-                                scanType = "NFC",
-                                actionType = "SCAN"
-                                // inputTitle не сохраняем - он будет взят из чекпоинта по checkpointId
-                            )
-                        }
+                        // Создаем CheckpointState
+                        QrHandler.createCheckpointState(
+                            prefsManager = manager,
+                            checkpointId = checkpoint.id,
+                            checkpointName = checkpoint.name,
+                            checkpointAction = checkpoint.action,
+                            roundId = manager.getActiveRoundIndex(),
+                            sequenceIndex = manager.getCurrentCheckpointIndex(),
+                            isSequenceCorrect = true,
+                            scanType = "NFC"
+                        )
 
                         // Диалог с вводом сохранит результат при нажатии "Сохранить"
                         showInputDialog = QrResult.InputFormat(
@@ -446,21 +433,17 @@ fun OhrannikCabinetScreen(
                     }
 
                     CheckpointAction.PHOTO -> {
-                        // Сохраняем факт сканирования (для аудита)
-                        val activeRoundIndex = manager.getActiveRoundIndex()
-                        if (activeRoundIndex != -1) {
-                            manager.shiftDatabase.addLogEntry(
-                                checkpointName = checkpoint.name,
-                                checkpointId = checkpoint.id,
-                                employeeName = employeeName,
-                                roundId = activeRoundIndex,
-                                routeName = "Маршрут обхода",
-                                sequenceIndex = manager.getCurrentCheckpointIndex(),
-                                isSequenceCorrect = true,
-                                scanType = "NFC",
-                                actionType = "SCAN"
-                            )
-                        }
+                        // Создаем CheckpointState
+                        QrHandler.createCheckpointState(
+                            prefsManager = manager,
+                            checkpointId = checkpoint.id,
+                            checkpointName = checkpoint.name,
+                            checkpointAction = checkpoint.action,
+                            roundId = manager.getActiveRoundIndex(),
+                            sequenceIndex = manager.getCurrentCheckpointIndex(),
+                            isSequenceCorrect = true,
+                            scanType = "NFC"
+                        )
 
                         // PhotoFormat обрабатывается через экран PhotoCaptureScreen
                         photoCheckpointId = checkpoint.id
@@ -877,134 +860,60 @@ fun OhrannikCabinetScreen(
             // 1. Диалог для обычной метки локации (простой чекпоинт)
             // --- РЕНДЕРИНГ ДИАЛОГА ОБ УСПЕШНОМ ПРОХОЖДЕНИИ ---
             showCheckpointPassedDialog?.let { result ->
-                // Запускаем таймер для автоматического закрытия
-                var autoCloseTrigger by remember { mutableStateOf(false) }
-
-                LaunchedEffect(showCheckpointPassedDialog) {
-                    autoCloseTrigger = false
-                    kotlinx.coroutines.delay(100.milliseconds) // Небольшая задержка перед началом отсчета
-                    kotlinx.coroutines.delay(3000.milliseconds) // Ждем 3 секунды
-                    
-                    // Увеличиваем индекс ТОЛЬКО для QR/NFC (не для фото, так как фото увеличивает индекс в PhotoCaptureScreen)
-                    if (!isPhotoCheckpointPassed) {
+                CheckpointPassedDialog(
+                    checkpointName = "Локация: ${result.name}",
+                    checkpointId = result.checkpointId,
+                    timestamp = result.timestamp,
+                    manager = manager,
+                    onDismiss = { showCheckpointPassedDialog = null },
+                    onCheckLastCheckpoint = {
                         val activeRoundIndex = manager.getActiveRoundIndex()
+                        val expectedCheckpointName = manager.getNextCheckpointName()
+                        checkpointScanTrigger = System.currentTimeMillis()
+
+                        var isLastCheckpoint = false
                         if (activeRoundIndex != -1) {
-                            // Получаем последнюю запись SCAN
-                            val lastScanEntry =
-                                manager.shiftDatabase.loadLogsByRound(activeRoundIndex).asReversed()
-                                    .find { it.actionType == "SCAN" }
-                            manager.shiftDatabase.updateLastScanEntry(
-                                roundId = activeRoundIndex,
-                                actionType = "CHECKPOINT"
-                                // questionText и inputTitle не передаются - они будут взяты из чекпоинта
-                            )
-                            val newCheckpointIndex =
-                                manager.getRoundCheckpointIndex(activeRoundIndex) + 1
-                            manager.updateCurrentCheckpointIndex(newCheckpointIndex)
+                            val routeId = manager.getRoundRouteId(activeRoundIndex)
+                            val route = routeId?.let { manager.getRouteById(it) }
+                            val checkpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex)
+                            if (route != null && checkpointIndex >= route.checkpointIds.size) {
+                                isLastCheckpoint = true
+                            }
                         }
-                    }
-                    // Сбрасываем флаг фото-чекпоинта после проверки
-                    isPhotoCheckpointPassed = false
-                    // Обновляем имя следующего чекпоинта
-                    checkpointScanTrigger = System.currentTimeMillis()
 
-                    // Проверяем, является ли это последним чекпоинтом
-                    val expectedCheckpointName = manager.getNextCheckpointName()
+                        Log.d(
+                            TAG,
+                            "CheckpointPassed: expectedCheckpointName=${expectedCheckpointName.orEmpty()}, isLastCheckpoint=$isLastCheckpoint, autoEndEnabled=${manager.isAutoEndRoundEnabled()}"
+                        )
 
-                    // Получаем количество чекпоинтов в маршруте
-                    var isLastCheckpoint = false
-                    if (activeRoundIndex != -1) {
-                        val routeId = manager.getRoundRouteId(activeRoundIndex)
-                        val route = routeId?.let { manager.getRouteById(it) }
-                        val checkpointIndex = manager.getRoundCheckpointIndex(activeRoundIndex)
-                        if (route != null && checkpointIndex >= route.checkpointIds.size) {
-                            isLastCheckpoint = true
-                        }
-                    }
+                        val isLastCheckpointResult =
+                            (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank() || isLastCheckpoint)
 
-                    Log.d(
-                        TAG,
-                        "CheckpointPassed: expectedCheckpointName=${expectedCheckpointName.orEmpty()}, isLastCheckpoint=$isLastCheckpoint, autoEndEnabled=${manager.isAutoEndRoundEnabled()}"
-                    )
-
-                    // Проверяем, является ли это последним чекпоинтом
-                    val isLastCheckpointResult =
-                        (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank() || isLastCheckpoint)
-
-                    if (isLastCheckpointResult) {
-                        Log.d(TAG, "CheckpointPassed: Last checkpoint reached")
-                        // Если включен авто-финал - завершаем обход
-                        if (manager.isAutoEndRoundEnabled()) {
-                            Log.d(TAG, "CheckpointPassed: Auto end round is enabled")
-                            completeRoundManually()
+                        if (isLastCheckpointResult) {
+                            Log.d(TAG, "CheckpointPassed: Last checkpoint reached")
+                            if (manager.isAutoEndRoundEnabled()) {
+                                Log.d(TAG, "CheckpointPassed: Auto end round is enabled")
+                                completeRoundManually()
+                            } else {
+                                Log.d(
+                                    TAG,
+                                    "CheckpointPassed: Auto end round is disabled, waiting for manual completion via TopAppBar button"
+                                )
+                            }
                         } else {
-                            Log.d(
-                                TAG,
-                                "CheckpointPassed: Auto end round is disabled, waiting for manual completion via TopAppBar button"
-                            )
-                            // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
-                            // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
+                            Log.d(TAG, "CheckpointPassed: More checkpoints available, continuing...")
                         }
-                    } else {
-                        Log.d(TAG, "CheckpointPassed: More checkpoints available, continuing...")
                     }
-
-                    showCheckpointPassedDialog = null
-                }
-
-                AlertDialog(
-                    onDismissRequest = { }, // Запрещаем закрытие кликом вне
-                    title = { Text("Точка зафиксирована") },
-                    text = {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            // Иконка успешного прохождения
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Image(
-                                    bitmap = android.graphics.BitmapFactory.decodeResource(
-                                        context.resources,
-                                        com.example.ohrana.R.drawable.vokak
-                                    ).asImageBitmap(),
-                                    contentDescription = "Успех",
-                                    modifier = Modifier.size(100.dp)
-                                )
-                            }
-
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "Локация: ${result.name}",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "ID: ${result.checkpointId}",
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "Время: ${result.timestamp}",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    confirmButton = {}  // Пустой confirmButton для компиляции
                 )
             }
 
             // 2. Диалог с ВОПРОСОМ и кнопками вариантов ответов
             showQuestionDialog?.let { result ->
                 AlertDialog(
-                    onDismissRequest = { showQuestionDialog = null },
+                    onDismissRequest = { 
+                        QrHandler.abortLastCheckpointState(manager)
+                        showQuestionDialog = null
+                    },
                     title = { Text("Проверка чек-листа") },
                     text = {
                         Column {
@@ -1023,75 +932,24 @@ fun OhrannikCabinetScreen(
                                             qrContent = logText
                                         )
 
-                                        // Обновляем последнюю запись SCAN на тип QUESTION
-                                        val activeRoundIndex = manager.getActiveRoundIndex()
-                                        if (activeRoundIndex != -1) {
-                                            // Получаем последнюю запись SCAN для получения questionText
-                                            val lastScanEntry =
-                                                manager.shiftDatabase.loadLogsByRound(
-                                                    activeRoundIndex
-                                                ).asReversed().find { it.actionType == "SCAN" }
-                                            manager.shiftDatabase.updateLastScanEntry(
-                                                roundId = activeRoundIndex,
-                                                actionType = "QUESTION",
-                                                answer = answer
-                                                // questionText не передаётся - он будет взят из чекпоинта
-                                            )
+                                        // Заполняем буфер CheckpointState answer
+                                        QrHandler.getLastCheckpointState()?.let { state ->
+                                            if (state.checkpointId == result.checkpointId) {
+                                                state.answer = answer
+                                            }
                                         }
 
                                         showQuestionDialog = null
-                                        // Увеличиваем индекс при показе диалога "Точка зафиксирована"
-                                        // manager.updateCurrentCheckpointIndex(...)
-                                        // Обновляем имя следующего чекпоинта
-                                        checkpointScanTrigger = System.currentTimeMillis()
-
-                                        // Проверяем, является ли это последним чекпоинтом
-                                        val expectedCheckpointName = manager.getNextCheckpointName()
-
-                                        // Получаем количество чекпоинтов в маршруте
-                                        var isLastCheckpoint = false
-                                        if (activeRoundIndex != -1) {
-                                            val routeId = manager.getRoundRouteId(activeRoundIndex)
-                                            val route = routeId?.let { manager.getRouteById(it) }
-                                            val checkpointIndex =
-                                                manager.getRoundCheckpointIndex(activeRoundIndex)
-                                            if (route != null && checkpointIndex >= route.checkpointIds.size) {
-                                                isLastCheckpoint = true
-                                            }
-                                        }
-
-                                        Log.d(
-                                            TAG,
-                                            "QuestionFormat: expectedCheckpointName=${expectedCheckpointName.orEmpty()}, isLastCheckpoint=$isLastCheckpoint, autoEndEnabled=${manager.isAutoEndRoundEnabled()}"
+                                        
+                                        // Показываем диалог "Точка зафиксирована"
+                                        showCheckpointPassedDialog = QrResult.CheckpointPassed(
+                                            checkpointId = result.checkpointId,
+                                            name = result.checkpointName,
+                                            timestamp = java.text.SimpleDateFormat(
+                                                "HH:mm:ss dd.MM.yyyy",
+                                                java.util.Locale.getDefault()
+                                            ).format(java.util.Date())
                                         )
-
-                                        // Проверяем, является ли это последним чекпоинтом
-                                        val isLastCheckpointResult =
-                                            (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank() || isLastCheckpoint)
-
-                                        if (isLastCheckpointResult) {
-                                            Log.d(TAG, "QuestionFormat: Last checkpoint reached")
-                                            // Если включен авто-финал - завершаем обход
-                                            if (manager.isAutoEndRoundEnabled()) {
-                                                Log.d(
-                                                    TAG,
-                                                    "QuestionFormat: Auto end round is enabled"
-                                                )
-                                                completeRoundManually()
-                                            } else {
-                                                Log.d(
-                                                    TAG,
-                                                    "QuestionFormat: Auto end round is disabled, waiting for manual completion via TopAppBar button"
-                                                )
-                                                // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
-                                                // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
-                                            }
-                                        } else {
-                                            Log.d(
-                                                TAG,
-                                                "QuestionFormat: More checkpoints available, continuing..."
-                                            )
-                                        }
                                     },
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                     colors = ButtonDefaults.buttonColors(
@@ -1111,7 +969,10 @@ fun OhrannikCabinetScreen(
                 var dialogInputText by remember { mutableStateOf("") }
 
                 AlertDialog(
-                    onDismissRequest = { showInputDialog = null },
+                    onDismissRequest = { 
+                        QrHandler.abortLastCheckpointState(manager)
+                        showInputDialog = null
+                    },
                     title = { Text("Ввод данных") },
                     text = {
                         Column {
@@ -1138,79 +999,33 @@ fun OhrannikCabinetScreen(
                                         qrContent = logText
                                     )
 
-                                    // Обновляем последнюю запись SCAN на тип INPUT
-                                    val activeRoundIndex = manager.getActiveRoundIndex()
-                                    if (activeRoundIndex != -1) {
-                                        android.util.Log.d(
-                                            TAG,
-                                            "InputFormat: Updating SCAN entry with inputValue='$dialogInputText', isNull=${dialogInputText == null}, length=${dialogInputText?.length}"
-                                        )
-                                        val success = manager.shiftDatabase.updateLastScanEntry(
-                                            roundId = activeRoundIndex,
-                                            actionType = "INPUT",
-                                            inputValue = dialogInputText
-                                            // inputTitle не передаётся - он будет взят из чекпоинта
-                                        )
-                                        android.util.Log.d(
-                                            TAG,
-                                            "InputFormat: updateLastScanEntry success=$success"
-                                        )
-
-                                        // Дополнительно: проверяем, что запись действительно обновлена
-                                        val updatedLogs =
-                                            manager.shiftDatabase.loadLogsByRound(activeRoundIndex)
-                                        val inputEntry = updatedLogs.asReversed()
-                                            .find { it.actionType == "INPUT" }
-                                        android.util.Log.d(
-                                            TAG,
-                                            "InputFormat: Verified INPUT entry - actionType=${inputEntry?.actionType}, inputValue='${inputEntry?.inputValue}', isNull=${inputEntry?.inputValue == null}"
-                                        )
+                                    // Заполняем буфер CheckpointState inputValue
+                                    QrHandler.getLastCheckpointState()?.let { state ->
+                                        if (state.checkpointId == result.checkpointId) {
+                                            state.inputValue = dialogInputText
+                                        }
                                     }
 
                                     showInputDialog = null
-                                    // Увеличиваем индекс при показе диалога "Точка зафиксирована"
-                                    // manager.updateCurrentCheckpointIndex(...)
-                                    // Обновляем имя следующего чекпоинта
-                                    checkpointScanTrigger = System.currentTimeMillis()
-
-                                    // Проверяем, является ли это последним чекпоинтом
-                                    val expectedCheckpointName = manager.getNextCheckpointName()
-                                    Log.d(
-                                        TAG,
-                                        "InputFormat: getNextCheckpointName: ${expectedCheckpointName.orEmpty()}"
+                                    
+                                    // Показываем диалог "Точка зафиксирована"
+                                    showCheckpointPassedDialog = QrResult.CheckpointPassed(
+                                        checkpointId = result.checkpointId,
+                                        name = result.checkpointName,
+                                        timestamp = java.text.SimpleDateFormat(
+                                            "HH:mm:ss dd.MM.yyyy",
+                                            java.util.Locale.getDefault()
+                                        ).format(java.util.Date())
                                     )
-
-                                    // Проверяем, является ли это последним чекпоинтом
-                                    val isLastCheckpointResult =
-                                        (expectedCheckpointName == "Обход завершен" || expectedCheckpointName.isNullOrBlank())
-
-                                    if (isLastCheckpointResult) {
-                                        Log.d(TAG, "InputFormat: Last checkpoint reached")
-                                        // Если включен авто-финал - завершаем обход
-                                        if (manager.isAutoEndRoundEnabled()) {
-                                            Log.d(TAG, "InputFormat: Auto end round is enabled")
-                                            completeRoundManually()
-                                        } else {
-                                            Log.d(
-                                                TAG,
-                                                "InputFormat: Auto end round is disabled, waiting for manual completion via TopAppBar button"
-                                            )
-                                            // При выключенном свитче просто ждем нажатия кнопки "Завершить обход" в TopAppBar
-                                            // nextCheckpointName обновится через LaunchedEffect при смене checkpointScanTrigger
-                                        }
-                                    } else {
-                                        Log.d(
-                                            TAG,
-                                            "InputFormat: More checkpoints available, continuing..."
-                                        )
-                                    }
                                 }
                             }
                         ) { Text("Сохранить") }
                     },
                     dismissButton = {
                         TextButton(onClick = {
+                            QrHandler.abortLastCheckpointState(manager)
                             showInputDialog = null
+                            showCheckpointPassedDialog = null
                         }) { Text("Отмена") }
                     }
                 )

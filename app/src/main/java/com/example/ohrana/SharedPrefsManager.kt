@@ -54,6 +54,44 @@ class SharedPrefsManager(private val context: Context) {
     
     // Инициализируем базу данных обходов
     val shiftDatabase = ShiftDatabaseManager(context)
+    
+    // ==================================================
+    // 💾 БУФЕР ВРЕМЕННЫХ СОСТОЯНИЙ ЧЕКПОИНТОВ (в памяти)
+    // ==================================================
+    
+    /**
+     * Буфер временных состояний чекпоинтов.
+     * Сканирование → CheckpointState (в памяти) → Диалог заполняет → CheckpointPassedDialog сохраняет в БД.
+     */
+    private val checkpointStateBuffer = mutableMapOf<String, CheckpointState>()
+    
+    /**
+     * Получить состояние чекпоинта из буфера
+     */
+    fun getCheckpointState(checkpointId: String): CheckpointState? {
+        return checkpointStateBuffer[checkpointId]
+    }
+    
+    /**
+     * Добавить состояние чекпоинта в буфер
+     */
+    fun setCheckpointState(state: CheckpointState) {
+        checkpointStateBuffer[state.checkpointId] = state
+    }
+    
+    /**
+     * Удалить состояние чекпоинта из буфера после сохранения
+     */
+    fun removeCheckpointState(checkpointId: String) {
+        checkpointStateBuffer.remove(checkpointId)
+    }
+    
+    /**
+     * Очистить весь буфер (при завершении смены)
+     */
+    fun clearCheckpointStateBuffer() {
+        checkpointStateBuffer.clear()
+    }
 
     // ОБНОВЛЕНО: Новый, понятный формат даты для логов и смен
     private val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.US)
@@ -269,17 +307,6 @@ class SharedPrefsManager(private val context: Context) {
         prefs.edit().putInt("active_route_current_index", index).apply()
     }
 
-    // Откатить индекс чекпоинта на 1 назад (для отмены фото)
-    fun rollbackCheckpointIndex() {
-        val activeRoundIndex = getActiveRoundIndex()
-        if (activeRoundIndex != -1) {
-            val currentIndex = getRoundCheckpointIndex(activeRoundIndex)
-            if (currentIndex > 0) {
-                prefs.edit().putInt("round_${activeRoundIndex}_checkpoint_index", currentIndex - 1).apply()
-            }
-        }
-    }
-
     fun resetRouteProgress() {
         prefs.edit().putInt("active_route_current_index", 0).apply()
     }
@@ -302,6 +329,8 @@ class SharedPrefsManager(private val context: Context) {
         resetRouteProgress()
         // Сбрасываем статус всех обходов при старте новой смены
         resetAllRounds()
+        // Очищаем буфер состояний чекпоинтов
+        clearCheckpointStateBuffer()
         
         // Создаем новую запись смены в базе данных (передаем первого охранника как основного)
         val mainGuard = guardList.firstOrNull()
@@ -426,6 +455,8 @@ class SharedPrefsManager(private val context: Context) {
         QrHandler.clearShiftLogs()
         // Сбрасываем прогресс маршрута при закрытии смены
         resetRouteProgress()
+        // Очищаем буфер состояний чекпоинтов при закрытии смены
+        clearCheckpointStateBuffer()
         
         // Закрываем смену в базе данных
         activeShiftId?.let { shiftDatabase.closeShift(it) }
