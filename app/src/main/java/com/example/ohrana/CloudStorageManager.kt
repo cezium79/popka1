@@ -1639,7 +1639,16 @@ class CloudStorageManager(private val context: Context) {
         var pdfPath: String? = null
         
         if (isPdfFormat) {
-            // PDF режим - генерируем HTML, конвертируем в PDF
+            // PDF режим - генерируем PDF напрямую из базы данных
+            Log.i(TAG, "exportShiftReportWithCloud: Using PdfReportGenerator for direct DB->PDF")
+            
+            // Генерируем PDF напрямую
+            pdfPath = PdfReportGenerator.generateShiftReportPdf(context!!, shiftId, shiftDatabase)
+            if (pdfPath == null) {
+                Log.e(TAG, "exportShiftReportWithCloud: PdfReportGenerator failed")
+            }
+            
+            // Генерируем HTML для резервной копии
             val (generatedHtmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
             htmlPath = generatedHtmlPath
             
@@ -1660,13 +1669,6 @@ class CloudStorageManager(private val context: Context) {
                     } catch (e: Exception) {
                         Log.e(TAG, "exportShiftReportWithCloud: Failed to save HTML copy: ${e.message}", e)
                     }
-                }
-                
-                // Конвертируем HTML в PDF
-                val converter = HtmlToPdfConverter(context!!)
-                pdfPath = converter.convertHtmlToPdf(htmlPath)
-                if (pdfPath == null) {
-                    Log.e(TAG, "exportShiftReportWithCloud: Failed to convert HTML to PDF")
                 }
             }
         } else {
@@ -1837,15 +1839,10 @@ class CloudStorageManager(private val context: Context) {
         // Если не нужно загружать в Диск, просто генерируем и возвращаем путь
         if (!uploadToDisk) {
             if (isPdfFormat) {
-                // PDF режим - генерируем HTML, потом конвертируем в PDF
-                val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
-                if (htmlPath != null) {
-                    val converter = HtmlToPdfConverter(context!!)
-                    val pdfPath = converter.convertHtmlToPdf(htmlPath)
-                    Log.i(TAG, "exportHtmlToDisk: PDF path=$pdfPath")
-                    return HtmlExportResult(pdfPath, Result.success(null))
-                }
-                return HtmlExportResult(null, Result.success(null))
+                // PDF режим - генерируем PDF напрямую из базы
+                val pdfPath = PdfReportGenerator.generateShiftReportPdf(context!!, shiftId, shiftDatabase)
+                Log.i(TAG, "exportHtmlToDisk: PDF path=$pdfPath")
+                return HtmlExportResult(pdfPath, Result.success(null))
             } else {
                 // HTML режим - генерируем HTML
                 val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
@@ -1854,41 +1851,38 @@ class CloudStorageManager(private val context: Context) {
             }
         }
         
-        // Если PDF режим - генерируем HTML, конвертируем в PDF и загружаем PDF
+        // Если PDF режим - генерируем PDF и загружаем
         if (isPdfFormat) {
-            Log.i(TAG, "exportHtmlToDisk: PDF mode - converting to PDF")
+            Log.i(TAG, "exportHtmlToDisk: PDF mode - generating direct PDF from DB")
             
-            // Генерируем HTML
-            val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
-            if (htmlPath == null) {
-                Log.e(TAG, "exportHtmlToDisk: Failed to generate HTML report")
-                return HtmlExportResult(null, Result.failure(Exception("Ошибка генерации HTML")))
-            }
-            
-            // Сохраняем HTML копию в папку HTML_Reports
-            if (sharedPrefsManager != null) {
-                try {
-                    val htmlFile = File(htmlPath)
-                    val htmlReportsFolder = sharedPrefsManager.getHtmlReportsFolder()
-                    val copyFileName = "${htmlFile.nameWithoutExtension}_${System.currentTimeMillis()}.html"
-                    val copyFile = File(htmlReportsFolder, copyFileName)
-                    
-                    copyFile.parentFile?.mkdirs()
-                    copyFile.writeText(htmlFile.readText(charset = java.nio.charset.StandardCharsets.UTF_8))
-                    sharedPrefsManager.saveHtmlReportPath(copyFile.absolutePath)
-                    
-                    Log.i(TAG, "exportHtmlToDisk: HTML copy saved to: ${copyFile.absolutePath}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "exportHtmlToDisk: Failed to save HTML copy: ${e.message}", e)
-                }
-            }
-            
-            // Конвертируем HTML в PDF
-            val converter = HtmlToPdfConverter(context!!)
-            val pdfPath = converter.convertHtmlToPdf(htmlPath)
+            // Генерируем PDF напрямую
+            val pdfPath = PdfReportGenerator.generateShiftReportPdf(context!!, shiftId, shiftDatabase)
             if (pdfPath == null) {
-                Log.e(TAG, "exportHtmlToDisk: Failed to convert HTML to PDF")
-                return HtmlExportResult(null, Result.failure(Exception("Ошибка конвертации в PDF")))
+                Log.e(TAG, "exportHtmlToDisk: PdfReportGenerator failed")
+                return HtmlExportResult(null, Result.failure(Exception("Ошибка генерации PDF")))
+            }
+            
+            // Генерируем HTML для резервной копии
+            val (htmlPath, _) = generateHtmlReport(shiftId, shiftDatabase, context, sharedPrefsManager)
+            
+            if (htmlPath != null) {
+                // Сохраняем HTML копию в папку HTML_Reports
+                if (sharedPrefsManager != null) {
+                    try {
+                        val htmlFile = File(htmlPath)
+                        val htmlReportsFolder = sharedPrefsManager.getHtmlReportsFolder()
+                        val copyFileName = "${htmlFile.nameWithoutExtension}_${System.currentTimeMillis()}.html"
+                        val copyFile = File(htmlReportsFolder, copyFileName)
+                        
+                        copyFile.parentFile?.mkdirs()
+                        copyFile.writeText(htmlFile.readText(charset = java.nio.charset.StandardCharsets.UTF_8))
+                        sharedPrefsManager.saveHtmlReportPath(copyFile.absolutePath)
+                        
+                        Log.i(TAG, "exportHtmlToDisk: HTML copy saved to: ${copyFile.absolutePath}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "exportHtmlToDisk: Failed to save HTML copy: ${e.message}", e)
+                    }
+                }
             }
             
             Log.i(TAG, "exportHtmlToDisk: PDF generated: $pdfPath")

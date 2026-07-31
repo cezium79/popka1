@@ -233,7 +233,7 @@ fun RoundsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(paddingValues)
-                    .padding(16.dp)
+                    .padding(2.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -333,6 +333,7 @@ fun RoundsScreen(
                     Text(
                         text = "Обходы за смену (${routeAlarms.size})",
                         fontSize = 18.sp,
+                        color = Color(0xFFFFFFFF),
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )

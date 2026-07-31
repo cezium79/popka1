@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -19,11 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -174,17 +176,6 @@ fun RouteEditorScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
-                },
-                actions = {
-                    IconButton(onClick = { 
-                        routeToEdit = null
-                        routeName = ""
-                        selectedCheckpointIds = listOf()
-                        showCheckpointSelector = true
-                        checkpointSelectorMode = "add"
-                    }) {
-                        Icon(Icons.Default.Add, contentDescription = "Новый маршрут")
-                    }
                 }
             )
         }
@@ -204,6 +195,29 @@ fun RouteEditorScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+            
+            // Кнопка добавления нового маршрута (стиль кнопка №3)
+            Button(
+                onClick = {
+                    routeToEdit = null
+                    routeName = ""
+                    selectedCheckpointIds = listOf()
+                    showCheckpointSelector = true
+                    checkpointSelectorMode = "add"
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3A3737),
+                    contentColor = Color(0xFFE7E3EC)
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 4.dp, 
+                    pressedElevation = 8.dp
+                )
+            ) {
+                Text("Добавить маршрут")
+            }
             
             // Список имеющихся маршрутов
             Text("Маршруты", fontSize = 16.sp, style = MaterialTheme.typography.titleMedium)
@@ -234,7 +248,7 @@ fun RouteEditorScreen(
                 existingRoutes.forEach { route ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = if (route.isActive) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF424242)) // Серый фон карточки
                     ) {
                         Column(
                             modifier = Modifier.padding(12.dp)
@@ -249,14 +263,15 @@ fun RouteEditorScreen(
                                         Text(
                                             text = route.name,
                                             fontSize = 16.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFFFFFF) // Белый текст
                                         )
                                         if (route.isActive) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Icon(
                                                 imageVector = Icons.Default.Check,
                                                 contentDescription = "Активный",
-                                                tint = MaterialTheme.colorScheme.primary,
+                                                tint = Color(0xFFFFFFFF), // Белый цвет иконки
                                                 modifier = Modifier.size(20.dp)
                                             )
                                         }
@@ -265,7 +280,7 @@ fun RouteEditorScreen(
                                     Text(
                                         text = "Точек: ${route.checkpointIds.size}",
                                         fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = Color(0xFFFFFFFF) // Белый текст
                                     )
                                 }
                                 Row(
@@ -278,7 +293,7 @@ fun RouteEditorScreen(
                                         Icon(
                                             imageVector = Icons.Default.Edit,
                                             contentDescription = "Редактировать",
-                                            tint = MaterialTheme.colorScheme.primary,
+                                            tint = Color(0xFFFFFFFF), // Белый цвет иконки
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -289,7 +304,7 @@ fun RouteEditorScreen(
                                         Icon(
                                             Icons.Default.Delete,
                                             contentDescription = "Удалить",
-                                            tint = MaterialTheme.colorScheme.error,
+                                            tint = Color(0xFFF82A2A), // Белый цвет иконки
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }

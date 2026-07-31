@@ -114,6 +114,9 @@ import androidx.activity.compose.BackHandler
                 prefsManager.getSmtpRecipient() ?: ""
             )
         } // Email получателя для SMTP
+        
+        // Настройка отправки фото с SMTP отчетом
+        var smtpIncludePhotos by remember { mutableStateOf(prefsManager.isSmtpIncludePhotos()) }
 
         var showSmsDialog by remember { mutableStateOf(false) }
         var showEmailDialog by remember { mutableStateOf(false) }
@@ -142,6 +145,7 @@ import androidx.activity.compose.BackHandler
             smtpUsername = prefsManager.getSmtpUsername() ?: ""
             smtpPassword = prefsManager.getSmtpPassword() ?: ""
             smtpRecipient = prefsManager.getSmtpRecipient() ?: "" // Email получателя для SMTP
+            smtpIncludePhotos = prefsManager.isSmtpIncludePhotos() // Загружаем настройку фото
         }
         if (showTokenDialog) {
             Dialog(
@@ -719,7 +723,7 @@ import androidx.activity.compose.BackHandler
                                         singleLine = true,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(bottom = 16.dp),
+                                            .padding(bottom = 8.dp),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                                     )
                                 }
@@ -743,6 +747,49 @@ import androidx.activity.compose.BackHandler
 
                                 SharedPrefsManager.LinkAction.SAVE_TO_DEVICE -> {
                                     // Для сохранения на устройстве дополнительных полей не требуется
+                                }
+                            }
+                        }
+                    }
+
+                    // Переключатель отправки фото - отделено от SMTP настроек
+                    if (linkAction == SharedPrefsManager.LinkAction.EMAIL_SMTP) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF424242)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(16.dp)
+                                    .fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Отправлять фото",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFFFFFF)
+                                        )
+                                        Text(
+                                            text = if (smtpIncludePhotos)
+                                                "Включены - фото будут прикреплены к письму"
+                                            else
+                                                "Выключены - только отчет без фото",
+                                            fontSize = 12.sp,
+                                            color = Color(0xFFBDBDBD)
+                                        )
+                                    }
+                                    Switch(
+                                        checked = smtpIncludePhotos,
+                                        onCheckedChange = { smtpIncludePhotos = it }
+                                    )
                                 }
                             }
                         }
@@ -800,7 +847,8 @@ import androidx.activity.compose.BackHandler
                                 smtpPort,
                                 smtpUsername,
                                 smtpPassword,
-                                smtpRecipient // Добавлено: email получателя для SMTP
+                                smtpRecipient, // Добавлено: email получателя для SMTP
+                                smtpIncludePhotos // Добавлено: настройка отправки фото
                             ) { status, color ->
                                 saveStatus = status
                                 saveStatusColor = color
@@ -885,6 +933,7 @@ private fun saveSettings(
     smtpUsername: String,
     smtpPassword: String,
     smtpRecipient: String, // Добавлено: email получателя для SMTP
+    smtpIncludePhotos: Boolean, // Добавлено: настройка отправки фото
     onResult: (String, Color) -> Unit
 ) {
     val prefsManager = SharedPrefsManager(context)
@@ -911,6 +960,9 @@ private fun saveSettings(
     
     // Сохраняем email получателя для SMTP
     prefsManager.saveSmtpRecipient(smtpRecipient)
+    
+    // Сохраняем настройку отправки фото с SMTP отчетом
+    prefsManager.setSmtpIncludePhotos(smtpIncludePhotos)
     
     // Сохраняем формат отчета (HTML или PDF)
     // Opochki: true=HTML, false=PDF

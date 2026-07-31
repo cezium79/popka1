@@ -100,11 +100,14 @@ fun EmployeeListScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (editingEmployee == null) "Список сотрудников" else "Редактирование") },
-                actions = {
+                navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF616161) // Серый фон как у экрана
+                )
             )
         }
     ) { paddingValues ->
@@ -119,28 +122,47 @@ fun EmployeeListScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .padding(16.dp)
+                    .padding(2.dp)
             ) {
             // Форма ввода / редактирования
+            val textFieldColors = OutlinedTextFieldDefaults.colors(
+                disabledContainerColor = Color(0xFF424242), // Серый фон в неактивном состоянии
+                focusedContainerColor = Color(0xFF565656),  // Серый фон при фокусе
+                unfocusedContainerColor = Color(0xFF424242), // Серый фон в обычном состоянии
+                focusedTextColor = Color(0xFFFFFFFF),              // Белый текст при фокусе
+                unfocusedTextColor = Color(0xFFFFFFFF),            // Белый текст в обычном состоянии
+                disabledTextColor = Color(0xFFFFFFFF),             // Белый текст в неактивном состоянии
+                cursorColor = MaterialTheme.colorScheme.primary, // Цвет курсора
+                focusedBorderColor = Color(0xFF7E7D7D), // Цвет рамки при фокусе
+                unfocusedBorderColor = Color.Transparent,     // Прозрачная рамка в обычном состоянии
+                focusedLabelColor = Color(0xFFFFFFFF),              // Цвет label при фокусе
+                unfocusedLabelColor = Color(0xFFC0C0C0)             // Цвет label в обычном состоянии
+            )
             OutlinedTextField(
                 value = nameInput,
                 onValueChange = { nameInput = it },
                 label = { Text("ФИО Сотрудника") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = textFieldColors
             )
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = roleInput,
                 onValueChange = { roleInput = it },
                 label = { Text("Должность") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = textFieldColors
             )
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedTextField(
                 value = nfcIdInput,
                 onValueChange = { nfcIdInput = it },
                 label = { Text("NFC ID") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = textFieldColors
             )
             Spacer(modifier = Modifier.height(8.dp))
             
@@ -184,11 +206,14 @@ fun EmployeeListScreen(
                 Button(
                     onClick = { nfcScanningEnabled = true },
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp), // Стиль кнопки №3
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF3A3737), // Стиль кнопки №3
+                        contentColor = Color(0xFFE7E3EC)    // Стиль кнопки №3
+                    ),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
                 ) {
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Сканировать NFC-тег")
+                    Text("Сканировать NFC-тег") // Удалена иконка
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -209,13 +234,18 @@ fun EmployeeListScreen(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp), // Стиль кнопки №3
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3A3737), // Стиль кнопки №3
+                    contentColor = Color(0xFFE7E3EC)    // Стиль кнопки №3
+                ),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
             ) {
                 Text(if (editingEmployee == null) "Добавить сотрудника" else "Сохранить изменения")
             }
 
             if (editingEmployee != null) {
-                TextButton(
+                Button(
                     onClick = {
                         editingEmployee = null
                         nameInput = ""
@@ -224,9 +254,14 @@ fun EmployeeListScreen(
                         nfcScanningEnabled = false
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp, pressedElevation = 4.dp)
+                    shape = RoundedCornerShape(20.dp), // Стиль кнопки №3
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF3A3737), // Стиль кнопки №3
+                        contentColor = Color(0xFFE7E3EC)    // Стиль кнопки №3
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
                 ) {
-                    Text("Отмена")
+                    Text("Отмена") // Удалена иконка
                 }
             }
 
@@ -238,7 +273,8 @@ fun EmployeeListScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF424242)) // Серый фон карточки
                     ) {
                         Row(
                             modifier = Modifier
@@ -248,11 +284,11 @@ fun EmployeeListScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(text = employee.name, style = MaterialTheme.typography.titleMedium)
-                                Text(text = employee.role, style = MaterialTheme.typography.bodyMedium)
+                                Text(text = employee.name, style = MaterialTheme.typography.titleMedium, color = Color(0xFFFFFFFF)) // Белый текст
+                                Text(text = employee.role, style = MaterialTheme.typography.bodyMedium, color = Color(0xFFFFFFFF)) // Белый текст
                                 employee.nfcId?.let {
                                     if (it.isNotEmpty()) {
-                                        Text(text = "NFC: $it", style = MaterialTheme.typography.bodySmall)
+                                        Text(text = "NFC: $it", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFFFFF)) // Белый текст
                                     }
                                 }
                             }
@@ -263,10 +299,10 @@ fun EmployeeListScreen(
                                     roleInput = employee.role
                                     nfcIdInput = employee.nfcId ?: ""
                                 }) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Редактировать", tint = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Default.Edit, contentDescription = "Редактировать", tint = Color(0xFFFFFFFF)) // Белый цвет иконки
                                 }
                                 IconButton(onClick = { onDeleteEmployee(employee) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = MaterialTheme.colorScheme.error)
+                                    Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = Color(0xFFF82A2A)) // Красный цвет иконки
                                 }
                             }
                         }

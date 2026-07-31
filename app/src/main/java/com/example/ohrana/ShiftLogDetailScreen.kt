@@ -1080,6 +1080,110 @@ fun exportToPdf(shift: ShiftRecord, rounds: List<RoundRecord>, logs: List<ShiftL
             canvas.drawLine(30f, yPos - 2f, 575f, yPos - 2f, paint)
         }
         
+        // === СЕКЦИЯ ФОТОТЕКИ ===
+        // Фильтруем логи с фотографиями чекпоинтов
+        val checkpointPhotos = logs.filter { it.actionType == "PHOTO" && it.photoPath != null && it.photoPath!!.isNotEmpty() }
+        
+        if (checkpointPhotos.isNotEmpty()) {
+            // Проверяем место для секции фототеки
+            checkNewPage(120f)
+            
+            yPos += 20f
+            
+            // Заголовок секции с фоном
+            paint.color = backgroundColor
+            canvas.drawRect(20f, yPos - 5f, 575f, yPos + 60f, paint)
+            
+            yPos += 10f
+            
+            // Заголовок "ФОТОТЕКА"
+            paint.color = primaryDarkColor
+            paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+            canvas.drawText("ФОТОТЕКА:", 30f, yPos, paint)
+            
+            yPos += 18f
+            
+            // Статистика
+            paint.color = textColor
+            paint.typeface = android.graphics.Typeface.DEFAULT
+            paint.textSize = 12f
+            
+            canvas.drawText("Всего фотографий: ${checkpointPhotos.size}", 30f, yPos, paint)
+            
+            yPos += 25f
+            
+            // Рисуем фотографии
+            checkpointPhotos.forEachIndexed { index, log ->
+                // Проверяем место для фото
+                checkNewPage(200f)
+                
+                // Разделитель
+                paint.color = dividerColor
+                canvas.drawLine(30f, yPos - 2f, 575f, yPos - 2f, paint)
+                yPos += 5f
+                
+                // Номер фото и информация
+                paint.color = primaryColor
+                paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
+                paint.textSize = 12f
+                canvas.drawText("Фото #${index + 1}: ${log.checkpointName}", 30f, yPos, paint)
+                
+                yPos += 14f
+                
+                paint.color = secondaryColor
+                paint.typeface = android.graphics.Typeface.DEFAULT
+                paint.textSize = 11f
+                canvas.drawText("Время: ${log.timestamp}", 35f, yPos, paint)
+                yPos += 13f
+                canvas.drawText("Охранник: ${log.employeeName}", 35f, yPos, paint)
+                yPos += 13f
+                canvas.drawText("Обход: #${log.roundId}", 35f, yPos, paint)
+                
+                yPos += 10f
+                
+                // Рисуем фото
+                if (fileExists(log.photoPath)) {
+                    try {
+                        val photoBitmap = BitmapFactory.decodeFile(log.photoPath!!)
+                        if (photoBitmap != null) {
+                            val maxPhotoWidth = 500f
+                            val maxPhotoHeight = 280f
+                            
+                            // Рамка
+                            paint.color = dividerColor
+                            canvas.drawRect(30f, yPos - 2f, 530f, yPos + maxPhotoHeight + 2f, paint)
+                            
+                            // Вставляем изображение
+                            yPos = drawImageOnPdf(
+                                canvas,
+                                paint,
+                                photoBitmap,
+                                30f,
+                                yPos,
+                                maxPhotoWidth,
+                                maxPhotoHeight
+                            )
+                            
+                            paint.color = textColor
+                            paint.textSize = 10f
+                            canvas.drawText("Фото на чекпоинте: ${log.checkpointName}", 30f, yPos - 8f, paint)
+                            
+                            yPos += 15f
+                            
+                            photoBitmap.recycle()
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+            
+            // Итоговая строка
+            yPos += 5f
+            paint.color = dividerColor
+            canvas.drawLine(30f, yPos - 2f, 575f, yPos - 2f, paint)
+        }
+        
         // Завершаем страницу
         pdfDocument.finishPage(page)
         

@@ -522,6 +522,37 @@ fun JournalScreen(
                                 }
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("PDF отчет", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                scope.launch {
+                                    val shiftId = selectedShiftForMenu!!.id
+
+                                    // Генерируем PDF отчет напрямую из базы данных
+                                    val pdfPath = withContext(Dispatchers.IO) {
+                                        PdfReportGenerator.generateShiftReportPdf(
+                                            context,
+                                            shiftId,
+                                            shiftDatabase
+                                        )
+                                    }
+
+                                    if (pdfPath == null) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                context,
+                                                "Ошибка при генерации PDF отчета",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    } else {
+                                        // Отправляем PDF отчет через SMTP
+                                        prefsManager.sendPdfReportViaSmtp(shiftId, pdfPath)
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
             }

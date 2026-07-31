@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import java.io.File
+import java.io.FileOutputStream
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -604,10 +605,10 @@ class SharedPrefsManager(private val context: Context) {
             }
         }
         
-        // Если PDF режим - конвертируем HTML в PDF
+        // Если PDF режим - генерируем PDF напрямую из базы
         val (pdfPath, attachmentName, attachmentContent) = if (isPdfFormat) {
-            val converter = HtmlToPdfConverter(context)
-            val pdfPath = converter.convertHtmlToPdf(htmlPath)
+            Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Generating PDF directly from DB")
+            val pdfPath = PdfReportGenerator.generateShiftReportPdf(context, shiftId, shiftDatabase)
             
             if (pdfPath != null) {
                 Log.d("SharedPrefsManager", "sendReportViaEmailAsync: PDF generated: $pdfPath")
@@ -621,9 +622,9 @@ class SharedPrefsManager(private val context: Context) {
                 
                 Triple(pdfPath, "shift_report_${shiftId}.pdf", pdfBytes)
             } else {
-                Log.e("SharedPrefsManager", "sendReportViaEmailAsync: Failed to generate PDF, sending HTML instead")
+                Log.e("SharedPrefsManager", "sendReportViaEmailAsync: PdfReportGenerator failed, sending HTML instead")
                 
-                // Если конвертация не удалась, отправляем HTML
+                // Если генерация PDF не удалась, отправляем HTML
                 val htmlContent = withContext(Dispatchers.IO) {
                     val file = java.io.File(htmlPath)
                     file.readText(charset = StandardCharsets.UTF_8)
@@ -662,35 +663,161 @@ class SharedPrefsManager(private val context: Context) {
         
         Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Sending email to $recipient")
         
+        // Собираем фото если включено
+        val shouldIncludePhotos = isSmtpIncludePhotos()
+        var photoFilePaths: List<String> = emptyList()
+        
+        if (shouldIncludePhotos) {
+            Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Collecting shift photos...")
+            photoFilePaths = collectShiftPhotos(shiftId, shiftDatabase)
+            Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Found ${photoFilePaths.size} photos")
+            
+            if (photoFilePaths.isNotEmpty()) {
+                // Сжимаем фото
+                val compressedPaths = compressShiftPhotos(photoFilePaths, shiftId, context)
+                Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Compressed to ${compressedPaths.size} photos")
+                photoFilePaths = compressedPaths
+            }
+        } else {
+            Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Photo sending is disabled")
+        }
+        
         // Отправляем email с вложением
         val success = withContext(Dispatchers.IO) {
-            if (attachmentContent is ByteArray) {
-                // PDF режим
-                emailManager.sendEmailWithAttachment(
-                    to = recipient,
-                    subject = subject,
-                    body = body,
-                    attachmentHtml = null,
-                    attachmentPdfBytes = attachmentContent,
-                    attachmentName = attachmentName
-                )
+            if (photoFilePaths.isNotEmpty()) {
+                // Отправляем с фотографиями
+                Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Sending email with ${photoFilePaths.size} photo attachments")
+                
+                if (attachmentContent is ByteArray) {
+                    // PDF режим с фото
+                    emailManager.sendEmailWithAttachments(
+                        to = recipient,
+                        subject = subject,
+                        body = body,
+                        attachmentHtml = null,
+                        attachmentPdfBytes = attachmentContent,
+                        attachmentName = attachmentName,
+                        photoFilePaths = photoFilePaths
+                    )
+                } else {
+                    // HTML режим с фото
+                    emailManager.sendEmailWithAttachments(
+                        to = recipient,
+                        subject = subject,
+                        body = body,
+                        attachmentHtml = attachmentContent as String,
+                        attachmentPdfBytes = null,
+                        attachmentName = attachmentName,
+                        photoFilePaths = photoFilePaths
+                    )
+                }
             } else {
-                // HTML режим
-                emailManager.sendEmailWithAttachment(
-                    to = recipient,
-                    subject = subject,
-                    body = body,
-                    attachmentHtml = attachmentContent as String,
-                    attachmentPdfBytes = null,
-                    attachmentName = attachmentName
-                )
+                // Отправляем без фото (старый метод)
+                Log.d("SharedPrefsManager", "sendReportViaEmailAsync: Sending email without photos")
+                
+                if (attachmentContent is ByteArray) {
+                    // PDF режим
+                    emailManager.sendEmailWithAttachment(
+                        to = recipient,
+                        subject = subject,
+                        body = body,
+                        attachmentHtml = null,
+                        attachmentPdfBytes = attachmentContent,
+                        attachmentName = attachmentName
+                    )
+                } else {
+                    // HTML режим
+                    emailManager.sendEmailWithAttachment(
+                        to = recipient,
+                        subject = subject,
+                        body = body,
+                        attachmentHtml = attachmentContent as String,
+                        attachmentPdfBytes = null,
+                        attachmentName = attachmentName
+                    )
+                }
             }
         }
         
         if (success) {
-            Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $recipient")
+            val photoInfo = if (photoFilePaths.isNotEmpty()) " и ${photoFilePaths.size} фото" else ""
+            Log.d("SharedPrefsManager", "Email sent successfully via SMTP to $recipient$photoInfo")
         } else {
             Log.e("SharedPrefsManager", "Failed to send email via SMTP")
+        }
+    }
+    
+    /**
+     * Отправляет PDF отчет через SMTP
+     * @param shiftId ID смены
+     * @param pdfPath Путь к PDF файлу
+     */
+    suspend fun sendPdfReportViaSmtp(shiftId: String, pdfPath: String) {
+        val smtpUsername = getSmtpUsername()
+        val smtpRecipient = getSmtpRecipient()
+        
+        Log.d("SharedPrefsManager", "sendPdfReportViaSmtp: smtpUsername=$smtpUsername, smtpRecipient=$smtpRecipient")
+        
+        // Проверяем, настроен ли SMTP
+        if (smtpUsername.isEmpty() || getSmtpPassword().isEmpty()) {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    context,
+                    "SMTP не настроен. Настройте его в настройках приложения.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            return
+        }
+        
+        // Если email получателя не настроен, используем email отправителя
+        val recipient = if (smtpRecipient.isEmpty()) smtpUsername else smtpRecipient
+        
+        val emailManager = EmailManager(context)
+        
+        // Читаем PDF файл
+        val pdfFile = java.io.File(pdfPath)
+        val pdfBytes = pdfFile.readBytes()
+        
+        Log.d("ImageCompression", "PDF attachment size: ${pdfBytes.size} bytes (${pdfBytes.size / 1024} KB)")
+        
+        // Формируем тему и тело письма
+        val shift = withContext(Dispatchers.IO) {
+            shiftDatabase.loadAllShifts().find { it.id == shiftId }
+        }
+        val subject = "PDF отчет Ohrana - Смена №${shiftId.substringAfterLast("_")} от ${shift?.startTime?.substring(0, 10) ?: "-"}"
+        val body = "PDF отчет о смене прилагается.\n\nСмена: $shiftId\nВремя начала: ${shift?.startTime ?: "-"}\nВремя окончания: ${shift?.endTime ?: "-"}"
+        
+        Log.d("SharedPrefsManager", "sendPdfReportViaSmtp: Sending PDF email to $recipient")
+        
+        // Отправляем email с PDF вложением
+        val success = withContext(Dispatchers.IO) {
+            emailManager.sendEmailWithAttachment(
+                to = recipient,
+                subject = subject,
+                body = body,
+                attachmentHtml = null,
+                attachmentPdfBytes = pdfBytes,
+                attachmentName = "shift_report_${shiftId}.pdf"
+            )
+        }
+        
+        withContext(Dispatchers.Main) {
+            if (success) {
+                Log.d("SharedPrefsManager", "PDF email sent successfully via SMTP to $recipient")
+                Toast.makeText(
+                    context,
+                    "PDF отчет успешно отправлен на $recipient",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                Log.e("SharedPrefsManager", "Failed to send PDF email via SMTP")
+                Toast.makeText(
+                    context,
+                    "Ошибка при отправке PDF отчета. Проверьте настройки SMTP.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -2635,6 +2762,179 @@ class SharedPrefsManager(private val context: Context) {
      */
     fun isReportFormatPdf(): Boolean {
         return prefs.getBoolean("report_format_pdf", false)
+    }
+    
+    // ==================================================
+    // 📸 МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ОТПРАВКОЙ ФОТО ЧЕРЕЗ SMTP
+    // ==================================================
+    
+    /**
+     * Сохраняет настройку отправки фото с SMTP отчетом
+     * @param includePhotos true если нужно отправлять фото, false если без фото
+     */
+    fun setSmtpIncludePhotos(includePhotos: Boolean) {
+        prefs.edit().putBoolean("smtp_include_photos", includePhotos).apply()
+        Log.d("SharedPrefsManager", "SMTP include photos set to: $includePhotos")
+    }
+    
+    /**
+     * Проверяет, включена ли отправка фото с SMTP отчетом
+     * @return true если нужно отправлять фото, false если только отчет
+     */
+    fun isSmtpIncludePhotos(): Boolean {
+        return prefs.getBoolean("smtp_include_photos", true) // По умолчанию включено
+    }
+    
+    /**
+     * Собирает все фотографии за смену из логов и происшествий
+     * @param shiftId ID смены
+     * @param shiftDatabase Менеджер базы данных
+     * @return List путей к фотографиям
+     */
+    fun collectShiftPhotos(shiftId: String, shiftDatabase: ShiftDatabaseManager): List<String> {
+        val photoPaths = mutableListOf<String>()
+        
+        try {
+            // Получаем все логи за смену
+            val logs = shiftDatabase.loadLogsByShift(shiftId)
+            Log.d("SharedPrefsManager", "collectShiftPhotos: Total logs for shift $shiftId: ${logs.size}")
+            
+            // Фото из логов (checkpoint фото)
+            val logPhotos = logs.filter { entry ->
+                val hasPhoto = entry.photoPath != null && !entry.photoPath!!.isEmpty()
+                if (hasPhoto) {
+                    Log.d("SharedPrefsManager", "collectShiftPhotos: Log has photo: ${entry.checkpointName}, path=${entry.photoPath}")
+                }
+                hasPhoto
+            }
+            Log.d("SharedPrefsManager", "collectShiftPhotos: Logs with photoPath: ${logPhotos.size}/${logs.size}")
+            
+            // Фото из происшествий
+            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
+            Log.d("SharedPrefsManager", "collectShiftPhotos: Total incidents for shift $shiftId: ${incidents.size}")
+            
+            val incidentPhotos = incidents.filter { incident ->
+                val hasPhoto = incident.photoPath != null && !incident.photoPath!!.isEmpty()
+                if (hasPhoto) {
+                    Log.d("SharedPrefsManager", "collectShiftPhotos: Incident has photo: type=${incident.incidentType}, path=${incident.photoPath}")
+                }
+                hasPhoto
+            }
+            Log.d("SharedPrefsManager", "collectShiftPhotos: Incidents with photoPath: ${incidentPhotos.size}/${incidents.size}")
+            
+            // Добавляем фото из логов
+            logPhotos.forEach { entry ->
+                val path = entry.photoPath!!
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    photoPaths.add(path)
+                    Log.d("SharedPrefsManager", "Collecting photo from log: $path (${file.length()} bytes)")
+                } else {
+                    Log.w("SharedPrefsManager", "Photo file not found for log: $path (exists=${file.exists()})")
+                }
+            }
+            
+            // Добавляем фото из происшествий
+            incidentPhotos.forEach { incident ->
+                val path = incident.photoPath
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    photoPaths.add(path)
+                    Log.d("SharedPrefsManager", "Collecting photo from incident: $path (${file.length()} bytes)")
+                } else {
+                    Log.w("SharedPrefsManager", "Photo file not found for incident: $path (exists=${file.exists()})")
+                }
+            }
+            
+            Log.i("SharedPrefsManager", "Total photos collected for shift $shiftId: ${photoPaths.size}")
+        } catch (e: Exception) {
+            Log.e("SharedPrefsManager", "Error collecting shift photos: ${e.message}", e)
+        }
+        
+        return photoPaths
+    }
+    
+    /**
+     * Сжимает фотографии и сохраняет их во временную папку
+     * @param photoPaths List путей к исходным фотографиям
+     * @param shiftId ID смены для именования файлов
+     * @return List путей к сжатым фотографиям
+     */
+    suspend fun compressShiftPhotos(
+        photoPaths: List<String>,
+        shiftId: String,
+        context: Context
+    ): List<String> = withContext(Dispatchers.IO) {
+        val compressedPaths = mutableListOf<String>()
+        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+        val currentTime = dateFormat.format(Date())
+        
+        try {
+            // Создаем временную папку для сжатых фото
+            val cacheDir = context.cacheDir
+            val photosFolder = File(cacheDir, "shift_photos_$shiftId")
+            if (!photosFolder.exists()) {
+                photosFolder.mkdirs()
+            }
+            
+            photoPaths.forEachIndexed { index, path ->
+                try {
+                    val file = File(path)
+                    if (!file.exists()) {
+                        Log.w("SharedPrefsManager", "Photo file not found: $path")
+                        return@forEachIndexed
+                    }
+                    
+                    // Сначала читаем размеры без загрузки в память
+                    val options = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                    }
+                    BitmapFactory.decodeFile(path, options)
+                    
+                    // Вычисляем коэффициент сжатия
+                    val targetWidth = 1280
+                    val targetHeight = 960
+                    val maxWidth = options.outWidth
+                    val maxHeight = options.outHeight
+                    val scale = if (maxWidth > targetWidth || maxHeight > targetHeight) {
+                        val scaleX = targetWidth.toFloat() / maxWidth
+                        val scaleY = targetHeight.toFloat() / maxHeight
+                        minOf(scaleX, scaleY).toInt().coerceAtLeast(1)
+                    } else {
+                        1
+                    }
+                    
+                    // Декодируем с сжатием
+                    val compressOptions = BitmapFactory.Options().apply {
+                        inSampleSize = scale
+                    }
+                    val bitmap = BitmapFactory.decodeFile(path, compressOptions)
+                    
+                    if (bitmap != null) {
+                        // Сохраняем сжатое фото во временную папку
+                        val fileName = "photo_${index + 1}_$currentTime.jpg"
+                        val compressedFile = File(photosFolder, fileName)
+                        
+                        FileOutputStream(compressedFile).use { fos ->
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos)
+                        }
+                        
+                        compressedPaths.add(compressedFile.absolutePath)
+                        Log.d("SharedPrefsManager", "Compressed photo: ${file.name} -> ${compressedFile.length()} bytes")
+                        
+                        bitmap.recycle()
+                    }
+                } catch (e: Exception) {
+                    Log.e("SharedPrefsManager", "Failed to compress photo $path: ${e.message}", e)
+                }
+            }
+            
+            Log.i("SharedPrefsManager", "Compressed ${compressedPaths.size}/${photoPaths.size} photos")
+        } catch (e: Exception) {
+            Log.e("SharedPrefsManager", "Error compressing photos: ${e.message}", e)
+        }
+        
+        return@withContext compressedPaths
     }
     
     /**

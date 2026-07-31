@@ -1,11 +1,11 @@
 package com.example.ohrana
 
 import android.content.Context
-import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Properties
 import javax.mail.Message
@@ -17,6 +17,9 @@ import javax.mail.internet.MimeMessage
 import javax.mail.internet.MimeMultipart
 import javax.mail.internet.MimeBodyPart
 import javax.mail.Part
+import android.util.Log
+import java.io.OutputStream
+import java.io.ByteArrayOutputStream
 
 class EmailManager(private val context: Context) {
     private val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
@@ -185,6 +188,161 @@ class EmailManager(private val context: Context) {
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send email: ${e.message}", e)
+            false
+        }
+    }
+    
+    /**
+     * Отправляет email с отчетом и фотографиями (как отдельные вложения)
+     * @param to Email получателя
+     * @param subject Тема письма
+     * @param body Тело письма
+     * @param attachmentHtml HTML-отчет (в виде строки) - опционально
+     * @param attachmentPdfBytes PDF-отчет (в виде байтов) - опционально
+     * @param attachmentName Имя файла отчета
+     * @param photoFilePaths List путей к сжатым фотографиям
+     * @return true если успешно, false если ошибка
+     */
+    suspend fun sendEmailWithAttachments(
+        to: String,
+        subject: String,
+        body: String,
+        attachmentHtml: String? = null,
+        attachmentPdfBytes: ByteArray? = null,
+        attachmentName: String,
+        photoFilePaths: List<String>
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val username = getSmtpUsername()
+            val password = getSmtpPassword()
+            val host = getSmtpHost()
+            val port = getSmtpPort()
+            
+            Log.d(TAG, "SMTP with Attachments: host=$host, port=$port, username=$username, to=$to")
+            Log.d(TAG, "SMTP with Attachments: $photoFilePaths.size photos, report attachment: $attachmentName")
+            
+            if (username.isEmpty() || password.isEmpty()) {
+                Log.e(TAG, "SMTP credentials not configured")
+                return@withContext false
+            }
+            
+            if (!username.contains("@")) {
+                Log.e(TAG, "SMTP username is not a valid email address: $username")
+                return@withContext false
+            }
+            
+            if (password.length < 8) {
+                Log.w(TAG, "SMTP password seems too short (length: ${password.length})")
+                return@withContext false
+            }
+            
+            // Настройки для SMTP сессии
+            val props = Properties().apply {
+                put("mail.smtp.host", host)
+                put("mail.smtp.port", port.toString())
+                put("mail.smtp.ssl.enable", "true")
+                put("mail.smtp.auth", "true")
+                put("mail.smtp.starttls.enable", "false")
+                put("mail.smtp.connectiontimeout", "30000")
+                put("mail.smtp.timeout", "30000")
+                put("mail.smtp.writetimeout", "30000")
+            }
+            
+            // Создаем сессию с аутентификацией
+            val session = Session.getInstance(props, object : javax.mail.Authenticator() {
+                override fun getPasswordAuthentication(): PasswordAuthentication {
+                    return PasswordAuthentication(username, password)
+                }
+            })
+            
+            session.debug = true
+            
+            // Создаем сообщение
+            val message = MimeMessage(session).apply {
+                setFrom(InternetAddress(username))
+                setRecipients(Message.RecipientType.TO, to)
+                this.subject = subject
+                
+                // Создаем multipart/mixed для вложений
+                val multipart = MimeMultipart("mixed")
+                
+                // Часть 1: Текстовое тело письма
+                val textPart = MimeBodyPart().apply {
+                    setText(body, "UTF-8")
+                }
+                multipart.addBodyPart(textPart)
+                
+                // Часть 2: Отчет (HTML или PDF)
+                if (attachmentPdfBytes != null) {
+                    val pdfPart = MimeBodyPart()
+                    val byteArrayDataSource = object : javax.activation.DataSource {
+                        override fun getInputStream(): java.io.InputStream = ByteArrayInputStream(attachmentPdfBytes)
+                        override fun getOutputStream(): OutputStream? {
+                            TODO("Not yet implemented")
+                        }
+
+                        override fun getContentType(): String = "application/pdf"
+                        override fun getName(): String = attachmentName
+                    }
+                    pdfPart.setDataHandler(javax.activation.DataHandler(byteArrayDataSource))
+                    pdfPart.fileName = attachmentName
+                    pdfPart.disposition = Part.ATTACHMENT
+                    multipart.addBodyPart(pdfPart)
+                    Log.d(TAG, "Added PDF attachment: $attachmentName (${attachmentPdfBytes.size / 1024} KB)")
+                } else if (attachmentHtml != null) {
+                    val htmlPart = MimeBodyPart().apply {
+                        val htmlBytes = attachmentHtml.toByteArray(charset = StandardCharsets.UTF_8)
+                        val byteArrayDataSource = object : javax.activation.DataSource {
+                            override fun getInputStream(): java.io.InputStream = ByteArrayInputStream(htmlBytes)
+                            override fun getOutputStream(): OutputStream? {
+                                TODO("Not yet implemented")
+                            }
+
+                            override fun getContentType(): String = "text/html; charset=UTF-8"
+                            override fun getName(): String = attachmentName
+                        }
+                        setDataHandler(javax.activation.DataHandler(byteArrayDataSource))
+                        fileName = attachmentName
+                        disposition = Part.ATTACHMENT
+                    }
+                    multipart.addBodyPart(htmlPart)
+                    Log.d(TAG, "Added HTML attachment: $attachmentName (${attachmentHtml.length / 1024} KB)")
+                }
+                
+                // Часть 3: Фотографии как отдельные вложения
+                photoFilePaths.forEachIndexed { index, photoPath ->
+                    try {
+                        val photoFile = File(photoPath)
+                        if (!photoFile.exists()) {
+                            Log.w(TAG, "Photo file not found for attachment: $photoPath")
+                            return@forEachIndexed
+                        }
+                        
+                        val photoPart = MimeBodyPart()
+                        val fileDataSource = javax.activation.FileDataSource(photoFile)
+                        photoPart.setDataHandler(javax.activation.DataHandler(fileDataSource))
+                        photoPart.fileName = photoFile.name
+                        photoPart.disposition = Part.ATTACHMENT
+                        multipart.addBodyPart(photoPart)
+                        
+                        val photoBytes = photoFile.readBytes()
+                        Log.d(TAG, "Added photo attachment #$index: ${photoFile.name} (${photoBytes.size / 1024} KB)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to add photo attachment $photoPath: ${e.message}", e)
+                    }
+                }
+                
+                setContent(multipart)
+            }
+            
+            // Отправляем сообщение
+            Transport.send(message)
+            
+            Log.i(TAG, "Email with ${photoFilePaths.size} attachments sent successfully to $to")
+            true
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send email with attachments: ${e.message}", e)
             false
         }
     }
