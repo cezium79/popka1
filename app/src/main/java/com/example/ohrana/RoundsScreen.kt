@@ -85,17 +85,8 @@ fun RoundsScreen(
 
     // Функция для обработки нажатия кнопки "Назад"
     fun onNavigateBack() {
-        val guardsCount = guardList.size
-        if (isShiftActive) {
-            if (guardsCount == 1) {
-                // Для одного охранника выходим в privet
-                onCloseShift()
-            } else {
-                onBack()
-            }
-        } else {
-            onCloseShift()
-        }
+        // Всегда сразу возвращаемся в привет, без анимаций
+        onBack()
     }
 
     // Функция для обработки нажатия кнопки "Начать обход"

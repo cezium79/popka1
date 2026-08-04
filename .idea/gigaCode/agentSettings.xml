@@ -6,6 +6,22 @@
         <Execute>
           <option name="pattern" value="grep *" />
         </Execute>
+        <Execute>
+          <option name="pattern" value="powershell -Command &quot;$f='C:/Android/Ohrana-c7953c45/app/src/main/java/com/example/ohrana/ShiftDatabaseManager.kt'; $c=[System.IO.File]::ReadAllText($f,$[Text.Encoding]::UTF8); $old=@'&#10;            .mapNotNull { &#10;                try {&#10;                    val json = JSONObject(it.value as String)&#10;                    ShiftLogEntry(&#10;                        id = json.getString(\&quot;id\&quot;),&#10;                        timestamp = json.getString(\&quot;timestamp\&quot;),&#10;                        checkpointName = json.getString(\&quot;checkpointName\&quot;),&#10;                        checkpointId = json.getString(\&quot;checkpointId\&quot;),&#10;                        employeeName = json.getString(\&quot;employeeName\&quot;),&#10;                        roundId = json.getInt(\&quot;roundId\&quot;),&#10;                        shiftId = json.getString(\&quot;shiftId\&quot;),&#10;                        routeName = json.getString(\&quot;routeName\&quot;),&#10;                        sequenceIndex = json.getInt(\&quot;sequenceIndex\&quot;),&#10;                        isSequenceCorrect = json.getBoolean(\&quot;isSequenceCorrect\&quot;),&#10;                        scanType = json.getString(\&quot;scanType\&quot;),&#10;                        actionType = json.getString(\&quot;actionType\&quot;),&#10;                        questionText = if (json.has(\&quot;questionText\&quot;)) json.getString(\&quot;questionText\&quot;) else null,&#10;                        inputTitle = if (json.has(\&quot;inputTitle\&quot;)) json.getString(\&quot;inputTitle\&quot;) else null,&#10;                        answer = if (json.has(\&quot;answer\&quot;)) json.getString(\&quot;answer\&quot;) else null,&#10;                        inputValue = if (json.has(\&quot;inputValue\&quot;)) json.getString(\&quot;inputValue\&quot;) else null,&#10;                        photoPath = if (json.has(\&quot;photoPath\&quot;)) json.getString(\&quot;photoPath\&quot;) else null,&#10;                        latitude = json.optDouble(\&quot;latitude\&quot;, Double.NaN).takeIf { !it.isNaN() },&#10;                        longitude = json.optDouble(\&quot;longitude\&quot;, Double.NaN).takeIf { !it.isNaN() },&#10;                        sequenceErrorType = try {&#10;                            val seqErrorStr = json.optString(\&quot;sequenceErrorType\&quot;, \&quot;NONE\&quot;)&#10;                            SequenceErrorType.valueOf(seqErrorStr)&#10;                        } catch (e: Exception) {&#10;                            SequenceErrorType.NONE&#10;                        },&#10;                        hasAborted = json.optBoolean(\&quot;hasAborted\&quot;, false)&#10;                    )&#10;                } catch (e: Exception) {&#10;                    null&#10;                }&#10;            }'; $new=@'&#10;            .mapNotNull { (entryKey, entryValue) -&gt;&#10;                @Suppress(\&quot;UNCHECKED_CAST\&quot;)&#10;                val json = try { JSONObject(entryValue as String) } catch (e: Exception) { null } ?: return@mapNotNull null&#10;                parseShiftLogEntry(json)&#10;            }'; $c=$c.Replace($old,$new); [System.IO.File]::WriteAllText($f,$c,[Text.Encoding]::UTF8); Write-Host 'Done'&quot;" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value="cd *" />
+        </Execute>
+        <Execute>
+          <option name="pattern" value=".\gradlew.bat assembleDebug" />
+        </Execute>
+      </list>
+    </option>
+    <option name="autoApprovedReads">
+      <list>
+        <Read>
+          <option name="pattern" value="$PROJECT_DIR$/../popka1_orig/app/src/main/java/com/example/ohrana/OhrannikCabinetScreen.kt" />
+        </Read>
       </list>
     </option>
   </component>

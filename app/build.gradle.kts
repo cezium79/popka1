@@ -61,6 +61,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+    implementation(libs.androidx.ui.text)
     implementation(libs.kotlinx.serialization)
     implementation("com.google.code.gson:gson:2.10.1")
     
