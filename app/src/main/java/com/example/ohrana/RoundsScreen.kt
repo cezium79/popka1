@@ -21,9 +21,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.TextFields
 import com.example.ohrana.ui.components.OhranaOutlinedButton
 import com.example.ohrana.uielements.ButtonDesigns
 import com.example.ohrana.ui.components.OhranaButton
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // Для SharedPrefsManager
 
@@ -60,6 +70,16 @@ fun RoundsScreen(
     var incidentRoundId by remember { mutableStateOf(0) }
     var incidentShiftId by remember { mutableStateOf("") }
     var incidentEmployeeName by remember { mutableStateOf("") }
+
+    // Параметры для диалога событий работников
+    var showEventDialog by remember { mutableStateOf(false) }
+    var selectedStaff by remember { mutableStateOf<Staff?>(null) }
+    var selectedEventType by remember { mutableStateOf<EventType?>(null) }
+    var customEventText by remember { mutableStateOf("") }
+    var showDropdownStaffList by remember { mutableStateOf(false) }
+    
+    // Список работников
+    val staffList by remember { mutableStateOf(prefsManager.loadStaff()) }
 
     // Получаем текущий экран (для перехода)
     val currentScreen = "rounds"
@@ -174,6 +194,25 @@ fun RoundsScreen(
                                     // Нет активной смены - передаем "outside_shift" как shiftId и -1 как roundId
                                     onNavigateToIncident?.invoke(-1, "outside_shift", employeeName)
                                 }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            style = androidx.compose.ui.text.TextStyle(fontSize = 18.sp),
+                            designId = 3,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(2.dp)
+                    ) {
+                        OhranaOutlinedButton(
+                            text = "События работников",
+                            onClick = {
+                                selectedStaff = null
+                                selectedEventType = null
+                                customEventText = ""
+                                showDropdownStaffList = false
+                                showEventDialog = true
                             },
                             modifier = Modifier.fillMaxWidth(),
                             style = androidx.compose.ui.text.TextStyle(fontSize = 18.sp),
@@ -558,6 +597,275 @@ fun RoundsScreen(
                                 )
                             }
                         }
+                    )
+                }
+                
+                // Диалог добавления события работника
+                if (showEventDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showEventDialog = false
+                            showDropdownStaffList = false
+                        },
+                        title = {
+                            Text(
+                                "Добавление события работника",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        text = {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                // Выбор работника
+                                Text(
+                                    text = "Выберите работника:",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFBDBDBD)
+                                )
+                                
+                                Box {
+                                    OutlinedButton(
+                                        onClick = {
+                                            showDropdownStaffList = !showDropdownStaffList
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = Color.White
+                                        )
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = selectedStaff?.fullName ?: "Выбрать работника",
+                                                fontSize = 14.sp
+                                            )
+                                            Icon(
+                                                imageVector = if (showDropdownStaffList) Icons.Default.Check else Icons.Default.Person,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    
+                                    // Выпадающий список работников
+                                    if (showDropdownStaffList && staffList.isNotEmpty()) {
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .offset(y = (-4).dp)
+                                                .background(
+                                                    MaterialTheme.colorScheme.surface,
+                                                    MaterialTheme.shapes.medium
+                                                ),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = Color(0xFF424242)
+                                            )
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(vertical = 4.dp)
+                                            ) {
+                                                staffList.forEach { staff ->
+                                                    TextButton(
+                                                        onClick = {
+                                                            selectedStaff = staff
+                                                            showDropdownStaffList = false
+                                                        },
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier.padding(vertical = 4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = staff.fullName,
+                                                                fontSize = 14.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = Color.White
+                                                            )
+                                                            Text(
+                                                                text = "${staff.tabNumber} | ${staff.position}",
+                                                                fontSize = 12.sp,
+                                                                color = Color(0xFFBDBDBD)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if (staffList.isEmpty()) {
+                                    Text(
+                                        text = "Список работников пуст. Добавьте работников в разделе «Работники».",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFFFF9800)
+                                    )
+                                }
+                                
+                                // Быстрые события
+                                Text(
+                                    text = "Быстрые события:",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFBDBDBD)
+                                )
+                                
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    PRESET_EVENTS.forEach { eventType ->
+                                        val isSelected = selectedEventType == eventType
+                                        OhranaOutlinedButton(
+                                            text = eventType.ruName,
+                                            onClick = {
+                                                selectedEventType = eventType
+                                                customEventText = ""
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            style = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                                            designId = if (isSelected) 1 else 3,
+                                        )
+                                    }
+                                }
+                                
+                                // Разделитель
+                                Divider(color = Color(0xFF616161), thickness = 1.dp)
+                                
+                                // Произвольный текст
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Произвольный текст:",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFFBDBDBD)
+                                    )
+                                    Switch(
+                                        checked = selectedEventType == EventType.CUSTOM,
+                                        onCheckedChange = { checked ->
+                                            if (checked) {
+                                                selectedEventType = EventType.CUSTOM
+                                            } else {
+                                                selectedEventType = null
+                                            }
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color(0xFF4CAF50),
+                                            checkedTrackColor = Color(0xFF388E3C)
+                                        )
+                                    )
+                                }
+                                
+                                OutlinedTextField(
+                                    value = customEventText,
+                                    onValueChange = { customEventText = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(80.dp),
+                                    placeholder = {
+                                        Text("Введите текст события...")
+                                    },
+                                    enabled = selectedEventType == EventType.CUSTOM,
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color(0xFF616161),
+                                        unfocusedContainerColor = Color(0xFF424242),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color(0xFFE0E0E0),
+                                        focusedPlaceholderColor = Color(0xFFBDBDBD),
+                                        unfocusedPlaceholderColor = Color(0xFF757575)
+                                    ),
+                                    maxLines = 4
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        showEventDialog = false
+                                        showDropdownStaffList = false
+                                    }
+                                ) {
+                                    Text("Отмена")
+                                }
+                                Button(
+                                    onClick = {
+                                        // Валидация
+                                        if (selectedStaff == null) {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Выберите работника",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                            return@Button
+                                        }
+                                        
+                                        if (selectedEventType == null || selectedEventType == EventType.CUSTOM) {
+                                            if (selectedEventType == EventType.CUSTOM && customEventText.trim().isEmpty()) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Введите текст события",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                                return@Button
+                                            }
+                                        }
+                                        
+                                        // Создаем событие
+                                        val shiftId = prefsManager.prefs.getString("active_shift_id", "outside_shift") ?: "outside_shift"
+                                        val timestamp = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())
+                                        
+                                        val eventType = selectedEventType ?: EventType.CUSTOM
+                                        
+                                        val event = StaffEvent(
+                                            timestamp = timestamp,
+                                            shiftId = shiftId,
+                                            staffId = selectedStaff!!.id,
+                                            staffName = selectedStaff!!.fullName,
+                                            eventType = eventType,
+                                            customText = if (eventType == EventType.CUSTOM) customEventText.trim() else null,
+                                            templateText = if (selectedEventType != null && selectedEventType != EventType.CUSTOM) selectedEventType!!.ruName else null
+                                        )
+                                        
+                                        // Сохраняем событие
+                                        prefsManager.addStaffEvent(event)
+                                        
+                                        // Закрываем диалог
+                                        showEventDialog = false
+                                        showDropdownStaffList = false
+                                        selectedStaff = null
+                                        selectedEventType = null
+                                        customEventText = ""
+                                        
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Событие сохранено",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    },
+                                    enabled = selectedStaff != null
+                                ) {
+                                    Text("Сохранить")
+                                }
+                            }
+                        },
+                        dismissButton = {}
                     )
                 }
             }

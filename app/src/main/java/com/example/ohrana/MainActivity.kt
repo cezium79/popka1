@@ -444,6 +444,7 @@ fun AppNavigation() {
         
         "admin" -> AdministratorScreen(
             onNavigateToEmployeeList = { currentScreen = "employee_list" },
+            onNavigateToStaff = { currentScreen = "staff" },
             onNavigateToRoutes = { currentScreen = "routes" },
             onNavigateToLogs = { currentScreen = "journal" },
             onNavigateToCloudSettings = { currentScreen = "cloud_settings" },
@@ -452,6 +453,10 @@ fun AppNavigation() {
         )
         
         "sound_settings" -> SoundSettingsScreen(
+            onBack = { currentScreen = "admin" }
+        )
+        
+        "staff" -> StaffScreen(
             onBack = { currentScreen = "admin" }
         )
         

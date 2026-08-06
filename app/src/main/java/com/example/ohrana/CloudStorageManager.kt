@@ -1058,6 +1058,14 @@ class CloudStorageManager(private val context: Context) {
                 Log.d(TAG, "generateHtmlReportWithDesign DEBUG: actionType=${log.actionType}, checkpoint=${log.checkpointName}, inputValue='${log.inputValue}', isNull=${log.inputValue == null}")
             }
 
+            // === ЗАГРУЖАЕМ СОБЫТИЯ РАБОТНИКОВ ===
+            val staffEvents = try {
+                sharedPrefsManager?.getStaffEventsByDate(shift.startTime.substring(0, 10)) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            Log.d(TAG, "generateHtmlReportWithDesign: staffEventsCount=${staffEvents.size}")
+
             val html = StringBuilder()
 
             // Извлекаем номер смены из ID (формат: NSDDMMYY_NNN)
@@ -1169,6 +1177,14 @@ class CloudStorageManager(private val context: Context) {
                         .logs-table th { background: #667eea; color: white; font-size: 12px; }
                         .logs-table tr:hover { background: #f9f9f9; }
                         .logs-table tr.aborted { background: #fff3cd; border-left: 3px solid #ff9800; }
+                        .messages-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        .messages-table th, .messages-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+                        .messages-table th { background: #667eea; color: white; font-size: 12px; }
+                        .messages-table tr:hover { background: #f9f9f9; }
+                        .staff-events-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        .staff-events-table th, .staff-events-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+                        .staff-events-table th { background: #667eea; color: white; font-size: 12px; }
+                        .staff-events-table tr:hover { background: #f9f9f9; }
                         .violation { color: #f44336; font-weight: bold; }
                         .success { color: #4caf50; }
                         .aborted { color: #ff9800; font-weight: bold; }
@@ -1543,6 +1559,103 @@ class CloudStorageManager(private val context: Context) {
                 html.append(
                     """
                         </div>
+                    </div>
+                """.trimIndent()
+                )
+            }
+
+            // Сообщения охранников
+            val guardMessages = mutableListOf<GuardMessage>()
+            if (sharedPrefsManager != null && shift != null) {
+                guardMessages.addAll(sharedPrefsManager.loadGuardMessagesForShift(shift.id))
+            }
+            if (guardMessages.isNotEmpty()) {
+                html.append(
+                    """
+                    <div class="section">
+                        <h2>💬 Сообщения</h2>
+                        <table class="messages-table">
+                            <thead>
+                                <tr>
+                                    <th>Время</th>
+                                    <th>Охранник</th>
+                                    <th>Текст сообщения</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                """.trimIndent()
+                )
+
+                guardMessages.forEach { msg ->
+                    val safeText = msg.text.replace("\r", " ").replace("\n", " ").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    html.append(
+                        """
+                                <tr>
+                                    <td>${msg.timestamp.substring(11)}</td>
+                                    <td>${msg.guardName}</td>
+                                    <td>$safeText</td>
+                                </tr>
+                        """.trimIndent()
+                    )
+                }
+
+                html.append(
+                    """
+                            </tbody>
+                        </table>
+                    </div>
+                """.trimIndent()
+                )
+            }
+
+            // События работников
+            if (staffEvents.isNotEmpty()) {
+                html.append(
+                    """
+                    <div class="section">
+                        <h2>👤 События работников</h2>
+                        <table class="staff-events-table">
+                            <thead>
+                                <tr>
+                                    <th>Время</th>
+                                    <th>Работник</th>
+                                    <th>Тип события</th>
+                                    <th>Детали</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                """.trimIndent()
+                )
+
+                staffEvents.forEach { event ->
+                    val safeStaffName = event.staffName.replace("\r", " ").replace("\n", " ").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    val safeEventType = event.eventType.ruName.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    val safeCustomText = (event.customText ?: "").replace("\r", " ").replace("\n", " ").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    
+                    val eventTypeDisplay = when (event.eventType) {
+                        EventType.ARRIVED_AT_FACILITY -> "✅ " + safeEventType
+                        EventType.LEFT_FACILITY -> "❌ " + safeEventType
+                        EventType.SMELL_OF_ALCOHOL -> "⚠️ " + safeEventType
+                        EventType.MISSED_WORK -> "🚫 " + safeEventType
+                        EventType.CUSTOM -> "📝 " + safeCustomText
+                    }
+                    
+                    html.append(
+                        """
+                                <tr>
+                                    <td>${event.timestamp.substring(11, 16)}</td>
+                                    <td>$safeStaffName</td>
+                                    <td>$eventTypeDisplay</td>
+                                    <td>${if (event.eventType == EventType.CUSTOM && event.customText != null) event.customText else "-"}</td>
+                                </tr>
+                        """.trimIndent()
+                    )
+                }
+
+                html.append(
+                    """
+                            </tbody>
+                        </table>
                     </div>
                 """.trimIndent()
                 )
@@ -2182,6 +2295,14 @@ class CloudStorageManager(private val context: Context) {
             val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
             val incidentsCount = incidents.size
 
+            // === ЗАГРУЖАЕМ СОБЫТИЯ РАБОТНИКОВ ===
+            val staffEvents = try {
+                sharedPrefsManager?.getStaffEventsByDate(shift.startTime.substring(0, 10)) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            Log.d(TAG, "uploadHtmlToDiskDirect: staffEventsCount=${staffEvents.size}")
+
             // HTML заголовок
             html.append(
                 """
@@ -2221,6 +2342,14 @@ class CloudStorageManager(private val context: Context) {
                         .logs-table th { background: #667eea; color: white; font-size: 12px; }
                         .logs-table tr:hover { background: #f9f9f9; }
                         .logs-table tr.aborted { background: #fff3cd; border-left: 3px solid #ff9800; }
+                        .messages-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        .messages-table th, .messages-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+                        .messages-table th { background: #667eea; color: white; font-size: 12px; }
+                        .messages-table tr:hover { background: #f9f9f9; }
+                        .staff-events-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        .staff-events-table th, .staff-events-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+                        .staff-events-table th { background: #667eea; color: white; font-size: 12px; }
+                        .staff-events-table tr:hover { background: #f9f9f9; }
                         .violation { color: #f44336; font-weight: bold; }
                         .success { color: #4caf50; }
                         .aborted { color: #ff9800; font-weight: bold; }
@@ -2595,6 +2724,103 @@ class CloudStorageManager(private val context: Context) {
                 html.append(
                     """
                         </div>
+                    </div>
+                """.trimIndent()
+                )
+            }
+
+            // Сообщения охранников
+            val guardMessages = mutableListOf<GuardMessage>()
+            if (sharedPrefsManager != null && shift != null) {
+                guardMessages.addAll(sharedPrefsManager.loadGuardMessagesForShift(shift.id))
+            }
+            if (guardMessages.isNotEmpty()) {
+                html.append(
+                    """
+                    <div class="section">
+                        <h2>💬 Сообщения</h2>
+                        <table class="messages-table">
+                            <thead>
+                                <tr>
+                                    <th>Время</th>
+                                    <th>Охранник</th>
+                                    <th>Текст сообщения</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                """.trimIndent()
+                )
+
+                guardMessages.forEach { msg ->
+                    val safeText = msg.text.replace("\r", " ").replace("\n", " ").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    html.append(
+                        """
+                                <tr>
+                                    <td>${msg.timestamp.substring(11)}</td>
+                                    <td>${msg.guardName}</td>
+                                    <td>$safeText</td>
+                                </tr>
+                        """.trimIndent()
+                    )
+                }
+
+                html.append(
+                    """
+                            </tbody>
+                        </table>
+                    </div>
+                """.trimIndent()
+                )
+            }
+
+            // События работников
+            if (staffEvents.isNotEmpty()) {
+                html.append(
+                    """
+                    <div class="section">
+                        <h2>👤 События</h2>
+                        <table class="staff-events-table">
+                            <thead>
+                                <tr>
+                                    <th>Время</th>
+                                    <th>Работник</th>
+                                    <th>Тип события</th>
+                                    <th>Детали</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                """.trimIndent()
+                )
+
+                staffEvents.forEach { event ->
+                    val safeStaffName = event.staffName.replace("\r", " ").replace("\n", " ").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    val safeEventType = event.eventType.ruName.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    val safeCustomText = (event.customText ?: "").replace("\r", " ").replace("\n", " ").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    
+                    val eventTypeDisplay = when (event.eventType) {
+                        EventType.ARRIVED_AT_FACILITY -> "✅ " + safeEventType
+                        EventType.LEFT_FACILITY -> "❌ " + safeEventType
+                        EventType.SMELL_OF_ALCOHOL -> "⚠️ " + safeEventType
+                        EventType.MISSED_WORK -> "🚫 " + safeEventType
+                        EventType.CUSTOM -> "📝 " + safeCustomText
+                    }
+                    
+                    html.append(
+                        """
+                                <tr>
+                                    <td>${event.timestamp.substring(11, 16)}</td>
+                                    <td>$safeStaffName</td>
+                                    <td>$eventTypeDisplay</td>
+                                    <td>${if (event.eventType == EventType.CUSTOM && event.customText != null) event.customText else "-"}</td>
+                                </tr>
+                        """.trimIndent()
+                    )
+                }
+
+                html.append(
+                    """
+                            </tbody>
+                        </table>
                     </div>
                 """.trimIndent()
                 )

@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 @Composable
 fun AdministratorScreen(
     onNavigateToEmployeeList: () -> Unit,
+    onNavigateToStaff: () -> Unit,
     onNavigateToRoutes: () -> Unit,
     onNavigateToLogs: () -> Unit,
     onNavigateToCloudSettings: () -> Unit,
@@ -191,6 +192,16 @@ fun AdministratorScreen(
                 OhranaOutlinedButton(
                     text = "Маршруты",
                     onClick = onNavigateToRoutes,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 20.sp
+                    ),
+                    designId = 3,
+                )
+
+                OhranaOutlinedButton(
+                    text = "Работники",
+                    onClick = onNavigateToStaff,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp).height(56.dp),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 20.sp
@@ -737,6 +748,7 @@ fun archiveNow(context: android.content.Context) {
 fun AdministratorScreenPreview() {
     AdministratorScreen(
         onNavigateToEmployeeList = {},
+        onNavigateToStaff = {},
         onNavigateToRoutes = {},
         onNavigateToLogs = {},
         onNavigateToCloudSettings = {},

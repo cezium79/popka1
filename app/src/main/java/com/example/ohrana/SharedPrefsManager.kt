@@ -50,6 +50,15 @@ data class Route(
     val isActive: Boolean = false     // Флаг активного маршрута
 )
 
+// Модель сообщения охранника
+data class GuardMessage(
+    val id: String,                    // Уникальный ID сообщения
+    val shiftId: String,               // ID смены
+    val timestamp: String,             // Время отправки
+    val guardName: String,             // Имя охранника
+    val text: String                   // Текст сообщения
+)
+
 class SharedPrefsManager(private val context: Context) {
     val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
     
@@ -179,6 +188,92 @@ class SharedPrefsManager(private val context: Context) {
     fun getShiftLeader(): GuardMember? {
         val guards = loadGuards()
         return guards.find { it.role.contains("старший", ignoreCase = true) || it.role.contains("lead", ignoreCase = true) }
+    }
+    
+    // ==================================================
+    // 💼 УПРАВЛЕНИЕ РАБОТНИКАМИ (STAFF) - не сотрудники охраны
+    // ==================================================
+    
+    /**
+     * Загрузить список работников (персонал объекта)
+     */
+    fun loadStaff(): List<Staff> {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonString = localPrefs.getString("staff_list", null)
+        if (jsonString.isNullOrBlank()) return emptyList()
+        
+        return try {
+            val jsonArray = org.json.JSONArray(jsonString)
+            List(jsonArray.length()) { index ->
+                val jsonObject = jsonArray.getJSONObject(index)
+                Staff(
+                    id = jsonObject.optString("id", ""),
+                    tabNumber = jsonObject.optString("tabNumber", ""),
+                    lastName = jsonObject.optString("lastName", ""),
+                    firstName = jsonObject.optString("firstName", ""),
+                    middleName = jsonObject.optString("middleName", ""),
+                    position = jsonObject.optString("position", "")
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+    
+    /**
+     * Сохранить список работников в SharedPreferences
+     */
+    fun saveStaff(staff: List<Staff>) {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonArray = org.json.JSONArray()
+        staff.forEach { s ->
+            val jsonObject = org.json.JSONObject()
+            jsonObject.put("id", s.id)
+            jsonObject.put("tabNumber", s.tabNumber)
+            jsonObject.put("lastName", s.lastName)
+            jsonObject.put("firstName", s.firstName)
+            jsonObject.put("middleName", s.middleName)
+            jsonObject.put("position", s.position)
+            jsonArray.put(jsonObject)
+        }
+        localPrefs.edit().putString("staff_list", jsonArray.toString()).apply()
+    }
+    
+    /**
+     * Добавить работника
+     */
+    fun addStaffMember(staff: Staff) {
+        val current = loadStaff().toMutableList()
+        current.add(staff)
+        saveStaff(current)
+    }
+    
+    /**
+     * Обновить работника
+     */
+    fun updateStaffMember(staff: Staff) {
+        val current = loadStaff().toMutableList()
+        val index = current.indexOfFirst { it.id == staff.id }
+        if (index != -1) {
+            current[index] = staff
+            saveStaff(current)
+        }
+    }
+    
+    /**
+     * Удалить работника по ID
+     */
+    fun deleteStaffMember(id: String) {
+        val current = loadStaff().filter { it.id != id }
+        saveStaff(current)
+    }
+    
+    /**
+     * Получить работника по ID
+     */
+    fun getStaffById(id: String): Staff? {
+        return loadStaff().find { it.id == id }
     }
     
     // --- МЕТОДЫ УПРАВЛЕНИЯ СМЕНОЙ ОХРАННИКА ---
@@ -2985,5 +3080,163 @@ class SharedPrefsManager(private val context: Context) {
     fun clearHtmlReportPaths() {
         val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
         localPrefs.edit().remove("html_report_paths").apply()
+    }
+    
+    // ==================================================
+    // 📋 МЕТОДЫ ДЛЯ РАБОТЫ С СОБЫТИЯМИ РАБОТНИКОВ (STAFF EVENTS)
+    // ==================================================
+    
+    /**
+     * Загрузить список событий работников
+     */
+    fun loadStaffEvents(): List<StaffEvent> {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonString = localPrefs.getString("staff_events_list", null)
+        if (jsonString.isNullOrBlank()) return emptyList()
+        
+        return try {
+            val jsonArray = org.json.JSONArray(jsonString)
+            List(jsonArray.length()) { index ->
+                val jsonObject = jsonArray.getJSONObject(index)
+                val eventTypeString = jsonObject.optString("eventType", "CUSTOM")
+                val eventType = try {
+                    EventType.valueOf(eventTypeString)
+                } catch (e: Exception) {
+                    EventType.CUSTOM
+                }
+                
+                StaffEvent(
+                    id = jsonObject.optString("id", ""),
+                    timestamp = jsonObject.optString("timestamp", ""),
+                    shiftId = jsonObject.optString("shiftId", ""),
+                    staffId = jsonObject.optString("staffId", ""),
+                    staffName = jsonObject.optString("staffName", ""),
+                    eventType = eventType,
+                    customText = if (jsonObject.has("customText") && jsonObject.getString("customText").isNotEmpty()) jsonObject.getString("customText") else null,
+                    templateText = if (jsonObject.has("templateText") && jsonObject.getString("templateText").isNotEmpty()) jsonObject.getString("templateText") else null
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+    
+    /**
+     * Сохранить список событий работников в SharedPreferences
+     */
+    fun saveStaffEvents(events: List<StaffEvent>) {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonArray = org.json.JSONArray()
+        events.forEach { event ->
+            val jsonObject = org.json.JSONObject()
+            jsonObject.put("id", event.id)
+            jsonObject.put("timestamp", event.timestamp)
+            jsonObject.put("shiftId", event.shiftId)
+            jsonObject.put("staffId", event.staffId)
+            jsonObject.put("staffName", event.staffName)
+            jsonObject.put("eventType", event.eventType.name)
+            jsonObject.put("customText", event.customText ?: "")
+            jsonObject.put("templateText", event.templateText ?: "")
+            jsonArray.put(jsonObject)
+        }
+        localPrefs.edit().putString("staff_events_list", jsonArray.toString()).apply()
+    }
+    
+    /**
+     * Добавить одно событие работника
+     */
+    fun addStaffEvent(event: StaffEvent) {
+        val events = loadStaffEvents().toMutableList()
+        events.add(event)
+        saveStaffEvents(events)
+    }
+    
+    /**
+     * Получить события по дате и/или ID смены
+     */
+    fun getStaffEventsByDate(date: String, shiftId: String? = null): List<StaffEvent> {
+        val events = loadStaffEvents()
+        return events.filter { event ->
+            // Извлекаем дату из timestamp (формат "dd.MM.yyyy HH:mm:ss")
+            val eventDate = event.timestamp.split(" ").getOrNull(0) ?: ""
+            val dateMatch = eventDate == date
+            val shiftMatch = shiftId == null || event.shiftId == shiftId
+            dateMatch && shiftMatch
+        }
+    }
+
+    /**
+     * Удалить событие по ID
+     */
+    fun deleteStaffEvent(eventId: String) {
+        val events = loadStaffEvents().filter { it.id != eventId }
+        saveStaffEvents(events)
+    }
+
+    // ==================================================
+    // 💬 МЕТОДЫ ДЛЯ РАБОТЫ С СООБЩЕНИЯМИ ОХРАННИКОВ
+    // ==================================================
+
+    /**
+     * Сохранить сообщение охранника в SharedPreferences
+     */
+    fun saveGuardMessage(message: GuardMessage) {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        // Загружаем существующие сообщения для этой смены
+        val existingJson = localPrefs.getString("guard_messages_${message.shiftId}", "[]") ?: "[]"
+        val existingMessages = try {
+            val jsonArray = org.json.JSONArray(existingJson)
+            List(jsonArray.length()) { index ->
+                val obj = jsonArray.getJSONObject(index)
+                GuardMessage(
+                    id = obj.optString("id", ""),
+                    shiftId = obj.optString("shiftId", ""),
+                    timestamp = obj.optString("timestamp", ""),
+                    guardName = obj.optString("guardName", ""),
+                    text = obj.optString("text", "")
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        // Добавляем новое сообщение и сохраняем
+        val updated = existingMessages + message
+        val jsonArray = org.json.JSONArray()
+        updated.forEach { msg ->
+            val jsonObject = org.json.JSONObject()
+            jsonObject.put("id", msg.id)
+            jsonObject.put("shiftId", msg.shiftId)
+            jsonObject.put("timestamp", msg.timestamp)
+            jsonObject.put("guardName", msg.guardName)
+            jsonObject.put("text", msg.text)
+            jsonArray.put(jsonObject)
+        }
+        localPrefs.edit().putString("guard_messages_${message.shiftId}", jsonArray.toString()).apply()
+    }
+
+    /**
+     * Загрузить все сообщения для указанной смены
+     */
+    fun loadGuardMessagesForShift(shiftId: String): List<GuardMessage> {
+        val localPrefs = context.getSharedPreferences("OhranaPrefs", Context.MODE_PRIVATE)
+        val jsonString = localPrefs.getString("guard_messages_${shiftId}", null)
+        if (jsonString.isNullOrBlank()) return emptyList()
+
+        return try {
+            val jsonArray = org.json.JSONArray(jsonString)
+            List(jsonArray.length()) { index ->
+                val jsonObject = jsonArray.getJSONObject(index)
+                GuardMessage(
+                    id = jsonObject.optString("id", ""),
+                    shiftId = jsonObject.optString("shiftId", ""),
+                    timestamp = jsonObject.optString("timestamp", ""),
+                    guardName = jsonObject.optString("guardName", ""),
+                    text = jsonObject.optString("text", "")
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 }
