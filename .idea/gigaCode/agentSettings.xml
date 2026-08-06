@@ -15,6 +15,9 @@
         <Execute>
           <option name="pattern" value=".\gradlew.bat assembleDebug" />
         </Execute>
+        <Execute>
+          <option name="pattern" value=".\gradlew.bat compileDebugKotlin --console=plain" />
+        </Execute>
       </list>
     </option>
     <option name="autoApprovedReads">

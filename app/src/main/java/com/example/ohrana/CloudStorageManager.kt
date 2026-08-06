@@ -1637,7 +1637,7 @@ class CloudStorageManager(private val context: Context) {
                         EventType.LEFT_FACILITY -> "❌ " + safeEventType
                         EventType.SMELL_OF_ALCOHOL -> "⚠️ " + safeEventType
                         EventType.MISSED_WORK -> "🚫 " + safeEventType
-                        EventType.CUSTOM -> "📝 " + safeCustomText
+                        EventType.NOTE -> "📝 " + event.eventType.ruName
                     }
                     
                     html.append(
@@ -1646,7 +1646,7 @@ class CloudStorageManager(private val context: Context) {
                                     <td>${event.timestamp.substring(11, 16)}</td>
                                     <td>$safeStaffName</td>
                                     <td>$eventTypeDisplay</td>
-                                    <td>${if (event.eventType == EventType.CUSTOM && event.customText != null) event.customText else "-"}</td>
+                                    <td>${if (event.eventType == EventType.NOTE || (event.customText != null && event.customText!!.isNotEmpty())) event.customText else "-"}</td>
                                 </tr>
                         """.trimIndent()
                     )
@@ -2802,7 +2802,7 @@ class CloudStorageManager(private val context: Context) {
                         EventType.LEFT_FACILITY -> "❌ " + safeEventType
                         EventType.SMELL_OF_ALCOHOL -> "⚠️ " + safeEventType
                         EventType.MISSED_WORK -> "🚫 " + safeEventType
-                        EventType.CUSTOM -> "📝 " + safeCustomText
+                        EventType.NOTE -> "📝 " + event.eventType.ruName
                     }
                     
                     html.append(
@@ -2811,7 +2811,7 @@ class CloudStorageManager(private val context: Context) {
                                     <td>${event.timestamp.substring(11, 16)}</td>
                                     <td>$safeStaffName</td>
                                     <td>$eventTypeDisplay</td>
-                                    <td>${if (event.eventType == EventType.CUSTOM && event.customText != null) event.customText else "-"}</td>
+                                    <td>${if (event.eventType == EventType.NOTE || (event.customText != null && event.customText!!.isNotEmpty())) event.customText else "-"}</td>
                                 </tr>
                         """.trimIndent()
                     )

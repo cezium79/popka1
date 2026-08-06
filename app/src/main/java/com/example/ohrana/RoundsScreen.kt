@@ -603,10 +603,13 @@ fun RoundsScreen(
                 // Диалог добавления события работника
                 if (showEventDialog) {
                     AlertDialog(
+                        modifier = Modifier,
                         onDismissRequest = {
                             showEventDialog = false
                             showDropdownStaffList = false
                         },
+                        // Используйте этот параметр для изменения цвета фона контейнера:
+                        containerColor = Color(0xFF706B6B),
                         title = {
                             Text(
                                 "Добавление события работника",
@@ -619,7 +622,7 @@ fun RoundsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .verticalScroll(rememberScrollState())
-                                    .padding(8.dp),
+                                   .padding(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 // Выбор работника
@@ -729,7 +732,6 @@ fun RoundsScreen(
                                             text = eventType.ruName,
                                             onClick = {
                                                 selectedEventType = eventType
-                                                customEventText = ""
                                             },
                                             modifier = Modifier.fillMaxWidth(),
                                             style = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
@@ -742,33 +744,6 @@ fun RoundsScreen(
                                 Divider(color = Color(0xFF616161), thickness = 1.dp)
                                 
                                 // Произвольный текст
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Произвольный текст:",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color(0xFFBDBDBD)
-                                    )
-                                    Switch(
-                                        checked = selectedEventType == EventType.CUSTOM,
-                                        onCheckedChange = { checked ->
-                                            if (checked) {
-                                                selectedEventType = EventType.CUSTOM
-                                            } else {
-                                                selectedEventType = null
-                                            }
-                                        },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color(0xFF4CAF50),
-                                            checkedTrackColor = Color(0xFF388E3C)
-                                        )
-                                    )
-                                }
-                                
                                 OutlinedTextField(
                                     value = customEventText,
                                     onValueChange = { customEventText = it },
@@ -776,9 +751,8 @@ fun RoundsScreen(
                                         .fillMaxWidth()
                                         .height(80.dp),
                                     placeholder = {
-                                        Text("Введите текст события...")
+                                        Text("Дополнительная информация (необязательно)")
                                     },
-                                    enabled = selectedEventType == EventType.CUSTOM,
                                     colors = TextFieldDefaults.colors(
                                         focusedContainerColor = Color(0xFF616161),
                                         unfocusedContainerColor = Color(0xFF424242),
@@ -802,7 +776,7 @@ fun RoundsScreen(
                                         showDropdownStaffList = false
                                     }
                                 ) {
-                                    Text("Отмена")
+                                    Text("Отмена",color = Color(0xFFFFFFFF))
                                 }
                                 Button(
                                     onClick = {
@@ -816,22 +790,14 @@ fun RoundsScreen(
                                             return@Button
                                         }
                                         
-                                        if (selectedEventType == null || selectedEventType == EventType.CUSTOM) {
-                                            if (selectedEventType == EventType.CUSTOM && customEventText.trim().isEmpty()) {
-                                                android.widget.Toast.makeText(
-                                                    context,
-                                                    "Введите текст события",
-                                                    android.widget.Toast.LENGTH_SHORT
-                                                ).show()
-                                                return@Button
-                                            }
-                                        }
+                                        // Определяем тип события: если не выбран preset → NOTE
+                                        val eventType = selectedEventType ?: EventType.NOTE
                                         
                                         // Создаем событие
                                         val shiftId = prefsManager.prefs.getString("active_shift_id", "outside_shift") ?: "outside_shift"
                                         val timestamp = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())
                                         
-                                        val eventType = selectedEventType ?: EventType.CUSTOM
+                                        val customText = if (customEventText.trim().isNotEmpty()) customEventText.trim() else null
                                         
                                         val event = StaffEvent(
                                             timestamp = timestamp,
@@ -839,8 +805,8 @@ fun RoundsScreen(
                                             staffId = selectedStaff!!.id,
                                             staffName = selectedStaff!!.fullName,
                                             eventType = eventType,
-                                            customText = if (eventType == EventType.CUSTOM) customEventText.trim() else null,
-                                            templateText = if (selectedEventType != null && selectedEventType != EventType.CUSTOM) selectedEventType!!.ruName else null
+                                            customText = customText,
+                                            templateText = if (eventType != EventType.NOTE) eventType.ruName else null
                                         )
                                         
                                         // Сохраняем событие
@@ -861,7 +827,7 @@ fun RoundsScreen(
                                     },
                                     enabled = selectedStaff != null
                                 ) {
-                                    Text("Сохранить")
+                                    Text("Сохранить", color = Color(0xFFFFFFFF))
                                 }
                             }
                         },

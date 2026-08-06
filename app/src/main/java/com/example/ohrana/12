@@ -43,3 +43,6 @@ Remove-Item -Recurse -Force "app\build"
   modifier = Modifier.fillMaxWidth(),
                             style = androidx.compose.ui.text.TextStyle(fontSize = 18.sp),//изменение шшрифта внутри кнопки с дизайном
                             designId = 3,
+
+
+                            Text(text = "Заголовок", color = Color.White)

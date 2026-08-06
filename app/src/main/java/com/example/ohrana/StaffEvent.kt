@@ -10,7 +10,7 @@ enum class EventType(val ruName: String) {
     LEFT_FACILITY("Ушел с объекта"),
     SMELL_OF_ALCOHOL("Пришел с запахом алкоголя"),
     MISSED_WORK("Не вышел на работу"),
-    CUSTOM("Произвольный текст")
+    NOTE("Примечание")
 }
 
 /**

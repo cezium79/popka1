@@ -432,6 +432,10 @@ class SharedPrefsManager(private val context: Context) {
         val mainGuard = guardList.firstOrNull()
         val mainGuardName = mainGuard?.name ?: ""
         val shiftId = shiftDatabase.startNewShift(mainGuardName, guardList, strictSequenceEnabled)
+        
+        // Очищаем события работников за предыдущую смену
+        clearPreviousStaffEvents(shiftId)
+        
         // Сохраняем ID активной смены в SharedPreferences
         prefs.edit().putString("active_shift_id", shiftId).apply()
         
@@ -3098,11 +3102,11 @@ class SharedPrefsManager(private val context: Context) {
             val jsonArray = org.json.JSONArray(jsonString)
             List(jsonArray.length()) { index ->
                 val jsonObject = jsonArray.getJSONObject(index)
-                val eventTypeString = jsonObject.optString("eventType", "CUSTOM")
+                val eventTypeString = jsonObject.optString("eventType", "NOTE")
                 val eventType = try {
                     EventType.valueOf(eventTypeString)
                 } catch (e: Exception) {
-                    EventType.CUSTOM
+                    EventType.NOTE
                 }
                 
                 StaffEvent(
@@ -3172,6 +3176,15 @@ class SharedPrefsManager(private val context: Context) {
     fun deleteStaffEvent(eventId: String) {
         val events = loadStaffEvents().filter { it.id != eventId }
         saveStaffEvents(events)
+    }
+
+    /**
+     * Удалить все события за предыдущую смену (оставить только текущую)
+     */
+    fun clearPreviousStaffEvents(currentShiftId: String) {
+        val events = loadStaffEvents().filter { it.shiftId == currentShiftId }
+        saveStaffEvents(events)
+        Log.d("SharedPrefsManager", "clearPreviousStaffEvents: kept ${events.size} events for shift $currentShiftId")
     }
 
     // ==================================================
