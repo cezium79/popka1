@@ -1,3 +1,4 @@
+/*
 package com.example.ohrana
 
 import android.content.BroadcastReceiver
@@ -6,7 +7,7 @@ import android.content.Intent
 import android.util.Log
 
 /**
- * Регистратор для запуска архивации данных старше 7 дней
+ * Регистратор для запуска архивации данных старше 7 дней (ОТКЛЮЧЕН)
  * Запускается каждый день в 23:55
  */
 class ArchiveBroadcastReceiver : BroadcastReceiver() {
@@ -34,3 +35,4 @@ class ArchiveBroadcastReceiver : BroadcastReceiver() {
         }
     }
 }
+*/

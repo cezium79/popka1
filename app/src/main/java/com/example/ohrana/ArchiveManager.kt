@@ -1,3 +1,4 @@
+/*
 package com.example.ohrana
 
 import android.content.Context
@@ -10,7 +11,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Менеджер архивации данных смен старше 7 дней
+ * Менеджер архивации данных смен старше 7 дней (ОТКЛЮЧЕН)
  * Копирует данные в папку "Ohrana/archive" и удаляет из базы
  */
 class ArchiveManager(private val context: Context) {
@@ -356,3 +357,4 @@ class ArchiveManager(private val context: Context) {
 private fun org.json.JSONObject.toStringPretty(): String {
     return this.toString(2)
 }
+*/

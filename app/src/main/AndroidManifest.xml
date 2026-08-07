@@ -76,10 +76,10 @@
             </intent-filter>
         </receiver>
         
-        <!-- Регистрация приемника архивации -->
-        <receiver
+        <!-- <receiver
             android:name=".ArchiveBroadcastReceiver"
             android:exported="false" />
+        -->
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -95,10 +95,10 @@
             android:foregroundServiceType="specialUse"
             android:exported="false" />
         
-        <!-- Служба архивации -->
-        <service
+        <!-- <service
             android:name=".ArchiveService"
             android:exported="false" />
+        -->
 
 
     </application>

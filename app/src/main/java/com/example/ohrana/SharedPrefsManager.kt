@@ -60,6 +60,10 @@ data class GuardMessage(
 )
 
 class SharedPrefsManager(private val context: Context) {
+    companion object {
+        private const val TAG = "SharedPrefsManager"
+    }
+    
     val prefs = context.getSharedPreferences("ohrana_prefs", Context.MODE_PRIVATE)
     
     // Инициализируем базу данных обходов
@@ -413,7 +417,7 @@ class SharedPrefsManager(private val context: Context) {
         guardList: List<GuardMember>, 
         strictSequenceEnabled: Boolean
     ) {
-        Log.d("SharedPrefsManager", "startNewShift: strictSequenceEnabled=$strictSequenceEnabled")
+        Log.d(TAG, "startNewShift: strictSequenceEnabled=$strictSequenceEnabled")
         val currentTime = dateFormat.format(Date()) // Генерирует строку вида "27.06.2026 15:30:00"
         
         // Сохраняем список охранников в SharedPreferences
@@ -433,9 +437,6 @@ class SharedPrefsManager(private val context: Context) {
         val mainGuardName = mainGuard?.name ?: ""
         val shiftId = shiftDatabase.startNewShift(mainGuardName, guardList, strictSequenceEnabled)
         
-        // Очищаем события работников за предыдущую смену
-        clearPreviousStaffEvents(shiftId)
-        
         // Сохраняем ID активной смены в SharedPreferences
         prefs.edit().putString("active_shift_id", shiftId).apply()
         
@@ -447,14 +448,15 @@ class SharedPrefsManager(private val context: Context) {
         prefs.edit().apply {
             putString("active_shift_employee", mainGuardName)
             putString("active_shift_start_time", currentTime)
-            putLong("active_shift_start_time_epoch", System.currentTimeMillis())  // ДОБАВЛЕНО: epoch time
+            putLong("active_shift_start_time_epoch", System.currentTimeMillis())
             putBoolean("active_shift_is_running", true)
             // Сохраняем статус контроля последовательности при старте смены
             putBoolean("sequence_control_was_enabled", strictSequenceEnabled)
-            // ДОБАВЛЕНО: также сохраняем strict_sequence_enabled для отчетов
             putBoolean("strict_sequence_enabled", strictSequenceEnabled)
             apply()
         }
+        
+        Log.d(TAG, "New shift started: $shiftId")
     }
     
     // Старый метод для совместимости - принимает один employeeName
@@ -528,6 +530,28 @@ class SharedPrefsManager(private val context: Context) {
         // Получаем ID активной смены
         val activeShiftId = prefs.getString("active_shift_id", null)
         
+        // 💾 СОХРАНЯЕМ ВСЕ ДАННЫЕ СМЕНЫ В ФАЙЛ
+        try {
+            val shift = shiftDatabase.getActiveShift()
+            if (shift != null && activeShiftId != null) {
+                val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == activeShiftId }
+                val logs = shiftDatabase.loadLogsByShift(activeShiftId)
+                val violations = shiftDatabase.loadAllViolations().filter { it.shiftId == activeShiftId }
+                val incidents = shiftDatabase.loadIncidentsByShift(activeShiftId)
+                val staffEvents = getStaffEventsByDate(shift.startTime.substring(0, 10)).filter { it.shiftId == activeShiftId }
+                val guardMessages = loadGuardMessagesForShift(activeShiftId)
+                
+                val filePath = ShiftFileSt.saveShiftFile(shift, rounds, logs, violations, incidents, staffEvents, guardMessages, context)
+                if (filePath != null) {
+                    Log.d(TAG, "Shift data saved to file: $filePath")
+                } else {
+                    Log.e(TAG, "Failed to save shift data to file")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving shift to file: ${e.message}", e)
+        }
+        
         // 🔔 ГЕНЕРАЦИЯ ОТЧЕТОВ И ЗАГРУЗКА В ОБЛАКО - ПОЛНОСТЬЮ АСИНХРОННО (НЕ БЛОКИРУЕТ UI)
         CoroutineScope(Dispatchers.Main).launch {
             // Запускаем генерацию отчетов в фоновом потоке
@@ -582,63 +606,35 @@ class SharedPrefsManager(private val context: Context) {
         }
     }
     
-    // --- АРХИВАЦИЯ ДАННЫХ ---
+    // --- АРХИВАЦИЯ ДАННЫХ (ОТКЛЮЧЕНА) ---
     
-    /**
-     * Менеджер архивации данных
-     */
+    /*
     private val archiveManager = ArchiveManager(context)
     
-    /**
-     * Архивирует и удаляет данные смен старше 7 дней
-     * Вызывается ежедневно в 23:55
-     * @return Количество архивированных смен
-     */
     fun archiveOldShifts(): Int {
         return archiveManager.archiveAndRemoveOldShifts(shiftDatabase)
     }
     
-    /**
-     * Находит смены старше указанного количества дней
-     * @param daysCount Количество дней
-     * @return Список ID смен старше указанного срока
-     */
     fun findOldShifts(daysCount: Int): List<String> {
         return archiveManager.findOldShifts(daysCount, shiftDatabase)
     }
     
-    /**
-     * Архивирует конкретную смену (по запросу пользователя)
-     * @param shiftId ID смены
-     * @return true если успешно, false если ошибка
-     */
     fun archiveShift(shiftId: String): Boolean {
         return archiveManager.archiveCompleteShift(shiftId, shiftDatabase)
     }
     
-    /**
-     * Получает размер архивной папки в байтах
-     * @return Размер архива
-     */
     fun getArchiveSize(): Long {
         return archiveManager.getArchiveSize()
     }
     
-    /**
-     * Получает количество файлов в архиве
-     * @return Количество файлов
-     */
     fun getArchiveFileCount(): Int {
         return archiveManager.getArchiveFiles().size
     }
     
-    /**
-     * Очищает архив старше указанного количества дней
-     * @param daysCount Количество дней
-     */
     fun cleanupOldArchive(daysCount: Int) {
         archiveManager.cleanupOldArchive(daysCount)
     }
+    */
     
     /**
      * Отправляет отчет по email в фоновом режиме (не блокирует закрытие смены)

@@ -1,3 +1,4 @@
+/*
 package com.example.ohrana
 
 import android.app.AlarmManager
@@ -13,7 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
- * Служба для управления архивацией данных
+ * Служба для управления архивацией данных (ОТКЛЮЧЕНА)
  * Запускает архивацию ежедневно в 23:55
  */
 class ArchiveService : Service() {
@@ -237,3 +238,4 @@ class ArchiveService : Service() {
         stopForeground(true)
     }
 }
+*/

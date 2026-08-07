@@ -1033,14 +1033,62 @@ class CloudStorageManager(private val context: Context) {
         }
         
         return try {
-            val shift = shiftDatabase.loadAllShifts().find { it.id == shiftId }
-            if (shift == null) {
-                Log.e(TAG, "Shift not found: $shiftId")
+            // === Пытаемся прочитать данные из файла смены ===
+            val shiftFileData = if (context != null) {
+                ShiftFileSt.loadShiftFile(shiftId, context)
+            } else null
+            
+            if (shiftFileData == null && (context == null)) {
                 return null to null
             }
-
-            val rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
-            val logs = shiftDatabase.loadLogsByShift(shiftId)
+            
+            val shift: ShiftRecord
+            val rounds: List<RoundRecord>
+            val logs: List<ShiftLogEntry>
+            val violations: List<SequenceViolation>
+            val incidents: List<IncidentRecord>
+            val staffEvents: List<StaffEvent>
+            
+            if (shiftFileData != null) {
+                // Читаем из файла
+                Log.d(TAG, "Reading shift data from file: $shiftId")
+                
+                // Восстанавливаем ShiftRecord из файла
+                val guardList = shiftFileData.guards
+                shift = ShiftRecord(
+                    id = shiftFileData.shiftId,
+                    employeeName = guardList.firstOrNull()?.name ?: "",
+                    guardList = guardList,
+                    startTime = shiftFileData.startTime,
+                    endTime = shiftFileData.endTime,
+                    isShiftActive = false,
+                    strictSequenceEnabled = false
+                )
+                rounds = shiftFileData.rounds
+                logs = shiftFileData.logs
+                violations = shiftFileData.violations
+                incidents = shiftFileData.incidents
+                staffEvents = shiftFileData.staffEvents
+            } else {
+                // Fallback: читаем из базы данных
+                Log.d(TAG, "File not found, reading from database: $shiftId")
+                val shiftFromDb = shiftDatabase.loadAllShifts().find { it.id == shiftId }
+                if (shiftFromDb == null) {
+                    Log.e(TAG, "Shift not found in database: $shiftId")
+                    return null to null
+                }
+                
+                shift = shiftFromDb
+                rounds = shiftDatabase.loadAllRounds().filter { it.shiftId == shiftId }
+                logs = shiftDatabase.loadLogsByShift(shiftId)
+                violations = shiftDatabase.loadAllViolations().filter { it.shiftId == shiftId }
+                incidents = shiftDatabase.loadIncidentsByShift(shiftId)
+                staffEvents = try {
+                    sharedPrefsManager?.getStaffEventsByDate(shift.startTime.substring(0, 10)) ?: emptyList()
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            }
             
             // Загружаем будильники для получения времени каждого обхода
             val routeAlarms = sharedPrefsManager?.loadRouteAlarms() ?: emptyList()
@@ -1058,13 +1106,17 @@ class CloudStorageManager(private val context: Context) {
                 Log.d(TAG, "generateHtmlReportWithDesign DEBUG: actionType=${log.actionType}, checkpoint=${log.checkpointName}, inputValue='${log.inputValue}', isNull=${log.inputValue == null}")
             }
 
-            // === ЗАГРУЖАЕМ СОБЫТИЯ РАБОТНИКОВ ===
-            val staffEvents = try {
-                sharedPrefsManager?.getStaffEventsByDate(shift.startTime.substring(0, 10)) ?: emptyList()
-            } catch (e: Exception) {
-                emptyList()
+            // Загружаем guardMessages из файла
+            val guardMessages = if (shiftFileData != null) {
+                shiftFileData.guardMessages
+            } else {
+                try {
+                    sharedPrefsManager?.loadGuardMessagesForShift(shiftId) ?: emptyList()
+                } catch (e: Exception) {
+                    emptyList()
+                }
             }
-            Log.d(TAG, "generateHtmlReportWithDesign: staffEventsCount=${staffEvents.size}")
+            Log.d(TAG, "generateHtmlReportWithDesign: staffEventsCount=${staffEvents.size}, guardMessagesCount=${guardMessages.size}")
 
             val html = StringBuilder()
 
@@ -1135,8 +1187,7 @@ class CloudStorageManager(private val context: Context) {
             // === СОРТИРОВКА ЛОГОВ ПО ВРЕМЕНИ ===
             val sortedLogs = logs.sortedBy { it.timestamp }
             
-            // Загружаем происшествия
-            val incidents = shiftDatabase.loadIncidentsByShift(shiftId)
+            // incidents уже загружены выше из файла или БД
 
             // HTML заголовок
             html.append(
@@ -1564,11 +1615,7 @@ class CloudStorageManager(private val context: Context) {
                 )
             }
 
-            // Сообщения охранников
-            val guardMessages = mutableListOf<GuardMessage>()
-            if (sharedPrefsManager != null && shift != null) {
-                guardMessages.addAll(sharedPrefsManager.loadGuardMessagesForShift(shift.id))
-            }
+            // Сообщения охранников (уже загружены выше в guardMessages)
             if (guardMessages.isNotEmpty()) {
                 html.append(
                     """
@@ -2303,6 +2350,14 @@ class CloudStorageManager(private val context: Context) {
             }
             Log.d(TAG, "uploadHtmlToDiskDirect: staffEventsCount=${staffEvents.size}")
 
+            // === ЗАГРУЖАЕМ СООБЩЕНИЯ ОХРАННИКОВ ===
+            val guardMessages = try {
+                sharedPrefsManager?.loadGuardMessagesForShift(shiftId) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            Log.d(TAG, "uploadHtmlToDiskDirect: guardMessagesCount=${guardMessages.size}")
+
             // HTML заголовок
             html.append(
                 """
@@ -2729,11 +2784,7 @@ class CloudStorageManager(private val context: Context) {
                 )
             }
 
-            // Сообщения охранников
-            val guardMessages = mutableListOf<GuardMessage>()
-            if (sharedPrefsManager != null && shift != null) {
-                guardMessages.addAll(sharedPrefsManager.loadGuardMessagesForShift(shift.id))
-            }
+            // Сообщения охранников (уже загружены выше в guardMessages)
             if (guardMessages.isNotEmpty()) {
                 html.append(
                     """

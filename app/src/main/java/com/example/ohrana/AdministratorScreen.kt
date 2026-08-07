@@ -405,7 +405,7 @@ fun AdministratorScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Настройки архивации данных
+                /*// Настройки архивации данных
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF595757))
@@ -428,7 +428,7 @@ fun AdministratorScreen(
                         
                         Spacer(modifier = Modifier.height(12.dp))
                         
-                        // Кнопки управления архивацией
+                       /* // Кнопки управления архивацией
                         OhranaOutlinedButton(
                             text = if (archiveServiceRunning.value) "Остановить архивацию" else "Запустить архивацию",
                             onClick = {
@@ -448,7 +448,7 @@ fun AdministratorScreen(
                         )
                         
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+                        */
                         OhranaOutlinedButton(
                             text = "Архивировать данные сейчас",
                             onClick = {
@@ -473,7 +473,7 @@ fun AdministratorScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFFE0E0E0)
                         )
-                    }
+                    }*/
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -665,8 +665,8 @@ fun AdministratorScreen(
         // Обработка системной кнопки "Назад"
         BackHandler(onBack = onBack)
     }
-}
 
+/*
 /**
  * Проверяет, работает ли служба архивации
  */
@@ -712,11 +712,12 @@ fun startArchiveService(context: Context, archiveServiceState: MutableState<Bool
     }
     
     archiveServiceState.value = true
-}
+}*/
 
 /**
- * Останавливает службу архивации
+ * Останавливает службу архивации (ОТКЛЮЧЕНА)
  */
+/*
 fun stopArchiveService(context: Context, archiveServiceState: MutableState<Boolean>) {
     val intent = Intent(context, ArchiveService::class.java).apply {
         action = ArchiveService.ACTION_STOP
@@ -728,7 +729,7 @@ fun stopArchiveService(context: Context, archiveServiceState: MutableState<Boole
 }
 
 /**
- * Запускает архивацию немедленно
+ * Запускает архивацию немедленно (ОТКЛЮЧЕНО)
  */
 fun archiveNow(context: android.content.Context) {
     val intent = Intent(context, ArchiveService::class.java).apply {
@@ -757,3 +758,4 @@ fun AdministratorScreenPreview() {
     )
 }
 
+*/
